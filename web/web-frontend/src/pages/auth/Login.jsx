@@ -214,15 +214,6 @@ const Login = () => {
                 {loading ? "Signing in..." : "Login"}
               </button>
 
-              {/* <button
-                onClick={handleAdminDemo}
-                disabled={loading}
-                className="w-full font-semibold py-3 rounded-md border-2 transition duration-200 hover:bg-red-50 disabled:opacity-60 disabled:cursor-not-allowed"
-                style={{ color: "#B01C1C", borderColor: "#B01C1C" }}
-              >
-                Login as Admin (Demo)
-              </button> */}
-
               <div className="flex items-center gap-3 pt-2">
                 <hr className="flex-1 border-gray-200" />
                 <span className="text-xs text-gray-400">OR</span>

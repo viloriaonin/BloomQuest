@@ -21,13 +21,6 @@ const icons = {
       <path d="M3 21h18M4 21V10l8-5 8 5v11M9 21v-6h6v6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
-   assessment: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5 shrink-0">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.5-2 1.8-2 3.5" strokeLinecap="round" />
-      <circle cx="12" cy="16.5" r="0.5" fill="currentColor" />
-    </svg>
-  ),
   history: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5 shrink-0">
       <path d="M3 12a9 9 0 1 0 3-6.7" strokeLinecap="round" />
@@ -57,7 +50,6 @@ const menuItems = [
   { label: "Dashboard", path: "/dashboard", icon: icons.dashboard },
   { label: "Input", path: "/input", icon: icons.input },
   { label: "Question Bank", path: "/question-bank", icon: icons.bank },
-  { label: "Generate Assessment", path: "/assessment", icon: icons.assessment },
   { label: "History", path: "/history", icon: icons.history },
 ];
 
