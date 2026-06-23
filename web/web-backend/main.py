@@ -1,6 +1,12 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
+from database import engine, get_db
+import models
+
+# Create tables automatically
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
@@ -13,35 +19,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -------------------------------------------------------
-# Temporary hardcoded users — replace with DB query later
-# -------------------------------------------------------
-FAKE_USERS = [
-    {"email": "student@bloomquest.com", "password": "student123", "role": "student"},
-    {"email": "admin@bloomquest.com",   "password": "admin123",   "role": "admin"},
-]
-
 class LoginRequest(BaseModel):
     email: str
     password: str
 
 @app.post("/api/login")
-def login(data: LoginRequest):
-    # Find user by email and password
-    user = next(
-        (u for u in FAKE_USERS if u["email"] == data.email and u["password"] == data.password),
-        None
-    )
+def login(data: LoginRequest, db: Session = Depends(get_db)):
+    # Find user in database
+    user = db.query(models.User).filter(
+        models.User.email == data.email,
+        models.User.password == data.password
+    ).first()
 
     if not user:
-        from fastapi import HTTPException
         raise HTTPException(status_code=401, detail="Invalid email or password.")
 
-    # Return a fake token for now — replace with JWT later
+    # Return response (replace with JWT later)
     return {
         "token": "fake-token-for-now",
-        "role": user["role"],
-        "email": user["email"],
+        "role": user.role,
+        "email": user.email,
         "message": "Login successful"
     }
 
