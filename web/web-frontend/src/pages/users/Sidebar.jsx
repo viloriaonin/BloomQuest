@@ -46,17 +46,20 @@ const icons = {
   ),
 };
 
-const menuItems = [
-  { label: "Dashboard", path: "/dashboard", icon: icons.dashboard },
-  { label: "Input", path: "/input", icon: icons.input },
-  { label: "Question Bank", path: "/question-bank", icon: icons.bank },
-  { label: "History", path: "/history", icon: icons.history },
-];
-
 const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const role = localStorage.getItem("role")?.toLowerCase();
+
+  const menuItems = role === "admin" ? [
+    { label: "Admin Dashboard", path: "/admin", icon: icons.dashboard },
+  ] : [
+    { label: "Dashboard", path: "/dashboard", icon: icons.dashboard },
+    { label: "Input", path: "/input", icon: icons.input },
+    { label: "Question Bank", path: "/question-bank", icon: icons.bank },
+    { label: "History", path: "/history", icon: icons.history },
+  ];
 
   const handleLogout = () => {
     localStorage.removeItem("token");

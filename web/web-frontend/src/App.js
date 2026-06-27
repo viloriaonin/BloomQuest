@@ -1,9 +1,10 @@
 import React from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/auth/Login";
 import Dashboard from "./pages/users/Dashboard";
-import InputQuestion from "./pages/users/InputQuestion"; 
-import Sidebar from "./pages/users/Sidebar"; 
+import AdminDashboard from "./pages/admin/admindashboard";
+import InputQuestion from "./pages/users/InputQuestion";
+import Sidebar from "./pages/users/Sidebar";
 import QuestionBank from "./pages/users/QuestionBank";
 import History from "./pages/users/History";
 
@@ -18,6 +19,22 @@ const MainLayout = ({ children }) => {
   );
 };
 
+const getUserRole = () => {
+  return localStorage.getItem("role")?.toLowerCase();
+};
+
+const AdminRoute = ({ children }) => {
+  const role = getUserRole();
+  if (!role) return <Navigate to="/" replace />;
+  return role === "admin" ? children : <Navigate to="/dashboard" replace />;
+};
+
+const UserRoute = ({ children }) => {
+  const role = getUserRole();
+  if (!role) return <Navigate to="/" replace />;
+  return role === "admin" ? <Navigate to="/admin" replace /> : children;
+};
+
 function App() {
   return (
     <BrowserRouter>
@@ -27,37 +44,53 @@ function App() {
         <Route 
           path="/dashboard" 
           element={
-            <MainLayout>
-              <Dashboard />
-            </MainLayout>
+            <UserRoute>
+              <MainLayout>
+                <Dashboard />
+              </MainLayout>
+            </UserRoute>
           } 
         />
         
+        <Route 
+          path="/admin" 
+          element={
+            <AdminRoute>
+              <AdminDashboard />
+            </AdminRoute>
+          } 
+        />
       
         <Route 
           path="/input" 
           element={
-            <MainLayout>
-               <InputQuestion />
-            </MainLayout>
+            <UserRoute>
+              <MainLayout>
+                <InputQuestion />
+              </MainLayout>
+            </UserRoute>
           } 
         />
 
         <Route 
-  path="/question-bank" 
-  element={
-    <MainLayout>
-       <QuestionBank />
-    </MainLayout>
-  } 
-/>
+          path="/question-bank" 
+          element={
+            <UserRoute>
+              <MainLayout>
+                <QuestionBank />
+              </MainLayout>
+            </UserRoute>
+          } 
+        />
 
-       <Route 
+        <Route 
           path="/history" 
           element={
-            <MainLayout>
-              <History />
-            </MainLayout>
+            <UserRoute>
+              <MainLayout>
+                <History />
+              </MainLayout>
+            </UserRoute>
           } 
         />
       </Routes>
