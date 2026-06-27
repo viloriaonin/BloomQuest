@@ -1,6 +1,7 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/auth/Login";
+import ForgotPassword from "./pages/auth/Forgotpass";
 import Dashboard from "./pages/users/Dashboard";
 import AdminDashboard from "./pages/admin/admindashboard";
 import InputQuestion from "./pages/users/InputQuestion";
@@ -40,6 +41,8 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Login />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         
         <Route 
           path="/dashboard" 

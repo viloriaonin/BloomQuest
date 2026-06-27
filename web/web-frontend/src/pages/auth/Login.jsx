@@ -53,35 +53,8 @@ const Login = () => {
       localStorage.setItem("role", data.role);
       localStorage.setItem("email", data.email);
 
-      navigate("/dashboard");
-    } catch (err) {
-      setError("Unable to connect to the server. Make sure your backend is running on port 8000.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAdminDemo = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: "admin@bloomquest.com", password: "admin123" }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.detail || "Admin login failed.");
-        return;
-      }
-
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("role", data.role);
-      localStorage.setItem("email", data.email);
-
-      navigate("/dashboard");
+      const destination = data.role?.toLowerCase() === "admin" ? "/admin" : "/dashboard";
+      navigate(destination);
     } catch (err) {
       setError("Unable to connect to the server. Make sure your backend is running on port 8000.");
     } finally {
@@ -120,7 +93,6 @@ const Login = () => {
               borderColor: "rgba(212,175,55,0.2)",
             }}
           />
-
           <img
             src={logo}
             alt="BloomQuest Logo"
@@ -198,9 +170,15 @@ const Login = () => {
                   <input type="checkbox" className="accent-red-800" />
                   Remember me
                 </label>
-                <a href="#" className="hover:underline" style={{ color: "#B01C1C" }}>
+                {/* ✅ Now navigates to /forgot-password */}
+                <button
+                  type="button"
+                  onClick={() => navigate("/forgot-password")}
+                  className="hover:underline text-sm font-medium transition"
+                  style={{ color: "#B01C1C" }}
+                >
                   Forgot Password?
-                </a>
+                </button>
               </div>
 
               <button
