@@ -1,5 +1,170 @@
 import React from "react";
 
+export const AcademicMgmtContent = () => (
+  <div className="grid gap-6 xl:grid-cols-[1.3fr_1fr_1fr]">
+    <div className="rounded-[32px] bg-white p-6 shadow-sm border border-gray-200">
+      <div className="flex items-center justify-between gap-4 mb-6">
+        <div>
+          <p className="text-sm font-semibold text-gray-500">Departments</p>
+          <p className="text-xs text-gray-400">Manage academic units and schools</p>
+        </div>
+        <button className="inline-flex items-center gap-2 rounded-full bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 transition">
+          + Add New
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        {[
+          { name: "Computer Science", code: "CICS", highlighted: true },
+          { name: "Information Technology", code: "CICS" },
+          { name: "Civil Engineering", code: "COE" },
+        ].map((department) => (
+          <div
+            key={department.name}
+            className={`rounded-3xl p-5 shadow-sm border ${department.highlighted ? "border-red-100 bg-red-50" : "border-gray-100 bg-[#faf7f7]"}`}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="font-semibold text-gray-900">{department.name}</p>
+                <p className="mt-1 text-sm text-gray-500">{department.code}</p>
+              </div>
+              <div className="flex items-center gap-2 text-gray-500">
+                <button className="rounded-full p-2 hover:bg-gray-100 transition">
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
+                  </svg>
+                </button>
+                <button className="rounded-full p-2 hover:bg-gray-100 transition">
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 6h18" />
+                    <path d="M8 6v14" />
+                    <path d="M16 6v14" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <div className="rounded-[32px] bg-white p-6 shadow-sm border border-gray-200">
+      <div className="flex items-center justify-between gap-4 mb-6">
+        <div>
+          <p className="text-sm font-semibold text-gray-500">Courses</p>
+          <p className="text-xs text-gray-400">Assign courses to departments</p>
+        </div>
+        <button className="inline-flex items-center gap-2 rounded-full bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 transition">
+          + Add New
+        </button>
+      </div>
+
+      <div className="rounded-3xl bg-[#faf7f7] p-5 border border-red-100">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="font-semibold text-gray-900">Bachelor of Science in Computer Science</p>
+            <p className="mt-2 text-sm text-gray-500">BSCS</p>
+          </div>
+          <div className="flex items-center gap-2 text-gray-500">
+            <button className="rounded-full p-2 hover:bg-gray-100 transition">
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
+              </svg>
+            </button>
+            <button className="rounded-full p-2 hover:bg-gray-100 transition">
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 6h18" />
+                <path d="M8 6v14" />
+                <path d="M16 6v14" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div className="rounded-[32px] bg-white p-6 shadow-sm border border-gray-200">
+      <div className="flex items-center justify-between gap-4 mb-6">
+        <div>
+          <p className="text-sm font-semibold text-gray-500">Subjects</p>
+          <p className="text-xs text-gray-400">Organize courses by year level</p>
+        </div>
+        <button className="inline-flex items-center gap-2 rounded-full bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 transition">
+          + Add New
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        {[
+          {
+            year: "Year 1",
+            count: 2,
+            items: [
+              { title: "Programming Fundamentals", code: "CS101" },
+              { title: "Discrete Mathematics", code: "CS102" },
+            ],
+          },
+          {
+            year: "Year 2",
+            count: 2,
+            items: [
+              { title: "Data Structures and Algorithms", code: "CS201" },
+              { title: "Database Systems", code: "CS202" },
+            ],
+          },
+          {
+            year: "Year 3",
+            count: 1,
+            items: [{ title: "Software Engineering", code: "CS301" }],
+          },
+          {
+            year: "Year 4",
+            count: 0,
+            items: [],
+          },
+        ].map((group) => (
+          <details key={group.year} className="rounded-3xl bg-gray-50 border border-gray-100 p-4">
+            <summary className="flex cursor-pointer items-center justify-between gap-4 text-sm font-semibold text-gray-900 list-none">
+              <span>{group.year} ({group.count})</span>
+              <span className="text-gray-400">{group.count > 0 ? "▾" : "▸"}</span>
+            </summary>
+
+            {group.items.length > 0 && (
+              <div className="mt-4 space-y-3">
+                {group.items.map((subject) => (
+                  <div key={subject.title} className="rounded-3xl bg-white p-4 border border-gray-100 shadow-sm flex items-center justify-between gap-4">
+                    <div>
+                      <p className="font-semibold text-gray-900">{subject.title}</p>
+                      <p className="mt-1 text-sm text-gray-500">{subject.code}</p>
+                    </div>
+                    <div className="flex items-center gap-2 text-gray-500">
+                      <button className="rounded-full p-2 hover:bg-gray-100 transition">
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
+                        </svg>
+                      </button>
+                      <button className="rounded-full p-2 hover:bg-gray-100 transition">
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 6h18" />
+                          <path d="M8 6v14" />
+                          <path d="M16 6v14" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </details>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
 const AcademicMgmtBtn = ({ activeTab, setActiveTab }) => {
   const isActive = activeTab === "academic";
 
