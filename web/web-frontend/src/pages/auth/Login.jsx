@@ -102,7 +102,7 @@ const Login = () => {
             BloomQuest
           </h1>
           <div className="relative w-16 h-1 rounded-full mb-4" style={{ backgroundColor: "#D4AF37" }} />
-          <p className="relative text-sm text-center max-w-xs" style={{ color: "#e8c97a" }}>
+          <p className="relative text-base text-center max-w-xs" style={{ color: "#e8c97a" }}>
             Empowering students to grow, learn, and lead.
           </p>
         </div>
@@ -112,16 +112,16 @@ const Login = () => {
           <div className="w-full max-w-sm">
 
             <div className="mb-8">
-              <h2 className="text-3xl font-bold" style={{ color: "#7B1113" }}>
+              <h2 className="text-4xl font-bold" style={{ color: "#7B1113" }}>
                 Welcome back
               </h2>
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-base text-gray-500 mt-1">
                 Sign in to access your student portal
               </p>
             </div>
 
             {error && (
-              <div className="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-4 py-2.5">
+              <div className="mb-4 text-base text-red-700 bg-red-50 border border-red-200 rounded-md px-4 py-2.5">
                 {error}
               </div>
             )}
@@ -129,7 +129,7 @@ const Login = () => {
             <div className="space-y-4">
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                <label className="block text-base font-semibold text-gray-700 mb-1">
                   Email Address
                 </label>
                 <input
@@ -138,12 +138,12 @@ const Login = () => {
                   onChange={(e) => setEmail(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Enter your email"
-                  className="w-full border border-gray-300 rounded-md px-4 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:border-transparent transition"
+                  className="w-full border border-gray-300 rounded-md px-4 py-2.5 text-base text-gray-700 focus:outline-none focus:ring-2 focus:border-transparent transition"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                <label className="block text-base font-semibold text-gray-700 mb-1">
                   Password
                 </label>
                 <div className="relative">
@@ -153,28 +153,27 @@ const Login = () => {
                     onChange={(e) => setPassword(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="Enter your password"
-                    className="w-full border border-gray-300 rounded-md px-4 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:border-transparent transition"
+                    className="w-full border border-gray-300 rounded-md px-4 py-2.5 text-base text-gray-700 focus:outline-none focus:ring-2 focus:border-transparent transition"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-2.5 text-xs font-semibold text-gray-400 hover:text-gray-600"
+                    className="absolute right-3 top-2.5 text-base font-semibold text-gray-400 hover:text-gray-600"
                   >
                     {showPassword ? "Hide" : "Show"}
                   </button>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between text-sm">
-                <label className="flex items-center gap-2 text-gray-600">
+              <div className="flex items-center justify-between text-base">
+                <label className="flex items-center gap-2 text-gray-600 text-base">
                   <input type="checkbox" className="accent-red-800" />
                   Remember me
                 </label>
-                {/* ✅ Now navigates to /forgot-password */}
                 <button
                   type="button"
                   onClick={() => navigate("/forgot-password")}
-                  className="hover:underline text-sm font-medium transition"
+                  className="hover:underline text-base font-medium transition"
                   style={{ color: "#B01C1C" }}
                 >
                   Forgot Password?
@@ -194,11 +193,11 @@ const Login = () => {
 
               <div className="flex items-center gap-3 pt-2">
                 <hr className="flex-1 border-gray-200" />
-                <span className="text-xs text-gray-400">OR</span>
+                <span className="text-base text-gray-400">OR</span>
                 <hr className="flex-1 border-gray-200" />
               </div>
 
-              <p className="text-center text-sm text-gray-500">
+              <p className="text-center text-base text-gray-500">
                 Don't have an account?{" "}
                 <a href="#" className="font-bold hover:underline" style={{ color: "#B01C1C" }}>
                   Contact your administrator
@@ -207,7 +206,7 @@ const Login = () => {
 
             </div>
 
-            <p className="text-center text-xs text-gray-400 mt-10">
+            <p className="text-center text-base text-gray-400 mt-10">
               Need help signing in? Contact the registrar's office.
             </p>
           </div>
@@ -218,10 +217,10 @@ const Login = () => {
         className="w-full py-4 px-6 flex flex-col sm:flex-row items-center justify-between gap-2"
         style={{ backgroundColor: "#5c0d0f" }}
       >
-        <p className="text-xs" style={{ color: "#D4AF37" }}>
+        <p className="text-base" style={{ color: "#D4AF37" }}>
           © 2026 BloomQuest. All rights reserved.
         </p>
-        <div className="flex gap-4 text-xs" style={{ color: "#D4AF37" }}>
+        <div className="flex gap-4 text-base" style={{ color: "#D4AF37" }}>
           <a href="#" className="hover:text-white transition">Privacy Policy</a>
           <a href="#" className="hover:text-white transition">Terms of Service</a>
           <a href="#" className="hover:text-white transition">Help Center</a>
