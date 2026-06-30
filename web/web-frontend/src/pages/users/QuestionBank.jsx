@@ -1,171 +1,355 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-// Mock data to populate the question bank
-const mockQuestions = [
-  {
-    id: 1,
-    text: "What is a variable in programming?",
-    level: "Remember",
-    type: "Multiple Choice",
-    topic: "Programming Fundamentals",
-  },
-  {
-    id: 2,
-    text: "Define a data structure.",
-    level: "Remember",
-    type: "Multiple Choice",
-    topic: "Data Structures",
-  },
-  {
-    id: 3,
-    text: "Explain how a hash table handles collisions.",
-    level: "Understand",
-    type: "Essay",
-    topic: "Data Structures",
-  },
-  {
-    id: 4,
-    text: "Write a function to reverse a string in Python.",
-    level: "Apply",
-    type: "Coding",
-    topic: "Algorithms",
-  }
-];
+const API_URL = 'http://localhost:8000';
 
-// Tab definitions to match your color scheme
-const taxonomyTabs = [
-  { name: 'Remember', count: 2, dotColor: 'bg-red-400' },
-  { name: 'Understand', count: 1, dotColor: 'bg-rose-400' },
-  { name: 'Apply', count: 1, dotColor: 'bg-orange-300' },
-  { name: 'Analyze', count: 0, dotColor: 'bg-teal-400' },
-  { name: 'Evaluate', count: 0, dotColor: 'bg-blue-400' },
-  { name: 'Create', count: 0, dotColor: 'bg-purple-500' },
+const BLOOMS_LEVELS = [
+  { name: 'Remember',   dotColor: 'bg-red-400' },
+  { name: 'Understand', dotColor: 'bg-rose-400' },
+  { name: 'Apply',      dotColor: 'bg-orange-300' },
+  { name: 'Analyze',    dotColor: 'bg-teal-400' },
+  { name: 'Evaluate',   dotColor: 'bg-blue-400' },
+  { name: 'Create',     dotColor: 'bg-purple-500' },
 ];
 
 const QuestionBank = () => {
-  const [activeTab, setActiveTab] = useState('Remember');
+  const [activeTab, setActiveTab]             = useState('Remember');
+  const [subjects, setSubjects]               = useState([]);
+  const [selectedSubject, setSelectedSubject] = useState('');
+  const [questions, setQuestions]             = useState([]);
+  const [loading, setLoading]                 = useState(false);
+  const [loadingSubjects, setLoadingSubjects] = useState(true);
+  const [error, setError]                     = useState('');
   const [selectedQuestions, setSelectedQuestions] = useState([]);
-  
-  // Filter states
-  const [subject, setSubject] = useState('');
+  const [deletingId, setDeletingId]           = useState(null);
+  const [editingQuestion, setEditingQuestion] = useState(null);
+  const [editForm, setEditForm]               = useState({});
 
-  // Handle individual checkbox toggles
+  // Fetch subjects on mount
+  useEffect(() => {
+    const fetchSubjects = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/subjects`);
+        if (!res.ok) throw new Error('Failed to fetch subjects');
+        const data = await res.json();
+        setSubjects(data);
+      } catch (err) {
+        setError('Could not load subjects.');
+      } finally {
+        setLoadingSubjects(false);
+      }
+    };
+    fetchSubjects();
+  }, []);
+
+  // Fetch questions when subject changes
+  useEffect(() => {
+    if (!selectedSubject) {
+      setQuestions([]);
+      return;
+    }
+    fetchQuestions(selectedSubject);
+  }, [selectedSubject]);
+
+  const fetchQuestions = async (subjectId) => {
+    setLoading(true);
+    setError('');
+    setSelectedQuestions([]);
+    try {
+      const res = await fetch(`${API_URL}/api/questions?subject_id=${subjectId}`);
+      if (!res.ok) throw new Error('Failed to fetch questions');
+      const data = await res.json();
+      setQuestions(data);
+    } catch (err) {
+      setError('Could not load questions.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this question?')) return;
+    setDeletingId(id);
+    try {
+      const res = await fetch(`${API_URL}/api/questions/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
+      setQuestions(prev => prev.filter(q => q.id !== id));
+      setSelectedQuestions(prev => prev.filter(qId => qId !== id));
+    } catch (err) {
+      setError('Failed to delete question.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleEditOpen = (q) => {
+    setEditingQuestion(q.id);
+    setEditForm({
+      question: q.question,
+      correct_answer: q.correct_answer || '',
+      explanation: q.explanation || '',
+    });
+  };
+
+  const handleEditSave = async () => {
+    try {
+      const formData = new FormData();
+      formData.append('question', editForm.question);
+      formData.append('correct_answer', editForm.correct_answer);
+      formData.append('explanation', editForm.explanation);
+      const res = await fetch(`${API_URL}/api/questions/${editingQuestion}`, {
+        method: 'PUT',
+        body: formData,
+      });
+      if (!res.ok) throw new Error('Update failed');
+      setQuestions(prev =>
+        prev.map(q => q.id === editingQuestion ? { ...q, ...editForm } : q)
+      );
+      setEditingQuestion(null);
+    } catch (err) {
+      setError('Failed to update question.');
+    }
+  };
+
   const toggleSelection = (id) => {
-    setSelectedQuestions(prev => 
-      prev.includes(id) 
-        ? prev.filter(qId => qId !== id) 
-        : [...prev, id]
+    setSelectedQuestions(prev =>
+      prev.includes(id) ? prev.filter(qId => qId !== id) : [...prev, id]
     );
   };
 
-  // Filter the displayed questions based on the active tab
-  const displayedQuestions = mockQuestions.filter(q => q.level === activeTab);
+  const countByLevel = (level) => questions.filter(q => q.bloom_level === level).length;
+  const displayedQuestions = questions.filter(q => q.bloom_level === activeTab);
+  const selectedSubjectName = subjects.find(s => s.id === parseInt(selectedSubject))?.name || '';
 
   return (
     <div className="max-w-5xl w-full p-2 h-full flex flex-col relative">
-      
-      {/* Top Filter Bar */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 mb-4 flex items-center gap-4">
-        <span className="text-gray-600 font-medium text-sm">Filter by:</span>
-        <select 
-          className="border border-gray-200 rounded-md p-2 text-sm text-gray-600 focus:outline-none focus:border-red-400 min-w-[180px]"
-          value={subject}
-          onChange={(e) => setSubject(e.target.value)}
-        >
-          <option value="">Select subject</option>
-          <option value="prog1">Programming 1</option>
-          <option value="ds">Data Structures</option>
-        </select>
+
+      {/* Header */}
+      <div className="mb-4">
+        <h1 className="text-xl font-bold text-gray-800">Question Bank</h1>
+        <p className="text-sm text-gray-500">Select a subject to view its questions</p>
       </div>
 
-      {/* Main Content Area (Tabs + Questions) */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 flex-1 flex flex-col overflow-hidden mb-20">
-        
-        {/* Tabs */}
-        <div className="border-b border-gray-200 overflow-x-auto hide-scrollbar">
-          <div className="flex px-4 min-w-max">
-            {taxonomyTabs.map((tab) => (
-              <button
-                key={tab.name}
-                onClick={() => setActiveTab(tab.name)}
-                className={`flex items-center gap-2 py-4 px-6 text-sm font-medium transition-colors border-b-2 ${
-                  activeTab === tab.name
-                    ? 'border-red-600 text-gray-900'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
+      {/* Error */}
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {/* Subject Filter */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 mb-4 flex items-center gap-4">
+        <span className="text-gray-600 font-medium text-sm whitespace-nowrap">Filter by Subject:</span>
+        <select
+          className="border border-gray-200 rounded-md p-2 text-sm text-gray-600 focus:outline-none focus:border-red-400 flex-1 max-w-xs"
+          value={selectedSubject}
+          onChange={(e) => setSelectedSubject(e.target.value)}
+          disabled={loadingSubjects}
+        >
+          <option value="">— Select a subject —</option>
+          {subjects.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name} {s.code ? `(${s.code})` : ''}
+            </option>
+          ))}
+        </select>
+
+        {selectedSubject && (
+          <div className="flex items-center gap-3 ml-auto">
+            <span className="text-sm text-gray-400">
+              {questions.length} question{questions.length !== 1 ? 's' : ''} found
+            </span>
+            <button
+              onClick={() => fetchQuestions(selectedSubject)}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded-md px-3 py-1.5"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Refresh
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* No subject selected — placeholder */}
+      {!selectedSubject && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 flex-1 flex flex-col items-center justify-center text-center p-12 mb-20">
+          <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+            <svg className="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+            </svg>
+          </div>
+          <h3 className="text-gray-500 font-medium mb-1">No Subject Selected</h3>
+          <p className="text-sm text-gray-400">Please select a subject above to view its questions.</p>
+        </div>
+      )}
+
+      {/* Subject selected — show tabs and questions */}
+      {selectedSubject && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 flex-1 flex flex-col overflow-hidden mb-20">
+
+          {/* Bloom's Tabs */}
+          <div className="border-b border-gray-200 overflow-x-auto">
+            <div className="flex px-4 min-w-max">
+              {BLOOMS_LEVELS.map((tab) => (
+                <button
+                  key={tab.name}
+                  onClick={() => setActiveTab(tab.name)}
+                  className={`flex items-center gap-2 py-4 px-6 text-sm font-medium transition-colors border-b-2 ${
+                    activeTab === tab.name
+                      ? 'border-red-600 text-gray-900'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${tab.dotColor}`}></span>
+                  {tab.name}
+                  <span className="bg-gray-100 text-gray-500 text-xs py-0.5 px-2 rounded-full ml-1">
+                    {countByLevel(tab.name)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Question List */}
+          <div className="p-6 overflow-y-auto flex-1 space-y-4 bg-gray-50/30">
+
+            {/* Loading */}
+            {loading && (
+              <div className="flex items-center justify-center py-16 gap-3 text-gray-400">
+                <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                </svg>
+                Loading questions...
+              </div>
+            )}
+
+            {/* Empty state */}
+            {!loading && displayedQuestions.length === 0 && (
+              <div className="text-center py-16 text-gray-400">
+                <svg className="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <p className="text-sm">No <strong>{activeTab}</strong> questions for <strong>{selectedSubjectName}</strong>.</p>
+              </div>
+            )}
+
+            {/* Questions */}
+            {!loading && displayedQuestions.map((q) => (
+              <div
+                key={q.id}
+                className="bg-white border border-gray-200 rounded-lg p-5 transition-all hover:border-red-200 hover:shadow-sm"
               >
-                <span className={`w-2 h-2 rounded-full ${tab.dotColor}`}></span>
-                {tab.name}
-                <span className="bg-gray-100 text-gray-500 text-xs py-0.5 px-2 rounded-full ml-1">
-                  {tab.count}
-                </span>
-              </button>
+                {editingQuestion === q.id ? (
+                  <div className="space-y-3">
+                    <textarea
+                      className="w-full border border-gray-200 rounded-md p-3 text-sm text-gray-700 focus:outline-none focus:border-red-400 resize-none"
+                      rows={3}
+                      value={editForm.question}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, question: e.target.value }))}
+                    />
+                    <input
+                      className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+                      placeholder="Correct answer"
+                      value={editForm.correct_answer}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, correct_answer: e.target.value }))}
+                    />
+                    <input
+                      className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+                      placeholder="Explanation"
+                      value={editForm.explanation}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, explanation: e.target.value }))}
+                    />
+                    <div className="flex gap-2">
+                      <button onClick={handleEditSave} className="bg-red-600 hover:bg-red-700 text-white text-xs font-medium px-4 py-2 rounded-md">Save</button>
+                      <button onClick={() => setEditingQuestion(null)} className="bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium px-4 py-2 rounded-md">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex gap-4">
+                    <div className="pt-1">
+                      <input
+                        type="checkbox"
+                        className="w-5 h-5 rounded border-gray-300 cursor-pointer accent-red-500"
+                        checked={selectedQuestions.includes(q.id)}
+                        onChange={() => toggleSelection(q.id)}
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-gray-800 font-medium mb-3">{q.question}</p>
+
+                      {/* MCQ Options */}
+                      {q.options && Array.isArray(q.options) && (
+                        <div className="mb-3 space-y-1">
+                          {q.options.map((opt, i) => (
+                            <div key={i} className={`text-xs px-3 py-1.5 rounded-md ${
+                              opt === q.correct_answer
+                                ? 'bg-green-50 text-green-700 font-semibold border border-green-200'
+                                : 'bg-gray-50 text-gray-600'
+                            }`}>
+                              {opt}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Answer for non-MCQ */}
+                      {q.correct_answer && (!q.options || !Array.isArray(q.options)) && (
+                        <p className="text-xs text-green-700 bg-green-50 border border-green-100 rounded-md px-3 py-1.5 mb-3">
+                          <span className="font-semibold">Answer: </span>{q.correct_answer}
+                        </p>
+                      )}
+
+                      {/* Explanation */}
+                      {q.explanation && (
+                        <p className="text-xs text-gray-400 mb-3 italic">{q.explanation}</p>
+                      )}
+
+                      {/* Tags + Actions */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex flex-wrap gap-2 text-xs font-medium">
+                          <span className="bg-red-100 text-red-700 px-3 py-1 rounded-md">{q.bloom_level}</span>
+                          <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-md">{q.question_type}</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => handleEditOpen(q)} className="text-xs text-gray-400 hover:text-blue-600 transition-colors px-2 py-1">Edit</button>
+                          <button
+                            onClick={() => handleDelete(q.id)}
+                            disabled={deletingId === q.id}
+                            className="text-xs text-gray-400 hover:text-red-600 transition-colors px-2 py-1"
+                          >
+                            {deletingId === q.id ? 'Deleting...' : 'Delete'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
-          {/* Custom decorative scrollbar line from screenshot */}
-          <div className="h-2 bg-gray-400 mx-4 rounded-full flex items-center justify-between px-1 mb-2">
-            <div className="w-0 h-0 border-t-[4px] border-t-transparent border-r-[6px] border-r-white border-b-[4px] border-b-transparent"></div>
-            <div className="w-0 h-0 border-t-[4px] border-t-transparent border-l-[6px] border-l-white border-b-[4px] border-b-transparent"></div>
+        </div>
+      )}
+
+      {/* Sticky Bottom Footer — only show when subject is selected */}
+      {selectedSubject && (
+        <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] rounded-b-lg flex justify-between items-center z-10">
+          <div className="text-gray-700 font-medium">
+            Selected: <span className="text-red-600 font-bold text-lg">{selectedQuestions.length}</span>
           </div>
+          <button
+            disabled={selectedQuestions.length === 0}
+            className={`py-2 px-6 rounded-md font-medium text-sm transition-colors ${
+              selectedQuestions.length > 0
+                ? 'bg-[#b90000] hover:bg-[#990000] text-white shadow-sm'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            }`}
+          >
+            Generate Assessment ({selectedQuestions.length})
+          </button>
         </div>
-
-        {/* Question List Area */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-4 bg-gray-50/30">
-          {displayedQuestions.length > 0 ? (
-            displayedQuestions.map((q) => (
-              <div 
-                key={q.id} 
-                className="bg-white border border-gray-200 rounded-lg p-5 flex gap-4 transition-all hover:border-red-200 hover:shadow-sm"
-              >
-                <div className="pt-1">
-                  <input 
-                    type="checkbox" 
-                    className="w-5 h-5 rounded border-gray-300 text-red-500 focus:ring-red-500 cursor-pointer accent-red-500"
-                    checked={selectedQuestions.includes(q.id)}
-                    onChange={() => toggleSelection(q.id)}
-                  />
-                </div>
-                <div className="flex-1">
-                  <p className="text-gray-800 font-medium mb-3">{q.text}</p>
-                  <div className="flex flex-wrap gap-2 text-xs font-medium">
-                    <span className="bg-red-100 text-red-700 px-3 py-1 rounded-md">
-                      {q.level}
-                    </span>
-                    <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-md">
-                      {q.type}
-                    </span>
-                    <span className="text-gray-400 px-1 py-1">
-                      {q.topic}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="text-center py-10 text-gray-500">
-              No questions found for this cognitive level.
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Sticky Bottom Footer */}
-      <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] rounded-b-lg flex justify-between items-center z-10">
-        <div className="text-gray-700 font-medium">
-          Selected: <span className="text-red-600 font-bold text-lg">{selectedQuestions.length}</span>
-        </div>
-        <button 
-          disabled={selectedQuestions.length === 0}
-          className={`py-2 px-6 rounded-md font-medium text-sm transition-colors ${
-            selectedQuestions.length > 0
-              ? 'bg-[#b90000] hover:bg-[#990000] text-white shadow-sm'
-              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-          }`}
-        >
-          Generate Assessment
-        </button>
-      </div>
-
+      )}
     </div>
   );
 };
