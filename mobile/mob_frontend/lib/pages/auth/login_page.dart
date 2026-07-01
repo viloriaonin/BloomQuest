@@ -67,6 +67,14 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  void _openForgotPasswordDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const _ForgotPasswordDialog(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
@@ -300,7 +308,7 @@ class _LoginPageState extends State<LoginPage> {
         Align(
           alignment: Alignment.centerRight,
           child: TextButton(
-            onPressed: () {},
+            onPressed: _openForgotPasswordDialog,
             child: const Text(
               'Forgot Password?',
               style: TextStyle(color: Color(0xFFB01C1C), fontSize: 12),
@@ -365,6 +373,323 @@ class _LoginPageState extends State<LoginPage> {
             style: TextStyle(color: Colors.grey[400], fontSize: 11),
             textAlign: TextAlign.center,
           ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Forgot Password Dialog ──────────────────────────────────────────────────
+// 3 steps: enter email → enter OTP → set new password.
+// Mirrors the backend flow: /api/forgot-password/send-otp,
+// /api/forgot-password/verify-otp, /api/forgot-password/reset
+
+enum _ForgotStep { email, otp, newPassword }
+
+class _ForgotPasswordDialog extends StatefulWidget {
+  const _ForgotPasswordDialog();
+
+  @override
+  State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
+}
+
+class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
+  _ForgotStep step = _ForgotStep.email;
+  bool loading = false;
+  String error = '';
+
+  final emailController = TextEditingController();
+  final otpController = TextEditingController();
+  final newPasswordController = TextEditingController();
+  final confirmPasswordController = TextEditingController();
+  bool showPassword = false;
+  String?
+  debugOtp; // Backend returns the OTP directly since real email isn't wired up yet
+
+  @override
+  void dispose() {
+    emailController.dispose();
+    otpController.dispose();
+    newPasswordController.dispose();
+    confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendOtp() async {
+    if (emailController.text.trim().isEmpty) {
+      setState(() => error = 'Email address is required.');
+      return;
+    }
+    setState(() {
+      loading = true;
+      error = '';
+    });
+    try {
+      final data = await ApiService.sendPasswordResetOtp(
+        emailController.text.trim(),
+      );
+      if (!mounted) return;
+      setState(() {
+        step = _ForgotStep.otp;
+        debugOtp = data['otp']?.toString();
+      });
+    } catch (e) {
+      setState(() => error = e.toString().replaceAll('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> _verifyOtp() async {
+    if (otpController.text.trim().isEmpty) {
+      setState(() => error = 'Verification code is required.');
+      return;
+    }
+    setState(() {
+      loading = true;
+      error = '';
+    });
+    try {
+      await ApiService.verifyPasswordResetOtp(
+        emailController.text.trim(),
+        otpController.text.trim(),
+      );
+      if (!mounted) return;
+      setState(() => step = _ForgotStep.newPassword);
+    } catch (e) {
+      setState(() => error = e.toString().replaceAll('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    if (newPasswordController.text.isEmpty) {
+      setState(() => error = 'New password is required.');
+      return;
+    }
+    if (newPasswordController.text.length < 6) {
+      setState(() => error = 'Password must be at least 6 characters.');
+      return;
+    }
+    if (newPasswordController.text != confirmPasswordController.text) {
+      setState(() => error = 'Passwords do not match.');
+      return;
+    }
+    setState(() {
+      loading = true;
+      error = '';
+    });
+    try {
+      await ApiService.resetPassword(
+        emailController.text.trim(),
+        otpController.text.trim(),
+        newPasswordController.text,
+      );
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password reset successfully. Please log in.'),
+        ),
+      );
+    } catch (e) {
+      setState(() => error = e.toString().replaceAll('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  InputDecoration _fieldDecoration(String hint) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(fontSize: 13),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      title: Text(switch (step) {
+        _ForgotStep.email => 'Forgot Password',
+        _ForgotStep.otp => 'Enter Verification Code',
+        _ForgotStep.newPassword => 'Set New Password',
+      }, style: const TextStyle(fontSize: 17, color: Color(0xFF7B1113))),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (error.isNotEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                margin: const EdgeInsets.only(bottom: 14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFfef2f2),
+                  border: Border.all(color: const Color(0xFFfecaca)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  error,
+                  style: const TextStyle(
+                    color: Color(0xFF991b1b),
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            if (step == _ForgotStep.email) ...[
+              const Text(
+                'Enter your account email address. We\'ll send a verification code to reset your password.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: emailController,
+                keyboardType: TextInputType.emailAddress,
+                onSubmitted: (_) => loading ? null : _sendOtp(),
+                decoration: _fieldDecoration('Enter your email'),
+              ),
+            ],
+            if (step == _ForgotStep.otp) ...[
+              Text(
+                'A verification code was sent to ${emailController.text.trim()}.',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              if (debugOtp != null) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF7E0),
+                    border: Border.all(color: const Color(0xFFE8C97A)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.info_outline,
+                        size: 16,
+                        color: Color(0xFF8a6d1f),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: RichText(
+                          text: TextSpan(
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF8a6d1f),
+                            ),
+                            children: [
+                              const TextSpan(text: 'Dev mode — your code is: '),
+                              TextSpan(
+                                text: debugOtp,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 14),
+              TextField(
+                controller: otpController,
+                keyboardType: TextInputType.number,
+                onSubmitted: (_) => loading ? null : _verifyOtp(),
+                decoration: _fieldDecoration('Enter verification code'),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: loading ? null : _sendOtp,
+                  child: const Text(
+                    'Resend code',
+                    style: TextStyle(color: Color(0xFFB01C1C), fontSize: 12),
+                  ),
+                ),
+              ),
+            ],
+            if (step == _ForgotStep.newPassword) ...[
+              const Text(
+                'New Password',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: newPasswordController,
+                obscureText: !showPassword,
+                decoration: _fieldDecoration('Enter new password').copyWith(
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      showPassword ? Icons.visibility_off : Icons.visibility,
+                      size: 18,
+                      color: Colors.grey,
+                    ),
+                    onPressed: () =>
+                        setState(() => showPassword = !showPassword),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Confirm Password',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: confirmPasswordController,
+                obscureText: !showPassword,
+                onSubmitted: (_) => loading ? null : _resetPassword(),
+                decoration: _fieldDecoration('Re-enter new password'),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: loading ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFB01C1C),
+            foregroundColor: Colors.white,
+          ),
+          onPressed: loading
+              ? null
+              : switch (step) {
+                  _ForgotStep.email => _sendOtp,
+                  _ForgotStep.otp => _verifyOtp,
+                  _ForgotStep.newPassword => _resetPassword,
+                },
+          child: loading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Text(switch (step) {
+                  _ForgotStep.email => 'Send Code',
+                  _ForgotStep.otp => 'Verify',
+                  _ForgotStep.newPassword => 'Reset Password',
+                }),
         ),
       ],
     );
