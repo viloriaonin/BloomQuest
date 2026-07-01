@@ -9,6 +9,7 @@ from classifier import classify_question
 import models
 from datetime import datetime, timedelta
 import random
+from routers import assessment 
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -19,8 +20,8 @@ otp_store = {}
 # Allow React frontend to talk to this backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # React dev server
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -274,3 +275,5 @@ def delete_question(question_id: int, db: Session = Depends(get_db)):
     db.delete(q)
     db.commit()
     return {"message": "Question deleted successfully"}
+
+app.include_router(assessment.router)
