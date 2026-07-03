@@ -56,13 +56,18 @@ class AdminSidebar extends StatelessWidget {
                 const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('BloomQuest',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13)),
-                    Text('Admin Portal',
-                        style: TextStyle(color: Colors.white54, fontSize: 10)),
+                    Text(
+                      'BloomQuest',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Text(
+                      'Admin Portal',
+                      style: TextStyle(color: Colors.white54, fontSize: 10),
+                    ),
                   ],
                 ),
               ],
@@ -92,14 +97,17 @@ class AdminSidebar extends StatelessWidget {
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
                 color: isSelected ? kPrimaryDark : Colors.transparent,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 13,
+                ),
                 child: Row(
                   children: [
-                    Icon(item.icon,
-                        color:
-                            isSelected ? Colors.white : Colors.white60,
-                        size: 18),
+                    Icon(
+                      item.icon,
+                      color: isSelected ? Colors.white : Colors.white60,
+                      size: 18,
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -124,15 +132,20 @@ class AdminSidebar extends StatelessWidget {
           // Log out
           InkWell(
             onTap: () => Navigator.pushNamedAndRemoveUntil(
-                context, '/', (route) => false),
+              context,
+              '/',
+              (route) => false,
+            ),
             child: const Padding(
               padding: EdgeInsets.fromLTRB(16, 12, 16, 32),
               child: Row(
                 children: [
                   Icon(Icons.logout, color: Colors.white54, size: 18),
                   SizedBox(width: 10),
-                  Text('Log out',
-                      style: TextStyle(color: Colors.white54, fontSize: 13)),
+                  Text(
+                    'Log out',
+                    style: TextStyle(color: Colors.white54, fontSize: 13),
+                  ),
                 ],
               ),
             ),
