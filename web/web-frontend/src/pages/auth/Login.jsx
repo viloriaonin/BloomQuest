@@ -199,9 +199,14 @@ const Login = () => {
 
               <p className="text-center text-base text-gray-500">
                 Don't have an account?{" "}
-                <a href="#" className="font-bold hover:underline" style={{ color: "#B01C1C" }}>
+                <button
+                  type="button"
+                  onClick={() => navigate("/contact-admin")}
+                  className="font-bold hover:underline"
+                  style={{ color: "#B01C1C" }}
+                >
                   Contact your administrator
-                </a>
+                </button>
               </p>
 
             </div>

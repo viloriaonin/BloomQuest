@@ -2,6 +2,7 @@ import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/auth/Login";
 import ForgotPassword from "./pages/auth/Forgotpass";
+import ContactAdmin from "./pages/auth/ContactAdmin";
 import Dashboard from "./pages/users/Dashboard";
 import AdminDashboard from "./pages/admin/admindashboard";
 import InputQuestion from "./pages/users/InputQuestion";
@@ -43,6 +44,7 @@ function App() {
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/contact-admin" element={<ContactAdmin />} />
         
         <Route 
           path="/dashboard" 
