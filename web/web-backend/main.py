@@ -12,6 +12,9 @@ import models
 from datetime import datetime, timedelta
 import os
 import random
+from routers import assessment 
+from routers import questions
+from pydantic import BaseModel
 import secrets
 import smtplib
 import string
@@ -33,11 +36,12 @@ otp_store = {}
 # Allow React frontend to talk to this backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # React dev server
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 class LoginRequest(BaseModel):
     email: str
@@ -126,6 +130,10 @@ def _cleanup_otp(email: str):
     record = otp_store.get(email)
     if record and record["expires_at"] < datetime.utcnow():
         otp_store.pop(email, None)
+
+@app.get("/")
+def root():
+    return {"message": "Welcome to the API"}
 
 @app.post("/api/forgot-password/send-otp")
 def send_otp(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
@@ -616,3 +624,6 @@ def delete_question(question_id: int, db: Session = Depends(get_db)):
     db.delete(q)
     db.commit()
     return {"message": "Question deleted successfully"}
+
+app.include_router(questions.router)
+app.include_router(assessment.router)
