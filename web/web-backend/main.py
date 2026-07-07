@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text
@@ -22,6 +23,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "database.env"))
+from assessment_export import build_assessment_document
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -518,6 +520,7 @@ async def upload_files(
 async def generate_questions(
     upload_id: int = Form(...),
     total_items: int = Form(...),
+    question_types: str = Form(None),
     db: Session = Depends(get_db)
 ):
     try:
@@ -528,7 +531,8 @@ async def generate_questions(
             raise HTTPException(status_code=404, detail="Upload not found")
 
         topics_data = detect_topics(upload.syllabus_text, upload.module_text)
-        tos = compute_tos(total_items, topics_data["topics"])
+        selected_question_types = [value.strip() for value in question_types.split(",") if value.strip()] if question_types else None
+        tos = compute_tos(total_items, topics_data["topics"], selected_question_types=selected_question_types)
 
         tos_record = models.TableOfSpecification(
             upload_id=upload.id,
@@ -547,8 +551,15 @@ async def generate_questions(
             upload.module_text,
             upload.syllabus_text,
             tos,
-            subject.name
+            subject.name,
+            selected_question_types=selected_question_types
         )
+
+        bloom_distribution = {}
+        question_type_distribution = {}
+        for q in questions:
+            bloom_distribution[q["bloom_level"]] = bloom_distribution.get(q["bloom_level"], 0) + 1
+            question_type_distribution[q["type"]] = question_type_distribution.get(q["type"], 0) + 1
 
         for q in questions:
             bloom_level = classify_question(q["question"])
@@ -569,6 +580,9 @@ async def generate_questions(
             "tos_id": tos_record.id,
             "tos": tos,
             "total_questions": len(questions),
+            "questions_preview": questions,
+            "bloom_distribution": bloom_distribution,
+            "question_type_distribution": question_type_distribution,
             "message": f"Successfully generated and classified {len(questions)} questions!"
         }
     except Exception as e:
@@ -624,6 +638,51 @@ def delete_question(question_id: int, db: Session = Depends(get_db)):
     db.delete(q)
     db.commit()
     return {"message": "Question deleted successfully"}
+
+@app.post("/api/questions/export")
+def export_assessment(
+    subject_id: int = Form(...),
+    question_ids: str = Form(...),
+    export_format: str = Form("pdf"),
+    db: Session = Depends(get_db)
+):
+    try:
+        selected_ids = []
+        for item in (question_ids or "").split(","):
+            item = item.strip()
+            if item.isdigit():
+                selected_ids.append(int(item))
+
+        if not selected_ids:
+            raise HTTPException(status_code=400, detail="No valid question IDs were provided")
+
+        subject = db.query(models.Subject).filter(models.Subject.id == subject_id).first()
+        if not subject:
+            raise HTTPException(status_code=404, detail="Subject not found")
+
+        questions = db.query(models.GeneratedQuestion).filter(
+            models.GeneratedQuestion.id.in_(selected_ids),
+            models.GeneratedQuestion.subject_id == subject_id
+        ).all()
+        if not questions:
+            raise HTTPException(status_code=404, detail="No questions selected")
+
+        normalized_questions = []
+        for question in questions:
+            normalized_questions.append(type("QuestionLike", (), {
+                "question": getattr(question, "question", "") or "",
+                "question_type": getattr(question, "question_type", "") or "",
+                "options": getattr(question, "options", None) or [],
+                "correct_answer": getattr(question, "correct_answer", "") or "",
+            })())
+
+        content, filename = build_assessment_document(normalized_questions, subject.name, export_format.lower())
+        media_type = "application/pdf" if export_format.lower() == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        return Response(content=content, media_type=media_type, headers={"Content-Disposition": f"attachment; filename={filename}"})
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 app.include_router(questions.router)
 app.include_router(assessment.router)

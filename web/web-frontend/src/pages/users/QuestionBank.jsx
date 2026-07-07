@@ -23,6 +23,8 @@ const QuestionBank = () => {
   const [deletingId, setDeletingId]           = useState(null);
   const [editingQuestion, setEditingQuestion] = useState(null);
   const [editForm, setEditForm]               = useState({});
+  const [exporting, setExporting]             = useState(false);
+  const [exportFormat, setExportFormat]       = useState('pdf');
 
   // Fetch subjects on mount
   useEffect(() => {
@@ -120,8 +122,38 @@ const QuestionBank = () => {
   const displayedQuestions = questions.filter(q => q.bloom_level === activeTab);
   const selectedSubjectName = subjects.find(s => s.id === parseInt(selectedSubject))?.name || '';
 
+  const handleGenerateAssessment = async () => {
+    if (selectedQuestions.length === 0) return;
+    setExporting(true);
+    setError('');
+    try {
+      const formData = new FormData();
+      formData.append('subject_id', selectedSubject);
+      formData.append('question_ids', selectedQuestions.join(','));
+      formData.append('export_format', exportFormat);
+      const res = await fetch(`${API_URL}/api/questions/export`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (!res.ok) throw new Error('Assessment export failed');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `assessment.${exportFormat === 'pdf' ? 'pdf' : 'docx'}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
-    <div className="max-w-5xl w-full p-2 h-full flex flex-col relative">
+    <div className="max-w-5xl w-full p-2 min-h-full flex flex-col relative overflow-visible">
 
       {/* Header */}
       <div className="mb-4">
@@ -137,10 +169,10 @@ const QuestionBank = () => {
       )}
 
       {/* Subject Filter */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 mb-4 flex items-center gap-4">
+      <div className="relative z-20 bg-white rounded-lg shadow-sm border border-gray-100 p-4 mb-4 flex flex-wrap items-center gap-4">
         <span className="text-gray-600 font-medium text-sm whitespace-nowrap">Filter by Subject:</span>
         <select
-          className="border border-gray-200 rounded-md p-2 text-sm text-gray-600 focus:outline-none focus:border-red-400 flex-1 max-w-xs"
+          className="border border-gray-200 rounded-md p-2 text-sm text-gray-600 focus:outline-none focus:border-red-400 flex-1 max-w-xs cursor-pointer"
           value={selectedSubject}
           onChange={(e) => setSelectedSubject(e.target.value)}
           disabled={loadingSubjects}
@@ -186,7 +218,7 @@ const QuestionBank = () => {
 
       {/* Subject selected — show tabs and questions */}
       {selectedSubject && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 flex-1 flex flex-col overflow-hidden mb-20">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 flex-1 flex flex-col overflow-visible mb-20">
 
           {/* Bloom's Tabs */}
           <div className="border-b border-gray-200 overflow-x-auto">
@@ -334,19 +366,33 @@ const QuestionBank = () => {
 
       {/* Sticky Bottom Footer — only show when subject is selected */}
       {selectedSubject && (
-        <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] rounded-b-lg flex justify-between items-center z-10">
-          <div className="text-gray-700 font-medium">
-            Selected: <span className="text-red-600 font-bold text-lg">{selectedQuestions.length}</span>
+        <div className="sticky bottom-0 left-0 right-0 mt-auto bg-white border-t border-gray-200 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] rounded-b-lg flex justify-between items-center z-20 gap-3">
+          <div className="flex items-center gap-3">
+            <div className="text-gray-700 font-medium">
+              Selected: <span className="text-red-600 font-bold text-lg">{selectedQuestions.length}</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <span>Format:</span>
+              <select
+                value={exportFormat}
+                onChange={(e) => setExportFormat(e.target.value)}
+                className="border border-gray-200 rounded-md px-2 py-1 text-sm focus:outline-none focus:border-red-400"
+              >
+                <option value="pdf">PDF</option>
+                <option value="docx">Word</option>
+              </select>
+            </div>
           </div>
           <button
-            disabled={selectedQuestions.length === 0}
+            onClick={handleGenerateAssessment}
+            disabled={selectedQuestions.length === 0 || exporting}
             className={`py-2 px-6 rounded-md font-medium text-sm transition-colors ${
-              selectedQuestions.length > 0
+              selectedQuestions.length > 0 && !exporting
                 ? 'bg-[#b90000] hover:bg-[#990000] text-white shadow-sm'
                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
             }`}
           >
-            Generate Assessment ({selectedQuestions.length})
+            {exporting ? 'Preparing...' : `Generate Assessment (${selectedQuestions.length})`}
           </button>
         </div>
       )}
