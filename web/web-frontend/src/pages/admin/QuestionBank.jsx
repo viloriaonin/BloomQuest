@@ -181,10 +181,10 @@ export const QuestionBankContent = () => {
       )}
 
       {/* ── Subject Filter ── */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 mb-4 flex items-center gap-4">
+      <div className="relative z-20 bg-white rounded-lg shadow-sm border border-gray-100 p-4 mb-4 flex flex-wrap items-center gap-4">
         <span className="text-gray-600 font-medium text-sm whitespace-nowrap">Filter by Subject:</span>
         <select
-          className="border border-gray-200 rounded-md p-2 text-sm text-gray-600 focus:outline-none focus:border-red-400 flex-1 max-w-xs"
+          className="border border-gray-200 rounded-md p-2 text-sm text-gray-600 focus:outline-none focus:border-red-400 flex-1 max-w-xs cursor-pointer"
           value={selectedSubject}
           onChange={(e) => setSelectedSubject(e.target.value)}
           disabled={loadingSubjects}
@@ -230,7 +230,7 @@ export const QuestionBankContent = () => {
 
       {/* Subject selected — show tabs and questions */}
       {selectedSubject && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 flex-1 flex flex-col overflow-hidden mb-20">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 flex-1 flex flex-col overflow-visible mb-20">
 
           {/* Bloom's Tabs */}
           <div className="border-b border-gray-200 overflow-x-auto">
@@ -378,7 +378,7 @@ export const QuestionBankContent = () => {
 
       {/* Sticky Bottom Footer — only show when subject is selected */}
       {selectedSubject && (
-        <div className="fixed bottom-0 left-0 right-0 lg:left-64 bg-white border-t border-gray-200 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] flex justify-between items-center z-10">
+        <div className="sticky bottom-0 left-0 right-0 mt-auto bg-white border-t border-gray-200 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] flex justify-between items-center z-20">
           <div className="text-gray-700 font-medium max-w-5xl mx-auto w-full flex justify-between items-center px-2">
             <span>Selected: <span className="text-red-600 font-bold text-lg">{selectedQuestions.length}</span></span>
             <button

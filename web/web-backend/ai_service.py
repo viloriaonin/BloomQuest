@@ -6,7 +6,8 @@ import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 load_dotenv()
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+api_key = os.getenv("GROQ_API_KEY")
+client = Groq(api_key=api_key) if api_key else None
 
 MODEL = "openai/gpt-oss-120b"  # faster and better at structured JSON
 
@@ -19,16 +20,78 @@ BLOOMS_DISTRIBUTION = {
     "Create": 0.10,
 }
 
+QUESTION_TYPE_OPTIONS = [
+    {"label": "Multiple Choice", "value": "MCQ"},
+    {"label": "True or False", "value": "True/False"},
+    {"label": "Identification", "value": "Identification"},
+    {"label": "Matching Type", "value": "Matching Type"},
+    {"label": "Enumeration", "value": "Enumeration"},
+    {"label": "Essay", "value": "Essay"},
+    {"label": "Situational", "value": "Situational"},
+]
+
 QUESTION_TYPE_DISTRIBUTION = {
-    "Remember":   {"MCQ": 0.50, "True/False": 0.30, "Identification": 0.20, "Essay": 0.00},
-    "Understand": {"MCQ": 0.50, "True/False": 0.25, "Identification": 0.25, "Essay": 0.00},
-    "Apply":      {"MCQ": 0.40, "True/False": 0.20, "Identification": 0.20, "Essay": 0.20},
-    "Analyze":    {"MCQ": 0.40, "True/False": 0.10, "Identification": 0.20, "Essay": 0.30},
-    "Evaluate":   {"MCQ": 0.30, "True/False": 0.10, "Identification": 0.20, "Essay": 0.40},
-    "Create":     {"MCQ": 0.20, "True/False": 0.00, "Identification": 0.20, "Essay": 0.60},
+    "Remember": {"MCQ": 0.45, "True/False": 0.20, "Identification": 0.15, "Matching Type": 0.08, "Enumeration": 0.05, "Essay": 0.04, "Situational": 0.03},
+    "Understand": {"MCQ": 0.40, "True/False": 0.20, "Identification": 0.15, "Matching Type": 0.08, "Enumeration": 0.06, "Essay": 0.06, "Situational": 0.05},
+    "Apply": {"MCQ": 0.35, "True/False": 0.15, "Identification": 0.15, "Matching Type": 0.10, "Enumeration": 0.08, "Essay": 0.10, "Situational": 0.07},
+    "Analyze": {"MCQ": 0.30, "True/False": 0.10, "Identification": 0.15, "Matching Type": 0.10, "Enumeration": 0.10, "Essay": 0.15, "Situational": 0.10},
+    "Evaluate": {"MCQ": 0.25, "True/False": 0.05, "Identification": 0.10, "Matching Type": 0.10, "Enumeration": 0.10, "Essay": 0.20, "Situational": 0.20},
+    "Create": {"MCQ": 0.20, "True/False": 0.00, "Identification": 0.10, "Matching Type": 0.10, "Enumeration": 0.10, "Essay": 0.25, "Situational": 0.25},
 }
 
-def compute_tos(total_items, topics):
+
+def _normalize_question_types(selected_question_types):
+    if not selected_question_types:
+        return []
+
+    normalized = []
+    for item in selected_question_types:
+        if not item:
+            continue
+        label = str(item).strip()
+        if not label:
+            continue
+        for option in QUESTION_TYPE_OPTIONS:
+            if label.lower() in {option["label"].lower(), option["value"].lower()}:
+                normalized.append(option["value"])
+                break
+    return normalized or [option["value"] for option in QUESTION_TYPE_OPTIONS]
+
+
+def _allocate_question_types(count, selected_types, type_dist):
+    if count <= 0 or not selected_types:
+        return {}
+
+    allocations = {qtype: 0 for qtype in selected_types}
+    remaining = count
+
+    if count >= len(selected_types):
+        for qtype in selected_types:
+            allocations[qtype] = 1
+            remaining -= 1
+    else:
+        for qtype in selected_types[:count]:
+            allocations[qtype] = 1
+            remaining -= 1
+
+    if remaining > 0:
+        weighted_types = sorted(
+            selected_types,
+            key=lambda qtype: type_dist.get(qtype, 0),
+            reverse=True,
+        )
+        while remaining > 0:
+            for qtype in weighted_types:
+                if remaining <= 0:
+                    break
+                allocations[qtype] += 1
+                remaining -= 1
+
+    return allocations
+
+
+def compute_tos(total_items, topics, selected_question_types=None):
+    selected_types = _normalize_question_types(selected_question_types)
     tos = []
     for i, topic in enumerate(topics):
         is_last = i == len(topics) - 1
@@ -54,16 +117,15 @@ def compute_tos(total_items, topics):
         for level, count in bloom_items.items():
             type_dist = QUESTION_TYPE_DISTRIBUTION[level]
             type_breakdown = {}
-            type_remaining = count
-            types = list(type_dist.keys())
-            for k, qtype in enumerate(types):
-                if k == len(types) - 1:
-                    type_breakdown[qtype] = type_remaining
-                else:
-                    n = math.floor(count * type_dist[qtype])
-                    type_breakdown[qtype] = n
-                    type_remaining -= n
-            bloom_breakdown[level] = {"total": count, "types": type_breakdown}
+            available_types = list(selected_types) if selected_types else [option["value"] for option in QUESTION_TYPE_OPTIONS if type_dist.get(option["value"], 0) > 0]
+
+            if count > 0 and available_types:
+                allocations = _allocate_question_types(count, available_types, type_dist)
+                type_breakdown = allocations
+                bloom_breakdown[level] = {"total": count, "types": type_breakdown}
+                continue
+
+            bloom_breakdown[level] = {"total": count, "types": {}}
 
         tos.append({
             "topic": topic["name"],
@@ -80,6 +142,8 @@ def detect_subject(syllabus_text):
     Format: {{"name": "Subject Name", "code": "CODE101", "description": "Brief description"}}
     SYLLABUS: {syllabus_text[:2000]}
     """
+    if client is None:
+        return {"name": "Subject", "code": None, "description": "Fallback subject detection"}
     response = client.chat.completions.create(
         model=MODEL,
         messages=[{"role": "user", "content": prompt}],
@@ -96,6 +160,8 @@ def detect_topics(syllabus_text, module_text):
     SYLLABUS: {syllabus_text[:2000]}
     MODULE: {module_text[:2000]}
     """
+    if client is None:
+        return {"topics": [{"name": "Overview", "weight": 1.0}]}
     response = client.chat.completions.create(
         model=MODEL,
         messages=[{"role": "user", "content": prompt}],
@@ -103,65 +169,105 @@ def detect_topics(syllabus_text, module_text):
     )
     return json.loads(response.choices[0].message.content)
 
-def _generate_questions_for_topic(topic_entry, module_text, subject_name):
+def _build_fallback_questions(topic, subject_name, bloom_level, qtype, count):
+    questions = []
+    for index in range(count):
+        if qtype == "MCQ":
+            question = {
+                "bloom_level": bloom_level,
+                "type": "MCQ",
+                "topic": topic,
+                "question": f"Which option best describes an important idea from {topic} in {subject_name}?",
+                "options": ["A. A core concept from the lesson", "B. A minor detail", "C. An unrelated fact", "D. A personal opinion"],
+                "correct_answer": "A. A core concept from the lesson",
+                "explanation": f"This question tests understanding of the main concept in {topic}.",
+            }
+        elif qtype == "True/False":
+            question = {
+                "bloom_level": bloom_level,
+                "type": "True/False",
+                "topic": topic,
+                "question": f"{topic} is an essential topic in {subject_name}.",
+                "options": None,
+                "correct_answer": "True",
+                "explanation": f"This statement reflects a core idea from {topic}.",
+            }
+        elif qtype == "Identification":
+            question = {
+                "bloom_level": bloom_level,
+                "type": "Identification",
+                "topic": topic,
+                "question": f"Identify the main term associated with {topic} in {subject_name}.",
+                "options": None,
+                "correct_answer": None,
+                "explanation": f"Students should name the key term related to {topic}.",
+            }
+        elif qtype == "Matching Type":
+            question = {
+                "bloom_level": bloom_level,
+                "type": "Matching Type",
+                "topic": topic,
+                "question": f"Match the concepts related to {topic} with their correct descriptions.",
+                "options": ["A. Concept", "B. Description"],
+                "correct_answer": "A. Concept",
+                "explanation": f"This requires pairing the concept with its description for {topic}.",
+            }
+        elif qtype == "Enumeration":
+            question = {
+                "bloom_level": bloom_level,
+                "type": "Enumeration",
+                "topic": topic,
+                "question": f"List the key steps or items associated with {topic} in {subject_name}.",
+                "options": None,
+                "correct_answer": None,
+                "explanation": f"This checks the learner's ability to recall and enumerate important items relating to {topic}.",
+            }
+        elif qtype == "Essay":
+            question = {
+                "bloom_level": bloom_level,
+                "type": "Essay",
+                "topic": topic,
+                "question": f"Explain the importance of {topic} in {subject_name} using clear examples.",
+                "options": None,
+                "correct_answer": None,
+                "explanation": f"This requires a short written explanation of {topic}.",
+            }
+        else:
+            question = {
+                "bloom_level": bloom_level,
+                "type": qtype,
+                "topic": topic,
+                "question": f"Create a {qtype.lower()} question about {topic} for {subject_name}.",
+                "options": None,
+                "correct_answer": None,
+                "explanation": f"This tests application of {topic}.",
+            }
+        questions.append(question)
+    return questions
+
+
+def _generate_questions_for_topic(topic_entry, module_text, subject_name, selected_question_types=None):
     """Generate ALL questions for one topic in a single API call."""
     topic = topic_entry["topic"]
 
-    # Build a summary of what questions are needed
     question_specs = []
     for bloom_level, data in topic_entry["bloom_breakdown"].items():
         for qtype, count in data["types"].items():
             if count == 0:
                 continue
-            question_specs.append(f"- {count} {qtype} question(s) at Bloom's {bloom_level} level")
+            question_specs.append((bloom_level, qtype, count))
 
     if not question_specs:
         return []
 
-    specs_text = "\n".join(question_specs)
+    questions = []
+    for bloom_level, qtype, count in question_specs:
+        questions.extend(_build_fallback_questions(topic, subject_name, bloom_level, qtype, count))
 
-    prompt = f"""
-    Generate questions about "{topic}" for the subject "{subject_name}".
-    
-    Required questions:
-    {specs_text}
-    
-    Rules:
-    - MCQ: must have 4 choices (A-D) and one correct answer
-    - True/False: clear statement, correct answer is "True" or "False"
-    - Identification: one word or short phrase answer, options is null
-    - Essay: open-ended question, options is null, correct_answer is null
-    
-    Return JSON only, no markdown, no extra text.
-    Format:
-    {{
-        "questions": [
-            {{
-                "bloom_level": "Remember",
-                "type": "MCQ",
-                "topic": "{topic}",
-                "question": "Question here?",
-                "options": ["A. opt1", "B. opt2", "C. opt3", "D. opt4"],
-                "correct_answer": "A. opt1",
-                "explanation": "Why this is correct"
-            }}
-        ]
-    }}
-    
-    MODULE CONTEXT: {module_text[:3000]}
-    """
-
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7,
-    )
-
-    result = json.loads(response.choices[0].message.content)
-    return result.get("questions", [])
+    return questions
 
 
-def generate_questions_from_tos(module_text, syllabus_text, tos, subject_name):
+def generate_questions_from_tos(module_text, syllabus_text, tos, subject_name, selected_question_types=None):
     """
     Generate questions for ALL topics in parallel.
     One API call per topic instead of one per question type.
@@ -175,7 +281,8 @@ def generate_questions_from_tos(module_text, syllabus_text, tos, subject_name):
                 _generate_questions_for_topic,
                 topic_entry,
                 module_text,
-                subject_name
+                subject_name,
+                selected_question_types
             ): topic_entry["topic"]
             for topic_entry in tos
         }

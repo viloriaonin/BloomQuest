@@ -2,6 +2,15 @@ import React, { useState, useRef } from 'react';
 
 const API_URL = 'http://localhost:8000';
 const BLOOMS_LEVELS = ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'];
+const QUESTION_TYPE_OPTIONS = [
+  { label: 'Multiple Choice', value: 'MCQ' },
+  { label: 'True or False', value: 'True/False' },
+  { label: 'Identification', value: 'Identification' },
+  { label: 'Matching Type', value: 'Matching Type' },
+  { label: 'Enumeration', value: 'Enumeration' },
+  { label: 'Essay', value: 'Essay' },
+  { label: 'Situational', value: 'Situational' },
+];
 
 const InputQuestion = () => {
   const [activeTab, setActiveTab] = useState('upload');
@@ -14,12 +23,19 @@ const InputQuestion = () => {
 
   // TOS states
   const [totalItems, setTotalItems] = useState('');
+  const [selectedQuestionTypes, setSelectedQuestionTypes] = useState([]);
   const [generating, setGenerating] = useState(false);
   const [generationResult, setGenerationResult] = useState(null);
   const [error, setError] = useState('');
 
   const moduleInputRef = useRef();
   const syllabusInputRef = useRef();
+
+  const toggleQuestionType = (value) => {
+    setSelectedQuestionTypes((current) =>
+      current.includes(value) ? current.filter((item) => item !== value) : [...current, value]
+    );
+  };
 
   // Handle file upload
   const handleUpload = async () => {
@@ -65,6 +81,7 @@ const InputQuestion = () => {
       const formData = new FormData();
       formData.append('upload_id', uploadResult.upload_id);
       formData.append('total_items', totalItems);
+      formData.append('question_types', selectedQuestionTypes.join(','));
 
       const response = await fetch(`${API_URL}/api/generate`, {
         method: 'POST',
@@ -282,14 +299,34 @@ const InputQuestion = () => {
                     />
                   </div>
                   <p className="text-xs text-gray-400 mt-1">
-                    Questions will be auto-distributed across all 6 Bloom's Taxonomy levels
+                    Questions will be auto-distributed across the selected Bloom's Taxonomy levels and question types.
                   </p>
+                </div>
+
+                <div className="border border-gray-200 rounded-lg p-4">
+                  <p className="text-xs font-bold text-gray-600 uppercase mb-3">Question Types</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {QUESTION_TYPE_OPTIONS.map((option) => {
+                      const checked = selectedQuestionTypes.includes(option.value);
+                      return (
+                        <label key={option.value} className="flex items-center gap-2 text-sm text-gray-700 rounded-md border border-gray-200 px-3 py-2 cursor-pointer hover:bg-gray-50">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleQuestionType(option.value)}
+                            className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                          />
+                          <span>{option.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Generate Button */}
                 <button
                   onClick={handleGenerate}
-                  disabled={generating || !totalItems}
+                  disabled={generating || !totalItems || selectedQuestionTypes.length === 0}
                   className="w-full bg-[#b90000] hover:bg-[#990000] disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium py-3 rounded-md transition-colors text-sm"
                 >
                   {generating ? (
@@ -347,6 +384,52 @@ const InputQuestion = () => {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+                  <div className="rounded-lg border border-gray-200 bg-white p-4">
+                    <p className="text-xs font-bold text-gray-600 uppercase mb-3">Question Preview</p>
+                    <div className="max-h-80 overflow-y-auto space-y-3">
+                      {(generationResult.questions_preview || []).map((question, idx) => (
+                        <div key={`${question.type}-${idx}`} className="rounded-md border border-gray-100 bg-gray-50 p-3">
+                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                            <span className="text-[11px] font-semibold uppercase text-red-600">{question.type}</span>
+                            <span className="text-[11px] text-gray-500">{question.bloom_level}</span>
+                          </div>
+                          <p className="text-sm text-gray-700">{question.question}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
+                    <p className="text-xs font-bold text-gray-600 uppercase">Bloom Distribution</p>
+                    <div className="space-y-2">
+                      {Object.entries(generationResult.bloom_distribution || {}).map(([level, count]) => (
+                        <div key={level}>
+                          <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                            <span>{level}</span>
+                            <span>{count}</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-gray-100">
+                            <div className="h-2 rounded-full bg-red-600" style={{ width: `${Math.max(8, (count / Math.max(1, generationResult.total_questions)) * 100)}%` }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="border-t border-gray-100 pt-3">
+                      <p className="text-xs font-bold text-gray-600 uppercase mb-2">Question Type Distribution</p>
+                      <div className="space-y-1">
+                        {Object.entries(generationResult.question_type_distribution || {}).map(([type, count]) => (
+                          <div key={type} className="flex items-center justify-between text-xs text-gray-600">
+                            <span>{type}</span>
+                            <span>{count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
