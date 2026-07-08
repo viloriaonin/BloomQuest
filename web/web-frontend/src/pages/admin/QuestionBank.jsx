@@ -398,6 +398,38 @@ export const QuestionBankContent = () => {
   );
 };
 
-const QuestionBank = () => <QuestionBankContent />;
+const QuestionBankBtn = ({ activeTab, setActiveTab }) => {
+  const isActive = activeTab === "question-bank";
 
-export default QuestionBank;
+  return (
+    <button
+      onClick={() => setActiveTab("question-bank")}
+      className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150 relative"
+      style={
+        isActive
+          ? {
+              background: "rgba(255,255,255,0.15)",
+              color: "#ffffff",
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1)",
+            }
+          : { color: "rgba(255,255,255,0.65)", background: "transparent" }
+      }
+    >
+      {isActive && (
+        <span
+          className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full"
+          style={{ background: "#fff" }}
+        />
+      )}
+      {/* Clipboard list icon for Question Bank */}
+      <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"
+        style={{ color: isActive ? "#ffffff" : "rgba(255,255,255,0.5)" }}>
+        <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+        <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
+      </svg>
+      <span className="text-sm font-medium tracking-wide">Question Bank</span>
+    </button>
+  );
+};
+
+export default QuestionBankBtn;
