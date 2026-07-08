@@ -1,5 +1,7 @@
 import React, { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { usePopup } from "../../components/PopupProvider";
+import LoadingSpinner from "../../components/LoadingSpinner";
 import logo from "../../assets/images/bloomquest-logo.png";
 
 const SEND_OTP_URL    = "http://localhost:8000/api/forgot-password/send-otp";
@@ -26,6 +28,7 @@ const getStrength = (pw) => {
 
 const ForgotPassword = () => {
   const navigate = useNavigate();
+  const { showAlert } = usePopup();
 
   // steps: "email" | "otp" | "reset" | "done"
   const [step, setStep]         = useState("email");
@@ -37,10 +40,7 @@ const ForgotPassword = () => {
   const [showCf, setShowCf]     = useState(false);
   const [error, setError]       = useState("");
   const [loading, setLoading]   = useState(false);
-
-  // Demo-only OTP
-  const [demoOtp, setDemoOtp]           = useState("");
-  const [showDemoPanel, setShowDemoPanel] = useState(true);
+  const [demoCode, setDemoCode] = useState("");
 
   const otpRefs = useRef([]);
 
@@ -61,16 +61,13 @@ const ForgotPassword = () => {
         body: JSON.stringify({ email }),
       });
 
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
         setError(data.detail || "Unable to send reset code. Please check the email and try again.");
         return;
       }
 
-      const data = await response.json().catch(() => ({}));
-      const generated = data.otp || String(Math.floor(100000 + Math.random() * 900000));
-      setDemoOtp(generated);
-      setShowDemoPanel(true);
+      setDemoCode(data.demo_code || "");
       setStep("otp");
     } catch {
       setError("Unable to connect to the server. Please try again later.");
@@ -80,16 +77,12 @@ const ForgotPassword = () => {
   };
 
   // ── Step 2: Verify OTP ─────────────────────────────────────────
-  const handleOtpSubmit = async () => {
+  const handleOtpSubmit = async (autoCode) => {
     setError("");
-    const code = otp.join("");
+    // Use the passed code if provided (from auto-submit), otherwise join the array
+    const code = typeof autoCode === "string" ? autoCode : otp.join("");
+    
     if (code.length < 6) { setError("Please enter the full 6-digit code."); return; }
-
-    // Demo: check against generated code
-    if (code !== demoOtp) {
-      setError("Incorrect code. Check the demo panel and try again.");
-      return;
-    }
 
     setLoading(true);
     try {
@@ -101,7 +94,10 @@ const ForgotPassword = () => {
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        setError(data.detail || "Verification failed. Please try again.");
+        setError(data.detail || "Incorrect code. Please try again.");
+        // Clear the OTP fields so the user can type again
+        setOtp(["", "", "", "", "", ""]);
+        otpRefs.current[0]?.focus();
         return;
       }
 
@@ -149,7 +145,18 @@ const ForgotPassword = () => {
     const next = [...otp];
     next[index] = value;
     setOtp(next);
-    if (value && index < 5) otpRefs.current[index + 1]?.focus();
+    
+    if (value && index < 5) {
+      otpRefs.current[index + 1]?.focus();
+    } 
+    
+    // Auto-submit when the 6th box is filled
+    if (value && index === 5) {
+      const fullCode = next.join("");
+      if (fullCode.length === 6) {
+        handleOtpSubmit(fullCode);
+      }
+    }
   };
 
   const handleOtpKeyDown = (index, e) => {
@@ -165,6 +172,11 @@ const ForgotPassword = () => {
     pasted.split("").forEach((ch, i) => { next[i] = ch; });
     setOtp(next);
     otpRefs.current[Math.min(pasted.length, 5)]?.focus();
+    
+    // Auto-submit if exactly 6 digits were pasted
+    if (pasted.length === 6) {
+        handleOtpSubmit(pasted);
+    }
   };
 
   const resendOtp = async () => {
@@ -182,8 +194,7 @@ const ForgotPassword = () => {
         setError(data.detail || "Unable to resend code. Please try again.");
         return;
       }
-      setDemoOtp(data.otp || String(Math.floor(100000 + Math.random() * 900000)));
-      setShowDemoPanel(true);
+      showAlert("A new verification code has been sent to your email.");
     } catch {
       setError("Unable to resend code. Please try again later.");
     } finally {
@@ -238,62 +249,10 @@ const ForgotPassword = () => {
     </svg>
   );
 
-  // ── Demo OTP Panel ─────────────────────────────────────────────
-  const DemoPanel = () =>
-    demoOtp && showDemoPanel ? (
-      <div
-        className="mb-6 rounded-lg border px-4 py-3 flex items-start gap-3"
-        style={{ background: "rgba(212,175,55,0.07)", borderColor: "rgba(212,175,55,0.4)" }}
-      >
-        <svg className="w-5 h-5 mt-0.5 flex-shrink-0" fill="none" stroke="#B8860B" strokeWidth="1.75" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 110 20A10 10 0 0112 2z" />
-        </svg>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold mb-0.5" style={{ color: "#7a5c00" }}>
-            Demo Mode — OTP not actually sent via email
-          </p>
-          <p className="text-xs text-gray-500 mb-2">
-            In production this code is emailed to{" "}
-            <span className="font-medium">{email}</span>. Use the code below to test:
-          </p>
-          <div className="flex items-center gap-2">
-            <span
-              className="text-2xl font-bold"
-              style={{ color: "#7B1113", letterSpacing: "0.25em" }}
-            >
-              {demoOtp}
-            </span>
-            <button
-              onClick={() => {
-                const digits = demoOtp.split("");
-                setOtp(digits);
-                setTimeout(() => otpRefs.current[5]?.focus(), 50);
-              }}
-              className="text-xs px-2 py-1 rounded border font-medium transition"
-              style={{ color: "#7B1113", borderColor: "rgba(123,17,19,0.3)" }}
-              onMouseOver={(e) => (e.currentTarget.style.background = "rgba(123,17,19,0.05)")}
-              onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
-            >
-              Auto-fill
-            </button>
-          </div>
-        </div>
-        <button
-          onClick={() => setShowDemoPanel(false)}
-          className="text-gray-400 hover:text-gray-600 transition flex-shrink-0"
-          aria-label="Dismiss"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-    ) : null;
-
   // ── Step renderers ─────────────────────────────────────────────
   const renderEmail = () => (
     <>
-      <BackButton label="Back to Login" onClick={() => navigate("/login")} />
+      <BackButton label="Back to Login" onClick={() => navigate("/")} />
       <div className="mb-8">
         <div
           className="w-12 h-12 rounded-xl flex items-center justify-center mb-5"
@@ -334,7 +293,7 @@ const ForgotPassword = () => {
     <>
       <BackButton
         label="Change email"
-        onClick={() => { setStep("email"); setError(""); setOtp(["", "", "", "", "", ""]); setDemoOtp(""); }}
+        onClick={() => { setStep("email"); setError(""); setOtp(["", "", "", "", "", ""]); }}
       />
       <div className="mb-6">
         <div
@@ -352,8 +311,31 @@ const ForgotPassword = () => {
         </p>
       </div>
 
-      <DemoPanel />
       <ErrorBox msg={error} />
+
+      {demoCode ? (
+        <div className="mb-4 text-sm text-gray-600 rounded-lg border border-gray-200 bg-gray-50 p-4">
+          <p className="font-semibold text-gray-900">Demo Mode — OTP not actually sent via email</p>
+          <p className="mt-1 text-sm text-gray-600">
+            Use the demo code below to continue, or paste your real email code if it arrives.
+          </p>
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="inline-flex items-center rounded-lg bg-white px-3 py-2 text-lg font-semibold tracking-widest text-red-700 shadow-sm">
+              {demoCode}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setOtp(demoCode.split(""));
+                otpRefs.current[0]?.focus();
+              }}
+              className="inline-flex items-center justify-center rounded-md bg-red-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-800"
+            >
+              Auto-fill
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex gap-2 mb-5 justify-between" onPaste={handleOtpPaste}>
         {otp.map((digit, i) => (
@@ -378,8 +360,8 @@ const ForgotPassword = () => {
         ))}
       </div>
 
-      <PrimaryButton onClick={handleOtpSubmit} disabled={loading}>
-        {loading ? "Verifying..." : "Verify Code"}
+      <PrimaryButton onClick={() => handleOtpSubmit(otp.join(""))} disabled={loading}>
+        {loading ? <LoadingSpinner label="Verifying..." spinnerColor="border-white" /> : "Verify Code"}
       </PrimaryButton>
 
       <button
@@ -491,7 +473,7 @@ const ForgotPassword = () => {
         </div>
 
         <PrimaryButton onClick={handleResetSubmit} disabled={loading}>
-          {loading ? "Updating password..." : "Update Password"}
+          {loading ? <LoadingSpinner label="Updating password..." spinnerColor="border-white" /> : "Update Password"}
         </PrimaryButton>
       </div>
     </>
@@ -513,7 +495,7 @@ const ForgotPassword = () => {
       </p>
 
       <button
-        onClick={() => navigate("/login")}
+        onClick={() => navigate("/")}
         className="w-full text-white font-semibold py-3 rounded-md transition duration-200 shadow-md hover:shadow-lg"
         style={{ backgroundColor: "#B01C1C" }}
         onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#931616")}
@@ -530,7 +512,7 @@ const ForgotPassword = () => {
   const STEP_LABELS = ["Email", "Code", "New Password"];
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col page-transition">
       <div className="flex flex-col md:flex-row flex-1">
 
         {/* LEFT: Brand Panel */}
@@ -611,10 +593,6 @@ const ForgotPassword = () => {
             {step === "otp"   && renderOtp()}
             {step === "reset" && renderReset()}
             {step === "done"  && renderDone()}
-
-            <p className="text-center text-xs text-gray-400 mt-10">
-              Need help signing in? Contact the Registrar's Office.
-            </p>
           </div>
         </div>
       </div>

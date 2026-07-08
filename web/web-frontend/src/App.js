@@ -12,6 +12,7 @@ import InputQuestion from "./pages/users/InputQuestion";
 import QuestionBank from "./pages/users/QuestionBank";
 import History from "./pages/users/History";
 import Sidebar from "./pages/users/Sidebar";
+import PageContainer from "./components/PageContainer";
 
 // Admin Pages
 import AdminDashboard from "./pages/admin/admindashboard";
@@ -71,9 +72,11 @@ function App() {
           path="/dashboard" 
           element={
             <UserRoute>
-              <MainLayout>
-                <Dashboard />
-              </MainLayout>
+              <PageContainer>
+                <MainLayout>
+                  <Dashboard />
+                </MainLayout>
+              </PageContainer>
             </UserRoute>
           } 
         />
@@ -81,9 +84,11 @@ function App() {
           path="/input" 
           element={
             <UserRoute>
-              <MainLayout>
-                <InputQuestion />
-              </MainLayout>
+              <PageContainer>
+                <MainLayout>
+                  <InputQuestion />
+                </MainLayout>
+              </PageContainer>
             </UserRoute>
           } 
         />
@@ -91,9 +96,11 @@ function App() {
           path="/question-bank" 
           element={
             <UserRoute>
-              <MainLayout>
-                <QuestionBank />
-              </MainLayout>
+              <PageContainer>
+                <MainLayout>
+                  <QuestionBank />
+                </MainLayout>
+              </PageContainer>
             </UserRoute>
           } 
         />
@@ -101,9 +108,11 @@ function App() {
           path="/history" 
           element={
             <UserRoute>
-              <MainLayout>
-                <History />
-              </MainLayout>
+              <PageContainer>
+                <MainLayout>
+                  <History />
+                </MainLayout>
+              </PageContainer>
             </UserRoute>
           } 
         />
@@ -119,7 +128,9 @@ function App() {
           path="/admin/dashboard" 
           element={
             <AdminRoute>
-              <AdminDashboard />
+              <PageContainer>
+                <AdminDashboard />
+              </PageContainer>
             </AdminRoute>
           } 
         />
@@ -129,7 +140,9 @@ function App() {
           path="/admin/questions" 
           element={
             <AdminRoute>
-              <AdminDashboard />
+              <PageContainer>
+                <AdminDashboard />
+              </PageContainer>
             </AdminRoute>
           } 
         />

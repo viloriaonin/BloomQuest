@@ -11,6 +11,7 @@ from ai_service import detect_subject, detect_topics, compute_tos, generate_ques
 from classifier import classify_question
 import models
 from datetime import datetime, timedelta
+import logging
 import os
 import random
 from routers import assessment 
@@ -22,6 +23,9 @@ import smtplib
 import string
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "database.env"))
 
@@ -115,7 +119,20 @@ SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "")
 
 
 def normalize_email(value: str) -> str:
-    return str(value).strip().lower()
+    """Normalize and correct common typos in email addresses.
+
+    - Trim whitespace
+    - Lowercase
+    - Replace common accidental separators (commas, semicolons) in the domain part with dots
+    """
+    raw = str(value or "").strip()
+    if "@" not in raw:
+        return raw.lower()
+
+    local, sep, domain = raw.partition("@")
+    # Replace commas/semicolons and collapse whitespace in domain
+    domain = domain.replace(",", ".").replace(";", ".").replace(" ", "")
+    return f"{local}@{domain}".lower()
 
 
 def generate_temporary_password(length: int = 12) -> str:
@@ -123,48 +140,162 @@ def generate_temporary_password(length: int = 12) -> str:
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
-def send_approval_email(recipient_email: str, temporary_password: str):
+def send_approval_email(recipient_email: str, temporary_password: str, full_name: str = None, department: str = None):
+    """Render the approval email template and send it via SMTP.
+
+    Falls back to a minimal inline message if the template cannot be read.
+    """
     if not SENDER_EMAIL or not SENDER_PASSWORD:
         print(f"SMTP credentials are not configured. Approval email for {recipient_email} was not sent.")
         return
 
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173/")
+    template_path = os.path.join(os.path.dirname(__file__), "templates", "approval_email.html")
+
     try:
+        logger.info("[Email] Preparing approval email for recipient=%s sender=%s", recipient_email, SENDER_EMAIL)
+        # Load template
+        try:
+            with open(template_path, "r", encoding="utf-8") as fh:
+                template = fh.read()
+        except Exception as exc:
+            logger.warning("[Email] Approval template load failed: %s", exc)
+            template = None
+
+        if template:
+            rendered = template.replace("{{fullName}}", full_name or recipient_email.split("@")[0])
+            rendered = rendered.replace("{{department}}", department or "N/A")
+            rendered = rendered.replace("{{email}}", recipient_email)
+            rendered = rendered.replace("{{temporaryPassword}}", temporary_password)
+            rendered = rendered.replace("{{frontendUrl}}", frontend_url)
+        else:
+            rendered = f"""
+            <html>
+              <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                <h2 style="color: #B01C1C;">Welcome to BloomQuest!</h2>
+                <p>Great news! Your administrator request has been approved, and your official account has been configured.</p>
+                <div style="background-color: #F9FAFB; border: 1px solid #E5E7EB; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                  <p style="margin: 0 0 8px 0;"><strong>Full name:</strong> {full_name or ''}</p>
+                  <p style="margin: 0 0 8px 0;"><strong>Department:</strong> {department or 'N/A'}</p>
+                  <p style="margin: 0 0 8px 0;"><strong>Username / Email:</strong> {recipient_email}</p>
+                  <p style="margin: 0;"><strong>Temporary Password:</strong> <code style="background: #FFF; padding: 2px 6px; border: 1px solid #DDD; font-size: 1.1em;">{temporary_password}</code></p>
+                </div>
+                <p style="color: #EF4444; font-size: 0.9em;"><em>Note: For your profile security, please update this password immediately upon logging in for the first time.</em></p>
+                <p>Best Regards,<br/><strong>BloomQuest Admin Team</strong></p>
+              </body>
+            </html>
+            """
+
         msg = MIMEMultipart()
         msg["From"] = SENDER_EMAIL
         msg["To"] = recipient_email
         msg["Subject"] = "BloomQuest Account Approved & Created"
-
-        body = f"""
-        <html>
-          <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-            <h2 style="color: #B01C1C;">Welcome to BloomQuest!</h2>
-            <p>Great news! Your administrator request has been approved, and your official account has been configured.</p>
-            <div style="background-color: #F9FAFB; border: 1px solid #E5E7EB; padding: 15px; border-radius: 8px; margin: 20px 0;">
-              <p style="margin: 0 0 8px 0;"><strong>Username / Email:</strong> {recipient_email}</p>
-              <p style="margin: 0;"><strong>Temporary Password:</strong> <code style="background: #FFF; padding: 2px 6px; border: 1px solid #DDD; font-size: 1.1em;">{temporary_password}</code></p>
-            </div>
-            <p style="color: #EF4444; font-size: 0.9em;"><em>Note: For your profile security, please update this password immediately upon logging in for the first time.</em></p>
-            <p>Best Regards,<br/><strong>BloomQuest Admin Team</strong></p>
-          </body>
-        </html>
-        """
-        msg.attach(MIMEText(body, "html"))
+        msg.attach(MIMEText(rendered, "html"))
 
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
             server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
+        logger.info("[Email] Approval email sent successfully to %s", recipient_email)
     except Exception as exc:
-        print(f"Failed to deliver account creation email: {exc}")
+        logger.error("Failed to deliver account creation email: %s", exc, exc_info=True)
+
+
+def send_request_submission_email(recipient_email: str, full_name: str = None, department: str = None):
+    """Render the request submission email template and send it via SMTP."""
+    if not SENDER_EMAIL or not SENDER_PASSWORD:
+        print(f"SMTP credentials are not configured. Submission email for {recipient_email} was not sent.")
+        return
+
+    template_path = os.path.join(os.path.dirname(__file__), "templates", "request_submission_email.html")
+
+    try:
+        logger.info("[Email] Preparing request submission email for recipient=%s sender=%s", recipient_email, SENDER_EMAIL)
+        # Load template
+        try:
+            with open(template_path, "r", encoding="utf-8") as fh:
+                template = fh.read()
+        except Exception as exc:
+            logger.warning("[Email] Request template load failed: %s", exc)
+            template = None
+
+        if template:
+            rendered = template.replace("{{fullName}}", full_name or recipient_email.split("@")[0])
+            rendered = rendered.replace("{{department}}", department or "N/A")
+            rendered = rendered.replace("{{email}}", recipient_email)
+        else:
+            rendered = f"""
+            <html>
+              <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                <h2 style="color: #B01C1C;">BloomQuest Request Received</h2>
+                <p>We have received your request to join BloomQuest.</p>
+                <p><strong>Full name:</strong> {full_name or ''}</p>
+                <p><strong>Department:</strong> {department or 'N/A'}</p>
+                <p><strong>Email:</strong> {recipient_email}</p>
+                <p>We will notify you once an administrator approves your account.</p>
+              </body>
+            </html>
+            """
+
+        msg = MIMEMultipart()
+        msg["From"] = SENDER_EMAIL
+        msg["To"] = recipient_email
+        msg["Subject"] = "BloomQuest Account Request Received"
+        msg.attach(MIMEText(rendered, "html"))
+
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            server.send_message(msg)
+        logger.info("[Email] Request submission email sent successfully to %s", recipient_email)
+    except Exception as exc:
+        logger.error("Failed to deliver account request submission email: %s", exc, exc_info=True)
+
+
+def send_password_reset_email(recipient_email: str, otp_code: str) -> bool:
+    if not SENDER_EMAIL or not SENDER_PASSWORD:
+        logger.warning("[Email] SMTP credentials are not configured; skipping password reset email for %s", recipient_email)
+        return False
+
+    subject = "Your BloomQuest password reset code"
+    html_body = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; color: #111; line-height: 1.6;">
+        <div style="max-width: 600px; margin: 0 auto; padding: 24px;">
+          <h2 style="color: #7B1113;">BloomQuest Password Reset</h2>
+          <p>We received a request to reset the password for your BloomQuest account.</p>
+          <div style="margin: 24px 0; padding: 16px; border-radius: 12px; background: #F9FAFB; border: 1px solid #E5E7EB; font-size: 1.1rem; letter-spacing: 0.18em; text-align: center;">
+            <strong style="color: #B01C1C;">{otp_code}</strong>
+          </div>
+          <p style="margin-bottom: 0.5rem;">Enter this 6-digit code on the password reset page to continue.</p>
+          <p style="font-size: 0.95rem; color: #555;">If you did not request a password reset, you can safely ignore this email.</p>
+        </div>
+      </body>
+    </html>
+    """
+
+    msg = MIMEMultipart()
+    msg["From"] = SENDER_EMAIL
+    msg["To"] = recipient_email
+    msg["Subject"] = subject
+    msg.attach(MIMEText(html_body, "html"))
+
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            server.send_message(msg)
+        logger.info("[Email] Password reset email sent to %s", recipient_email)
+        return True
+    except Exception as exc:
+        logger.error("[Email] Password reset delivery failed for %s: %s", recipient_email, exc, exc_info=True)
+        return False
+
 
 def _cleanup_otp(email: str):
     record = otp_store.get(email)
     if record and record["expires_at"] < datetime.utcnow():
         otp_store.pop(email, None)
-
-@app.get("/")
-def root():
-    return {"message": "Welcome to the API"}
 
 @app.post("/api/forgot-password/send-otp")
 def send_otp(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
@@ -177,12 +308,18 @@ def send_otp(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
         "otp": code,
         "expires_at": datetime.utcnow() + timedelta(minutes=10),
     }
-    # In production, send the code by email here.
-    print(f"[DEBUG] OTP for {data.email}: {code}")
+    logger.info("[OTP] Generated password reset code for %s", data.email)
+
+    sent = send_password_reset_email(data.email, code)
+    if not sent:
+        logger.warning("[OTP] Password reset email not sent; returning demo code for %s", data.email)
+        return {
+            "message": "A password reset code has been sent to your email address.",
+            "demo_code": code,
+        }
 
     return {
         "message": "A password reset code has been sent to your email address.",
-        "otp": code
     }
 
 @app.post("/api/forgot-password/verify-otp")
@@ -317,6 +454,10 @@ async def approve_account_request(payload: AccountActionRequest, background_task
     if not request_entry:
         raise HTTPException(status_code=404, detail="Pending registration ticket not found.")
 
+    # capture details from the request before deleting the ticket
+    full_name = getattr(request_entry, "full_name", None)
+    department = getattr(request_entry, "department", None)
+
     temp_password = generate_temporary_password()
 
     existing_user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
@@ -333,10 +474,12 @@ async def approve_account_request(payload: AccountActionRequest, background_task
         )
         db.add(new_user)
 
+    # remove the pending account request and commit
     db.delete(request_entry)
     db.commit()
 
-    background_tasks.add_task(send_approval_email, str(payload.email), temp_password)
+    # send the approval email in the background with templated fields
+    background_tasks.add_task(send_approval_email, normalized_email, temp_password, full_name, department)
 
     # fetch the user row we just created/updated to return a formatted user object
     created_user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
@@ -453,7 +596,7 @@ def decline_account_request(payload: AccountActionRequest, db: Session = Depends
     return {"message": "Account request declined successfully.", "status": request_entry.status}
 
 @app.post("/api/contact-admin")
-def submit_account_request(payload: AccountRequestPayload, db: Session = Depends(get_db)):
+def submit_account_request(payload: AccountRequestPayload, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     normalized_email = normalize_email(payload.email)
 
     existing = (
@@ -476,7 +619,18 @@ def submit_account_request(payload: AccountRequestPayload, db: Session = Depends
     db.add(new_request)
     db.commit()
     db.refresh(new_request)
-    
+
+    # Send requester a confirmation email that the request has been received.
+    try:
+        background_tasks.add_task(
+            send_request_submission_email,
+            normalized_email,
+            payload.full_name,
+            payload.department,
+        )
+    except Exception as exc:
+        print(f"Failed to queue submission confirmation email: {exc}")
+
     return {"message": "Ticket created successfully", "status": "pending"}
 
 

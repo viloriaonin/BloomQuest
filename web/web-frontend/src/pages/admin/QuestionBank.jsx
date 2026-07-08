@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { usePopup } from '../../components/PopupProvider';
 
 const API_URL = 'http://localhost:8000';
 
@@ -14,6 +15,7 @@ const BLOOMS_LEVELS = [
 const HIGH_ORDER_LEVELS = ['Analyze', 'Evaluate', 'Create'];
 
 export const QuestionBankContent = () => {
+  const { showConfirm } = usePopup();
   const [activeTab, setActiveTab]             = useState('Remember');
   const [subjects, setSubjects]               = useState([]);
   const [selectedSubject, setSelectedSubject] = useState('');
@@ -69,7 +71,8 @@ export const QuestionBankContent = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this question?')) return;
+    const confirmed = await showConfirm('Are you sure you want to delete this question?', 'Delete Question');
+    if (!confirmed) return;
     setDeletingId(id);
     try {
       const res = await fetch(`${API_URL}/api/questions/${id}`, { method: 'DELETE' });
@@ -128,7 +131,7 @@ export const QuestionBankContent = () => {
   const highOrderItems = questions.filter(q => HIGH_ORDER_LEVELS.includes(q.bloom_level)).length;
 
   return (
-    <div className="w-full flex flex-col pb-20">
+    <div className="w-full flex flex-col pb-20 page-transition">
 
       {/* Header */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mb-4">
@@ -204,7 +207,7 @@ export const QuestionBankContent = () => {
             </span>
             <button
               onClick={() => fetchQuestions(selectedSubject)}
-              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded-md px-3 py-1.5"
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded-md px-3 py-1.5 transition-colors"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -260,7 +263,7 @@ export const QuestionBankContent = () => {
 
             {/* Loading */}
             {loading && (
-              <div className="flex items-center justify-center py-16 gap-3 text-gray-400">
+              <div className="flex items-center justify-center py-16 gap-3 text-gray-400 fade-in">
                 <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
