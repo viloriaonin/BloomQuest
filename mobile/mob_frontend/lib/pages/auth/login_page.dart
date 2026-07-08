@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api_service.dart';
+import 'contact_admin_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -50,6 +51,8 @@ class _LoginPageState extends State<LoginPage> {
       await prefs.setString('token', data['token']);
       await prefs.setString('role', data['role']);
       await prefs.setString('email', data['email']);
+      await prefs.setString('user_email', data['email']);
+      await prefs.setString('user_name', data['name'] ?? data['email'].split('@').first);
 
       print('Navigating to: ${data['role']}'); // ← add this
 
@@ -372,6 +375,34 @@ class _LoginPageState extends State<LoginPage> {
             'Need help signing in? Contact the registrar\'s office.',
             style: TextStyle(color: Colors.grey[400], fontSize: 11),
             textAlign: TextAlign.center,
+          ),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const ContactAdminPage(),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF7B1113),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              'Contact Admin',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ),
       ],
