@@ -15,6 +15,7 @@ import os
 import random
 from routers import assessment 
 from routers import questions
+from routers.assessment import build_assessment_docx, cleanup_file
 from pydantic import BaseModel
 import secrets
 import smtplib
@@ -23,9 +24,37 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "database.env"))
-from assessment_export import build_assessment_document
 
 models.Base.metadata.create_all(bind=engine)
+
+
+def build_assessment_document(questions, subject_name, export_format):
+    SubjectLike = type("SubjectLike", (), {"name": subject_name})
+    docx_path = build_assessment_docx(SubjectLike(), questions)
+    try:
+        if export_format == "docx":
+            with open(docx_path, "rb") as f:
+                content = f.read()
+            filename = f"{subject_name.replace(' ', '_')}_Assessment.docx"
+            return content, filename
+
+        if export_format == "pdf":
+            try:
+                from docx2pdf import convert
+            except ImportError as exc:
+                raise Exception("PDF export requires the docx2pdf package.") from exc
+
+            pdf_path = docx_path.replace(".docx", ".pdf")
+            convert(docx_path, pdf_path)
+            with open(pdf_path, "rb") as f:
+                content = f.read()
+            filename = f"{subject_name.replace(' ', '_')}_Assessment.pdf"
+            cleanup_file(pdf_path)
+            return content, filename
+
+        raise ValueError(f"Unsupported export format: {export_format}")
+    finally:
+        cleanup_file(docx_path)
 
 # Ensure the new archive flag exists in the users table for soft-deletion support.
 with engine.begin() as conn:

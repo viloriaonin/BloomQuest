@@ -15,7 +15,6 @@ import Sidebar from "./pages/users/Sidebar";
 
 // Admin Pages
 import AdminDashboard from "./pages/admin/admindashboard";
-import AdminSidebar from "./pages/admin/adminSidebar"; // <-- Make sure this path is correct!
 // IMPORT YOUR ADMIN QUESTION BANK HERE:
 // import AdminQuestionBank from "./pages/admin/QuestionBank"; 
 
@@ -26,20 +25,6 @@ const MainLayout = ({ children }) => {
   return (
     <div className="flex h-screen bg-gray-50 w-full overflow-hidden">
       <Sidebar />
-      <div className="flex-1 h-full overflow-y-auto">
-        {children}
-      </div>
-    </div>
-  );
-};
-
-// ---------------------------------------------------------
-// 2. NEW: Admin Layout (Admin Sidebar)
-// ---------------------------------------------------------
-const AdminLayout = ({ children }) => {
-  return (
-    <div className="flex h-screen bg-gray-50 w-full overflow-hidden">
-      <AdminSidebar />
       <div className="flex-1 h-full overflow-y-auto">
         {children}
       </div>
@@ -134,9 +119,7 @@ function App() {
           path="/admin/dashboard" 
           element={
             <AdminRoute>
-              <AdminLayout>
-                <AdminDashboard />
-              </AdminLayout>
+              <AdminDashboard />
             </AdminRoute>
           } 
         />
@@ -146,15 +129,10 @@ function App() {
           path="/admin/questions" 
           element={
             <AdminRoute>
-              <AdminLayout>
-                {/* Use your actual Admin Question Bank component here */}
-                <QuestionBank /> 
-              </AdminLayout>
+              <AdminDashboard />
             </AdminRoute>
           } 
         />
-
-        {/* Fallback Route */}
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
