@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import LoadingSpinner from "../../components/LoadingSpinner";
 import logo from "../../assets/images/bloomquest-logo.png";
 
 // Connects directly to your local backend server environment
@@ -17,24 +18,46 @@ const ContactAdmin = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [existingRequestStatus, setExistingRequestStatus] = useState(null); // 'pending' | 'approved' | 'declined'
+  const [existingRequestStatus, setExistingRequestStatus] = useState(null); // 'pending' | 'approved' | 'declined' | 'existing'
 
   const isValidEmail = (value) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(value);
   };
 
-  // Optional: Checks status immediately when user finishes typing the email field
+  const sanitizeEmail = (value) => {
+    if (!value) return value;
+    let v = value.trim();
+    if (v.includes("@")) {
+      const [local, ...rest] = v.split("@");
+      let domain = rest.join("@");
+      // common typos: commas or semicolons used instead of dots
+      domain = domain.replace(/[,;\s]+/g, ".");
+      v = `${local}@${domain}`;
+    }
+    return v;
+  };
+
+  // Checks status immediately when user finishes typing the email field
   const handleEmailBlur = async () => {
-    if (!email.trim() || !isValidEmail(email)) return;
+    if (!email.trim()) return;
+
+    const sanitized = sanitizeEmail(email);
+    if (sanitized !== email) {
+      setEmail(sanitized);
+      setError("We corrected a small typo in your email address.");
+      setTimeout(() => setError(""), 4000);
+    }
+
+    if (!isValidEmail(sanitized)) return;
 
     try {
       const response = await fetch(`${CHECK_STATUS_URL}?email=${encodeURIComponent(email)}`);
       if (response.ok) {
         const data = await response.json();
         if (data.exists) {
-          setExistingRequestStatus(data.status); // e.g., 'pending', 'approved'
-          setError(""); 
+          setExistingRequestStatus(data.status || "existing"); // Catches any existing record
+          setError("This email is already in use or has an existing request."); 
         } else {
           setExistingRequestStatus(null);
         }
@@ -67,25 +90,25 @@ const ContactAdmin = () => {
       return;
     }
 
-    // Block submission explicitly if an existing ticket is tracked in state
-    if (existingRequestStatus === "pending") {
-      setError("Cannot submit. You already have a pending request under this email.");
-      return;
-    }
-    if (existingRequestStatus === "approved") {
-      setError("This email request has already been approved. Please check your inbox or log in.");
+    // Block submission explicitly if ANY existing ticket/account is tracked in state
+    if (existingRequestStatus) {
+      setError("Cannot submit. This email is already in use or requested.");
       return;
     }
 
     setLoading(true);
     try {
+      // sanitize before submitting
+      const payloadEmail = sanitizeEmail(email);
+      setEmail(payloadEmail);
+
       const response = await fetch(API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           full_name: fullName,
           department: department,
-          email: email,
+          email: payloadEmail,
         }),
       });
 
@@ -94,7 +117,7 @@ const ContactAdmin = () => {
       if (!response.ok) {
         // Handle database unique constraint violations caught by backend pipeline
         if (response.status === 409 || data.status) {
-          setExistingRequestStatus(data.status || "pending");
+          setExistingRequestStatus(data.status || "existing");
           setError(data.detail || "An account request already exists for this email.");
           return;
         }
@@ -116,10 +139,10 @@ const ContactAdmin = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col page-transition">
       <div className="flex flex-col md:flex-row flex-1">
 
-        {/* LEFT: Brand Panel (Matches standard auth background styling metrics) */}
+        {/* LEFT: Brand Panel */}
         <div
           className="relative w-full md:w-1/2 flex flex-col items-center justify-center py-16 px-8 overflow-hidden"
           style={{
@@ -253,7 +276,11 @@ const ContactAdmin = () => {
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setExistingRequestStatus(null); // Clear status when user changes input
+                    setError("");
+                  }}
                   onBlur={handleEmailBlur}
                   placeholder="Enter your email"
                   className="w-full border border-gray-300 rounded-md px-4 py-2.5 text-base text-gray-700 focus:outline-none focus:ring-2 focus:border-transparent transition"
@@ -262,13 +289,14 @@ const ContactAdmin = () => {
 
               <button
                 type="submit"
-                disabled={loading || existingRequestStatus === "pending" || existingRequestStatus === "approved"}
-                className="w-full text-white font-semibold py-3 rounded-md transition duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                // Disable if loading or if ANY existing status is found
+                disabled={loading || !!existingRequestStatus}
+                className={`w-full text-white font-semibold py-3 rounded-md transition duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${loading ? 'button-loading' : ''}`}
                 style={{ backgroundColor: "#B01C1C" }}
-                onMouseOver={(e) => !loading && (e.currentTarget.style.backgroundColor = "#931616")}
-                onMouseOut={(e) => !loading && (e.currentTarget.style.backgroundColor = "#B01C1C")}
+                onMouseOver={(e) => !loading && !existingRequestStatus && (e.currentTarget.style.backgroundColor = "#931616")}
+                onMouseOut={(e) => !loading && !existingRequestStatus && (e.currentTarget.style.backgroundColor = "#B01C1C")}
               >
-                {loading ? "Submitting..." : "Submit Account Request"}
+                {loading ? <LoadingSpinner label="Submitting..." spinnerColor="border-white" /> : "Submit Account Request"}
               </button>
             </form>
 

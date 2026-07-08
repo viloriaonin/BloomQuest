@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { usePopup } from '../../components/PopupProvider';
 
 const API_URL = 'http://localhost:8000';
 
@@ -12,6 +13,7 @@ const BLOOMS_LEVELS = [
 ];
 
 const QuestionBank = () => {
+  const { showConfirm } = usePopup();
   const [activeTab, setActiveTab]             = useState('Remember');
   const [subjects, setSubjects]               = useState([]);
   const [selectedSubject, setSelectedSubject] = useState('');
@@ -69,7 +71,8 @@ const QuestionBank = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this question?')) return;
+    const confirmed = await showConfirm('Are you sure you want to delete this question?', 'Delete Question');
+    if (!confirmed) return;
     setDeletingId(id);
     try {
       const res = await fetch(`${API_URL}/api/questions/${id}`, { method: 'DELETE' });
@@ -153,7 +156,7 @@ const QuestionBank = () => {
   };
 
   return (
-    <div className="max-w-5xl w-full p-2 min-h-full flex flex-col relative overflow-visible">
+    <div className="max-w-5xl w-full p-2 min-h-full flex flex-col relative overflow-visible page-transition">
 
       {/* Header */}
       <div className="mb-4">

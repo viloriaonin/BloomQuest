@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from "react";
+import { usePopup } from "../../components/PopupProvider";
+import LoadingSpinner from "../../components/LoadingSpinner";
 
 const API_BASE_URL = "http://localhost:8000/api";
 
 export const UserMgmtContent = () => {
+  const { showAlert, showConfirm } = usePopup();
   const [requests, setRequests] = useState([]);
   const [activeUsers, setActiveUsers] = useState([]);
   const [archivedUsers, setArchivedUsers] = useState([]);
@@ -49,17 +52,20 @@ export const UserMgmtContent = () => {
       if (!response.ok) throw new Error("Failed to fetch active users");
       const data = await response.json();
       
-      const isFaculty = (user) => {
-        return typeof user.role === "string" && user.role.toLowerCase() === "faculty";
+      // Included both faculty and students, and handles missing roles safely
+      const isManagedUser = (user) => {
+        if (!user || typeof user.role !== "string") return true; 
+        const role = user.role.toLowerCase();
+        return role === "faculty" || role === "student";
       };
 
-      // Fix: Handle both flat arrays and nested object responses and show only faculty users
+      // Handle both flat arrays and nested object responses
       if (Array.isArray(data)) {
-        setActiveUsers(data.filter((user) => isFaculty(user) && !user.archived && user.is_active !== false));
-        setArchivedUsers(data.filter((user) => isFaculty(user) && (user.archived || user.is_active === false)));
+        setActiveUsers(data.filter((user) => isManagedUser(user) && !user.archived && user.is_active !== false));
+        setArchivedUsers(data.filter((user) => isManagedUser(user) && (user.archived || user.is_active === false)));
       } else {
-        setActiveUsers((data.active || []).filter(isFaculty));
-        setArchivedUsers((data.archived || []).filter(isFaculty));
+        setActiveUsers((data.active || []).filter(isManagedUser));
+        setArchivedUsers((data.archived || []).filter(isManagedUser));
       }
     } catch (err) {
       console.error(err);
@@ -70,7 +76,8 @@ export const UserMgmtContent = () => {
   };
 
   const handleApprove = async (email) => {
-    if (!window.confirm(`Are you sure you want to approve the account for ${email}?`)) return;
+    const confirmed = await showConfirm(`Are you sure you want to approve the account for ${email}?`, "Approve Account");
+    if (!confirmed) return;
 
     try {
       const response = await fetch(`${API_BASE_URL}/contact-admin/approve`, {
@@ -86,10 +93,9 @@ export const UserMgmtContent = () => {
 
       const data = await response.json();
 
-      alert(`Success! Account created and credentials securely emailed to ${email}.`);
+      await showAlert(`Success! Account created and credentials securely emailed to ${email}.`, "Approved");
       setRequests((prev) => prev.filter((req) => req.email !== email));
 
-      // Refresh users list and if backend returned a formatted user, append it
       await fetchUsers();
       if (data && data.created_user) {
         const created = data.created_user;
@@ -100,12 +106,13 @@ export const UserMgmtContent = () => {
       }
     } catch (err) {
       console.error(err);
-      alert(`Error: ${err.message}`);
+      await showAlert(`Error: ${err.message}`, "Error");
     }
   };
 
   const handleDecline = async (email) => {
-    if (!window.confirm(`Are you sure you want to decline the account for ${email}?`)) return;
+    const confirmed = await showConfirm(`Are you sure you want to decline the account for ${email}?`, "Decline Request");
+    if (!confirmed) return;
     try {
       const response = await fetch(`${API_BASE_URL}/contact-admin/decline`, {
         method: "POST",
@@ -119,7 +126,7 @@ export const UserMgmtContent = () => {
       await fetchPendingRequests();
     } catch (err) {
       console.error(err);
-      alert(`Error: ${err.message}`);
+      await showAlert(`Error: ${err.message}`, "Error");
     }
   };
 
@@ -176,7 +183,7 @@ export const UserMgmtContent = () => {
 
   const handleSavePassword = async () => {
     if (!newPassword.trim()) {
-      alert("Please enter a new password.");
+      await showAlert("Please enter a new password.", "Missing Password");
       return;
     }
 
@@ -192,18 +199,19 @@ export const UserMgmtContent = () => {
         throw new Error(errorData.detail || "Failed to update password");
       }
 
-      alert(`Password successfully updated for ${editingUser.full_name || editingUser.name || editingUser.email}!`);
+      await showAlert(`Password successfully updated for ${editingUser.full_name || editingUser.name || editingUser.email}!`, "Password Updated");
       setEditingUser(null);
       setNewPassword("");
     } catch (err) {
       console.error(err);
-      alert(err.message || "Error updating password.");
+      await showAlert(err.message || "Error updating password.", "Error");
     }
   };
 
   const handleArchiveUser = async (user) => {
     if (!user) return;
-    if (!window.confirm(`Are you sure you want to archive ${user.full_name || user.email}?`)) return;
+    const confirmed = await showConfirm(`Are you sure you want to archive ${user.full_name || user.email}?`, "Archive User");
+    if (!confirmed) return;
 
     try {
       const response = await fetch(`${API_BASE_URL}/users/archive`, {
@@ -215,11 +223,11 @@ export const UserMgmtContent = () => {
         const errorData = await response.json();
         throw new Error(errorData.detail || "Failed to archive user.");
       }
-      alert("User archived successfully.");
+      await showAlert("User archived successfully.", "Archived");
       await fetchUsers();
     } catch (err) {
       console.error(err);
-      alert(err.message || "Error archiving user.");
+      await showAlert(err.message || "Error archiving user.", "Error");
     }
   };
 
@@ -234,16 +242,40 @@ export const UserMgmtContent = () => {
         const errorData = await response.json();
         throw new Error(errorData.detail || "Failed to restore user.");
       }
-      alert("User restored successfully.");
+      await showAlert("User restored successfully.", "Restored");
       await fetchUsers();
     } catch (err) {
       console.error(err);
-      alert(err.message || "Error restoring user.");
+      await showAlert(err.message || "Error restoring user.", "Error");
+    }
+  };
+
+  const handleDeleteUser = async (email) => {
+    if (!email) return;
+    const confirmed = await showConfirm(`Permanently delete user ${email}? This cannot be undone.`, "Delete User");
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/users/${encodeURIComponent(email)}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "Failed to delete user.");
+      }
+
+      await showAlert("User deleted permanently.", "Deleted");
+      await fetchUsers();
+      await fetchPendingRequests();
+    } catch (err) {
+      console.error(err);
+      await showAlert(err.message || "Error deleting user.", "Error");
     }
   };
 
   return (
-    <div className="space-y-6 relative">
+    <div className="space-y-6 relative page-transition">
       <div className="grid gap-5 md:grid-cols-4">
         {[
           { label: "Total Users", value: (activeUsers.length + archivedUsers.length).toString(), tone: "text-red-700" },
@@ -272,7 +304,9 @@ export const UserMgmtContent = () => {
         </div>
 
         {loadingRequests ? (
-          <div className="py-6 text-center text-sm text-gray-500 animate-pulse">Loading database ticket requests...</div>
+          <div className="py-6 text-center text-sm text-gray-500 fade-in">
+            <LoadingSpinner label="Loading requests..." spinnerColor="border-gray-500" />
+          </div>
         ) : errorRequests ? (
           <div className="p-4 rounded-xl text-center text-sm text-red-700 bg-red-50 border border-red-100">{errorRequests}</div>
         ) : requests.length === 0 ? (
@@ -316,7 +350,9 @@ export const UserMgmtContent = () => {
       </div>
 
       <div className="rounded-3xl bg-white border border-gray-200 p-6 shadow-sm overflow-x-auto">
-        <div className="text-sm font-medium text-gray-500 mb-4">{loadingUsers ? "Loading users..." : `Showing ${activeUsers.length} active users`}</div>
+        <div className="text-sm font-medium text-gray-500 mb-4">
+          {loadingUsers ? <LoadingSpinner label="Loading users..." spinnerColor="border-gray-500" /> : `Showing ${activeUsers.length} active users`}
+        </div>
         {errorUsers ? (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errorUsers}</div>
         ) : null}
@@ -342,7 +378,6 @@ export const UserMgmtContent = () => {
                   .join('')
                   .substring(0, 2)
                   .toUpperCase();
-                // Fix: Status accurately checks if active is false
                 const displayStatus = user.status || (user.is_active === false ? "Inactive" : "Active");
 
                 return (
@@ -414,12 +449,20 @@ export const UserMgmtContent = () => {
                     <p className="text-sm font-semibold text-gray-900">{displayName}</p>
                     <p className="text-xs text-gray-500 mt-0.5">{user.email}</p>
                   </div>
-                  <button
-                    onClick={() => handleRestoreUser(user.email)}
-                    className="rounded-full bg-emerald-700 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 transition shadow-sm"
-                  >
-                    Restore
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleRestoreUser(user.email)}
+                      className="rounded-full bg-emerald-700 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 transition shadow-sm"
+                    >
+                      Restore
+                    </button>
+                    <button
+                      onClick={() => handleDeleteUser(user.email)}
+                      className="rounded-full bg-red-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-red-700 transition shadow-sm"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -441,29 +484,32 @@ export const UserMgmtContent = () => {
             </div>
 
             <div className="space-y-5">
-              <div className="rounded-3xl border border-gray-200 bg-gray-50 p-4">
-                <p className="text-sm font-semibold text-gray-800">Admin verification required</p>
-                <p className="text-xs text-gray-500 mt-1">Enter your admin password to view credentials and make changes.</p>
-                <div className="mt-4 space-y-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Admin Password</label>
-                    <input
-                      type="password"
-                      value={adminPassword}
-                      onChange={(e) => setAdminPassword(e.target.value)}
-                      placeholder="Enter admin password"
-                      className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-red-700 focus:ring-1 focus:ring-red-700 outline-none transition"
-                    />
-                    {adminAuthError && <p className="text-xs text-red-600 mt-2">{adminAuthError}</p>}
+              
+              {!credentialsVerified && (
+                <div className="rounded-3xl border border-gray-200 bg-gray-50 p-4">
+                  <p className="text-sm font-semibold text-gray-800">Admin verification required</p>
+                  <p className="text-xs text-gray-500 mt-1">Enter your admin password to view credentials and make changes.</p>
+                  <div className="mt-4 space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Admin Password</label>
+                      <input
+                        type="password"
+                        value={adminPassword}
+                        onChange={(e) => setAdminPassword(e.target.value)}
+                        placeholder="Enter admin password"
+                        className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-red-700 focus:ring-1 focus:ring-red-700 outline-none transition"
+                      />
+                      {adminAuthError && <p className="text-xs text-red-600 mt-2">{adminAuthError}</p>}
+                    </div>
+                    <button
+                      onClick={handleVerifyAdminPassword}
+                      className="w-full rounded-xl bg-red-700 py-3 text-sm font-semibold text-white hover:bg-red-800 transition"
+                    >
+                      Verify Admin Password
+                    </button>
                   </div>
-                  <button
-                    onClick={handleVerifyAdminPassword}
-                    className="w-full rounded-xl bg-red-700 py-3 text-sm font-semibold text-white hover:bg-red-800 transition"
-                  >
-                    Verify Admin Password
-                  </button>
                 </div>
-              </div>
+              )}
 
               {credentialsVerified && verifiedUserCredentials && (
                 <div className="rounded-3xl border border-green-200 bg-green-50 p-4">

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import logo from "../../assets/images/bloomquest-logo.png";
+import LoadingSpinner from "../../components/LoadingSpinner";
 
 const API_URL = "http://localhost:8000/api/login";
 
@@ -67,7 +68,7 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col page-transition">
       <div className="flex flex-col md:flex-row flex-1">
 
         {/* LEFT: Brand Panel */}
@@ -115,9 +116,6 @@ const Login = () => {
               <h2 className="text-4xl font-bold" style={{ color: "#7B1113" }}>
                 Welcome back
               </h2>
-              <p className="text-base text-gray-500 mt-1">
-                Sign in to access your student portal
-              </p>
             </div>
 
             {error && (
@@ -183,12 +181,12 @@ const Login = () => {
               <button
                 onClick={handleLogin}
                 disabled={loading}
-                className="w-full text-white font-semibold py-3 rounded-md transition duration-200 shadow-md hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
+                className={`w-full text-white font-semibold py-3 rounded-md transition duration-200 shadow-md hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed ${loading ? 'button-loading' : ''}`}
                 style={{ backgroundColor: "#B01C1C" }}
                 onMouseOver={(e) => !loading && (e.currentTarget.style.backgroundColor = "#931616")}
                 onMouseOut={(e) => !loading && (e.currentTarget.style.backgroundColor = "#B01C1C")}
               >
-                {loading ? "Signing in..." : "Login"}
+                {loading ? <LoadingSpinner label="Signing in..." spinnerColor="border-white" /> : "Login"}
               </button>
 
               <div className="flex items-center gap-3 pt-2">
@@ -211,9 +209,6 @@ const Login = () => {
 
             </div>
 
-            <p className="text-center text-base text-gray-400 mt-10">
-              Need help signing in? Contact the registrar's office.
-            </p>
           </div>
         </div>
       </div>
