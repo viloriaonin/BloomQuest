@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:async';
 import 'dart:typed_data';
 
 const String baseUrl = 'http://127.0.0.1:8000';
@@ -17,11 +18,28 @@ class _InputPageState extends State<InputPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  // Manual input state
-  final TextEditingController _questionController = TextEditingController();
-  String? _selectedSubject;
+  // Shared Core Registry States
+  List<dynamic> _subjects = [];
+  String? _selectedSubjectId;
+  bool _loadingSubjects = true;
+  String _error = '';
+  String _successMessage = '';
 
-  // Upload state
+  // Inline Add New Subject States
+  bool _isAddingNewSubject = false;
+  final TextEditingController _newSubjectNameController =
+      TextEditingController();
+  final TextEditingController _newSubjectCodeController =
+      TextEditingController();
+
+  // Manual Input Tab States
+  final TextEditingController _questionController = TextEditingController();
+  String _manualQuestionType = 'MCQ';
+  bool _classifying = false;
+  String _duplicateWarning = '';
+  Timer? _debounceTimer;
+
+  // Upload & Auto-Gen Tab States
   Uint8List? _moduleFileBytes;
   String? _moduleFileName;
   Uint8List? _syllabusFileBytes;
@@ -31,23 +49,192 @@ class _InputPageState extends State<InputPage>
   Map<String, dynamic>? _uploadResult;
   Map<String, dynamic>? _generationResult;
   final TextEditingController _totalItemsController = TextEditingController();
-  String _error = '';
+
+  final List<String> _selectedQuestionTypes = [];
 
   static const primaryColor = Color(0xFF7B1113);
+
+  final List<Map<String, String>> _questionTypeOptions = [
+    {"label": "Multiple Choice", "value": "MCQ"},
+    {"label": "True or False", "value": "True/False"},
+    {"label": "Identification", "value": "Identification"},
+    {"label": "Matching Type", "value": "Matching Type"},
+    {"label": "Enumeration", "value": "Enumeration"},
+    {"label": "Essay", "value": "Essay"},
+    {"label": "Situational", "value": "Situational"},
+  ];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _questionController.addListener(() => setState(() {}));
+    _tabController.addListener(() => setState(() {}));
+    _questionController.addListener(_onQuestionTextChanged);
+    _fetchSubjects();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _questionController.removeListener(_onQuestionTextChanged);
     _questionController.dispose();
+    _newSubjectNameController.dispose();
+    _newSubjectCodeController.dispose();
     _totalItemsController.dispose();
+    _debounceTimer?.cancel();
     super.dispose();
+  }
+
+  // ─── Fetch Active Subjects from DB ───────────────────────────────────────────
+  Future<void> _fetchSubjects() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/api/subjects'));
+      if (response.statusCode == 200) {
+        setState(() {
+          _subjects = jsonDecode(response.body);
+          _loadingSubjects = false;
+        });
+      } else {
+        setState(() {
+          _error = 'Failed to load active subjects database records.';
+          _loadingSubjects = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = 'Cannot connect to backend server framework layers.';
+        _loadingSubjects = false;
+      });
+    }
+  }
+
+  // ─── Continuous Lookahead Thought Duplicate Check ────────────────────────────
+  void _onQuestionTextChanged() {
+    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+
+    final text = _questionController.text.trim();
+    if (text.length < 10 || _selectedSubjectId == null) {
+      setState(() => _duplicateWarning = '');
+      return;
+    }
+
+    _debounceTimer = Timer(const Duration(milliseconds: 600), () async {
+      try {
+        final response = await http.get(
+          Uri.parse('$baseUrl/api/questions?subject_id=$_selectedSubjectId'),
+        );
+        if (response.statusCode == 200) {
+          final List<dynamic> questionsBank = jsonDecode(response.body);
+          final lowerInput = text.toLowerCase();
+
+          final isDuplicate = questionsBank.any((q) {
+            final existingQuestionText = (q['question'] ?? '')
+                .toString()
+                .toLowerCase();
+            return existingQuestionText.contains(lowerInput) ||
+                lowerInput.contains(existingQuestionText);
+          });
+
+          setState(() {
+            if (isDuplicate) {
+              _duplicateWarning =
+                  '⚠️ A question item with this core concept or text already exists.';
+            } else {
+              _duplicateWarning = '';
+            }
+          });
+        }
+      } catch (_) {
+        // Safe drop out
+      }
+    });
+    setState(() {});
+  }
+
+  // ─── Manual Tab Add Subject Handler ──────────────────────────────────────────
+  Future<void> _handleCreateCustomSubject() async {
+    final name = _newSubjectNameController.text.trim();
+    final code = _newSubjectCodeController.text.trim();
+    if (name.isEmpty) return;
+
+    setState(() {
+      _error = '';
+      _successMessage = '';
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/subjects'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'name': name, 'code': code.isNotEmpty ? code : null}),
+      );
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 201) {
+        setState(() {
+          _subjects.add(data);
+          _selectedSubjectId = data['id'].toString();
+          _isAddingNewSubject = false;
+          _newSubjectNameController.clear();
+          _newSubjectCodeController.clear();
+          _successMessage =
+              '🎉 New course subject framework injected successfully!';
+        });
+      } else {
+        setState(
+          () => _error = data['detail'] ?? 'Failed to add custom subject.',
+        );
+      }
+    } catch (e) {
+      setState(() => _error = 'Exception logged writing metadata parameters.');
+    }
+  }
+
+  // ─── Manual Tab Classification Execution ─────────────────────────────────────
+  Future<void> _handleManualClassification() async {
+    final questionText = _questionController.text.trim();
+    if (_selectedSubjectId == null ||
+        questionText.isEmpty ||
+        _duplicateWarning.isNotEmpty)
+      return;
+
+    setState(() {
+      _error = '';
+      _successMessage = '';
+      _classifying = true;
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/questions/manual'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'question': questionText,
+          'question_type': _manualQuestionType,
+          'subject_id': int.parse(_selectedSubjectId!),
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 201) {
+        setState(() {
+          _successMessage =
+              '🎉 Success! Assigned item context straight into the "${data['bloom_level']}" bank category tier.';
+          _questionController.clear();
+        });
+      } else {
+        setState(
+          () => _error = data['detail'] ?? 'Classification sequence rejected.',
+        );
+      }
+    } catch (e) {
+      setState(
+        () => _error =
+            'Network request parsing failure to classifier node entry points.',
+      );
+    } finally {
+      setState(() => _classifying = false);
+    }
   }
 
   // ─── Pick Files ──────────────────────────────────────────────────────────────
@@ -73,9 +260,6 @@ class _InputPageState extends State<InputPage>
           _moduleFileName = file.name;
           _error = '';
         });
-        print(
-          'Module file selected: ${file.name}, size: ${bytes.length} bytes',
-        );
       }
     } catch (e) {
       setState(() => _error = 'Error picking file: $e');
@@ -104,9 +288,6 @@ class _InputPageState extends State<InputPage>
           _syllabusFileName = file.name;
           _error = '';
         });
-        print(
-          'Syllabus file selected: ${file.name}, size: ${bytes.length} bytes',
-        );
       }
     } catch (e) {
       setState(() => _error = 'Error picking file: $e');
@@ -132,7 +313,6 @@ class _InputPageState extends State<InputPage>
         'POST',
         Uri.parse('$baseUrl/api/upload'),
       );
-
       request.files.add(
         http.MultipartFile.fromBytes(
           'module_file',
@@ -140,7 +320,6 @@ class _InputPageState extends State<InputPage>
           filename: _moduleFileName!,
         ),
       );
-
       request.files.add(
         http.MultipartFile.fromBytes(
           'syllabus_file',
@@ -170,8 +349,13 @@ class _InputPageState extends State<InputPage>
 
   // ─── Generate Questions ───────────────────────────────────────────────────────
   Future<void> _handleGenerate() async {
-    if (_totalItemsController.text.isEmpty) {
-      setState(() => _error = 'Please enter total number of items.');
+    if (_totalItemsController.text.isEmpty ||
+        int.tryParse(_totalItemsController.text) == null) {
+      setState(() => _error = 'Please enter a valid total number of items.');
+      return;
+    }
+    if (_selectedQuestionTypes.isEmpty) {
+      setState(() => _error = 'Please select at least one question type.');
       return;
     }
 
@@ -186,9 +370,9 @@ class _InputPageState extends State<InputPage>
         'POST',
         Uri.parse('$baseUrl/api/generate'),
       );
-
       request.fields['upload_id'] = _uploadResult!['upload_id'].toString();
       request.fields['total_items'] = _totalItemsController.text;
+      request.fields['question_types'] = _selectedQuestionTypes.join(',');
 
       final response = await request.send();
       final body = await response.stream.bytesToString();
@@ -231,7 +415,7 @@ class _InputPageState extends State<InputPage>
               "Submit questions for Bloom's Taxonomy classification",
               style: TextStyle(fontSize: 13, color: Colors.grey),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
             if (_error.isNotEmpty)
               Container(
@@ -239,15 +423,35 @@ class _InputPageState extends State<InputPage>
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFfef2f2),
-                  border: Border.all(color: const Color(0xFFfecaca)),
+                  color: const Color(0xFFFEF2F2),
+                  border: Border.all(color: const Color(0xFFFECACA)),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   _error,
                   style: const TextStyle(
-                    color: Color(0xFF991b1b),
+                    color: Color(0xFF991B1B),
                     fontSize: 13,
+                  ),
+                ),
+              ),
+
+            if (_successMessage.isNotEmpty)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDF4),
+                  border: Border.all(color: const Color(0xFFBBF7D0)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _successMessage,
+                  style: const TextStyle(
+                    color: Color(0xFF16A34A),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -265,6 +469,7 @@ class _InputPageState extends State<InputPage>
                 ],
               ),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   TabBar(
                     controller: _tabController,
@@ -281,10 +486,16 @@ class _InputPageState extends State<InputPage>
                       Tab(text: 'Upload File'),
                     ],
                   ),
-                  SizedBox(
-                    height: _uploadResult != null ? 900 : 420,
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    height: _tabController.index == 0
+                        ? (_isAddingNewSubject ? 490 : 390)
+                        : (_generationResult != null
+                              ? 1100
+                              : (_uploadResult != null ? 1000 : 450)),
                     child: TabBarView(
                       controller: _tabController,
+                      physics: const NeverScrollableScrollPhysics(),
                       children: [_buildManualTab(), _buildUploadTab()],
                     ),
                   ),
@@ -297,106 +508,305 @@ class _InputPageState extends State<InputPage>
     );
   }
 
-  // ─── Manual Tab ──────────────────────────────────────────────────────────────
+  // ─── Manual Tab Implementation ───────────────────────────────────────────────
   Widget _buildManualTab() {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              children: [
-                TextField(
-                  controller: _questionController,
-                  maxLines: 5,
-                  maxLength: 500,
-                  buildCounter:
-                      (
-                        context, {
-                        required currentLength,
-                        required isFocused,
-                        maxLength,
-                      }) => null,
-                  decoration: const InputDecoration(
-                    hintText: 'Type your question here...',
-                    hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.all(12),
-                  ),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'TARGET COURSE SUBJECT',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    _loadingSubjects
+                        ? const LinearProgressIndicator(color: primaryColor)
+                        : DropdownButtonFormField<String>(
+                            value: _selectedSubjectId,
+                            hint: const Text(
+                              '— Select Subject —',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey,
+                              ),
+                            ),
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 10,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(
+                                  color: Colors.grey.shade300,
+                                ),
+                              ),
+                            ),
+                            items: [
+                              ..._subjects.map<DropdownMenuItem<String>>((s) {
+                                return DropdownMenuItem(
+                                  value: s['id'].toString(),
+                                  child: Text(
+                                    "${s['name']} ${s['code'] != null ? '(${s['code']})' : ''}",
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                );
+                              }).toList(),
+                              const DropdownMenuItem<String>(
+                                value: 'add_new',
+                                child: Text(
+                                  '+ Add New Subject...',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: primaryColor,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            onChanged: (val) {
+                              setState(() {
+                                if (val == 'add_new') {
+                                  _isAddingNewSubject = true;
+                                  _selectedSubjectId = null;
+                                } else {
+                                  _isAddingNewSubject = false;
+                                  _selectedSubjectId = val;
+                                  _onQuestionTextChanged();
+                                }
+                              });
+                            },
+                          ),
+                  ],
                 ),
-                Padding(
-                  padding: const EdgeInsets.only(right: 12, bottom: 8),
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      '${_questionController.text.length} / 500',
-                      style: const TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'ASSESSMENT ITEM TYPE',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String>(
+                      value: _manualQuestionType,
+                      decoration: InputDecoration(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 10,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                      ),
+                      items: _questionTypeOptions.map((opt) {
+                        return DropdownMenuItem(
+                          value: opt['value'],
+                          child: Text(
+                            opt['label']!,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (val) =>
+                          setState(() => _manualQuestionType = val!),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          if (_isAddingNewSubject) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'REGISTER CUSTOM SUBJECT',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _newSubjectNameController,
+                          decoration: const InputDecoration(
+                            hintText: 'Title (e.g. Calculus)',
+                            hintStyle: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _newSubjectCodeController,
+                          decoration: const InputDecoration(
+                            hintText: 'Code (e.g. MATH101)',
+                            hintStyle: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () =>
+                            setState(() => _isAddingNewSubject = false),
+                        child: const Text('Cancel'),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryColor,
+                        ),
+                        onPressed: _handleCreateCustomSubject,
+                        child: const Text(
+                          'Save Subject',
+                          style: TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
+
           const SizedBox(height: 16),
           const Text(
-            'SUBJECT',
+            'QUESTION INPUT WORKSPACE',
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
               color: Colors.grey,
-              letterSpacing: 0.5,
             ),
           ),
           const SizedBox(height: 6),
-          DropdownButtonFormField<String>(
-            value: _selectedSubject,
-            hint: const Text(
-              'Select subject',
-              style: TextStyle(fontSize: 13, color: Colors.grey),
-            ),
-            items: const [],
-            onChanged: (val) => setState(() => _selectedSubject = val),
-            decoration: InputDecoration(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 10,
+          Container(
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: _duplicateWarning.isNotEmpty
+                    ? Colors.orange.shade400
+                    : Colors.grey.shade300,
               ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: Colors.grey.shade300),
+              color: _duplicateWarning.isNotEmpty
+                  ? Colors.orange.withOpacity(0.02)
+                  : Colors.white,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: TextField(
+              controller: _questionController,
+              maxLines: 4,
+              maxLength: 500,
+              buildCounter:
+                  (
+                    context, {
+                    required currentLength,
+                    required isFocused,
+                    maxLength,
+                  }) => null,
+              decoration: const InputDecoration(
+                hintText:
+                    'Type your draft assessment prompt parameters here...',
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.all(12),
               ),
             ),
-            isExpanded: true,
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  _duplicateWarning,
+                  style: const TextStyle(
+                    color: Colors.orange,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text(
+                '${_questionController.text.length} / 500',
+                style: const TextStyle(color: Colors.grey, fontSize: 11),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
           Align(
             alignment: Alignment.centerRight,
             child: ElevatedButton(
-              onPressed: _questionController.text.trim().isEmpty ? null : () {},
+              onPressed:
+                  (_classifying ||
+                      _questionController.text.trim().isEmpty ||
+                      _selectedSubjectId == null ||
+                      _duplicateWarning.isNotEmpty)
+                  ? null
+                  : _handleManualClassification,
               style: ElevatedButton.styleFrom(
                 backgroundColor: primaryColor,
                 disabledBackgroundColor: Colors.grey.shade300,
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 28,
+                  horizontal: 24,
                   vertical: 14,
                 ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              child: const Text(
-                'Classify Question',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
-              ),
+              child: _classifying
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Text(
+                      'Classify & Save Question',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
             ),
           ),
         ],
@@ -404,7 +814,7 @@ class _InputPageState extends State<InputPage>
     );
   }
 
-  // ─── Upload Tab ───────────────────────────────────────────────────────────────
+  // ─── Upload Tab Implementation ───────────────────────────────────────────────
   Widget _buildUploadTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -492,8 +902,8 @@ class _InputPageState extends State<InputPage>
               width: double.infinity,
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: const Color(0xFFfef2f2),
-                border: Border.all(color: const Color(0xFFfecaca)),
+                color: const Color(0xFFFEF2F2),
+                border: Border.all(color: const Color(0xFFFECACA)),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
@@ -520,11 +930,6 @@ class _InputPageState extends State<InputPage>
                   if (_uploadResult!['subject']['code'] != null)
                     Text(
                       _uploadResult!['subject']['code'],
-                      style: const TextStyle(fontSize: 12, color: Colors.grey),
-                    ),
-                  if (_uploadResult!['subject']['description'] != null)
-                    Text(
-                      _uploadResult!['subject']['description'],
                       style: const TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                 ],
@@ -577,8 +982,82 @@ class _InputPageState extends State<InputPage>
                 ),
               ),
             ),
+
             const SizedBox(height: 24),
-            _buildStepHeader(3, 'Number of Items'),
+            _buildStepHeader(3, 'Question Types Selection'),
+            const SizedBox(height: 8),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                childAspectRatio: 3.2,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
+              itemCount: _questionTypeOptions.length,
+              itemBuilder: (context, index) {
+                final typeOption = _questionTypeOptions[index];
+                final String typeValue = typeOption["value"]!;
+                final bool isSelected = _selectedQuestionTypes.contains(
+                  typeValue,
+                );
+
+                return InkWell(
+                  onTap: () {
+                    setState(() {
+                      if (isSelected) {
+                        _selectedQuestionTypes.remove(typeValue);
+                      } else {
+                        _selectedQuestionTypes.add(typeValue);
+                      }
+                    });
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? const Color(0xFFFFF5F5)
+                          : Colors.white,
+                      border: Border.all(
+                        color: isSelected ? primaryColor : Colors.grey.shade300,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Row(
+                      children: [
+                        Checkbox(
+                          activeColor: primaryColor,
+                          value: isSelected,
+                          onChanged: (bool? checked) {
+                            setState(() {
+                              if (checked == true) {
+                                _selectedQuestionTypes.add(typeValue);
+                              } else {
+                                _selectedQuestionTypes.remove(typeValue);
+                              }
+                            });
+                          },
+                        ),
+                        Expanded(
+                          child: Text(
+                            typeOption["label"]!,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+
+            const SizedBox(height: 24),
+            _buildStepHeader(4, 'Number of Items'),
             const SizedBox(height: 12),
             TextField(
               controller: _totalItemsController,
@@ -595,17 +1074,16 @@ class _InputPageState extends State<InputPage>
                   vertical: 12,
                 ),
               ),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              "Questions will be auto-distributed across all 6 Bloom's Taxonomy levels",
-              style: TextStyle(fontSize: 11, color: Colors.grey),
+              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: (_generating || _totalItemsController.text.isEmpty)
+                onPressed:
+                    (_generating ||
+                        _totalItemsController.text.isEmpty ||
+                        _selectedQuestionTypes.isEmpty)
                     ? null
                     : _handleGenerate,
                 style: ElevatedButton.styleFrom(
@@ -620,6 +1098,7 @@ class _InputPageState extends State<InputPage>
                     ? const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
+                          // FIX: Removed the unneeded wrapper and isMaterial3 named parameter completely
                           SizedBox(
                             width: 18,
                             height: 18,
@@ -653,8 +1132,8 @@ class _InputPageState extends State<InputPage>
               width: double.infinity,
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: const Color(0xFFf0fdf4),
-                border: Border.all(color: const Color(0xFF86efac)),
+                color: const Color(0xFFF0FDF4),
+                border: Border.all(color: const Color(0xFF86EFAC)),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
@@ -664,15 +1143,15 @@ class _InputPageState extends State<InputPage>
                     children: [
                       const Icon(
                         Icons.check_circle,
-                        color: Color(0xFF16a34a),
+                        color: Color(0xFF16A34A),
                         size: 18,
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          _generationResult!['message'],
+                          _generationResult!['message'] ?? '',
                           style: const TextStyle(
-                            color: Color(0xFF16a34a),
+                            color: Color(0xFF16A34A),
                             fontWeight: FontWeight.bold,
                             fontSize: 13,
                           ),
@@ -710,8 +1189,8 @@ class _InputPageState extends State<InputPage>
                                 child: Text(
                                   row['topic'],
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
                                     fontSize: 13,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
                               ),
@@ -763,7 +1242,7 @@ class _InputPageState extends State<InputPage>
                   Text(
                     '✅ ${_generationResult!['total_questions']} questions saved to Question Bank!',
                     style: const TextStyle(
-                      color: Color(0xFF16a34a),
+                      color: Color(0xFF16A34A),
                       fontWeight: FontWeight.w600,
                       fontSize: 13,
                     ),
@@ -777,7 +1256,7 @@ class _InputPageState extends State<InputPage>
     );
   }
 
-  // ─── Helper Widgets ───────────────────────────────────────────────────────────
+  // ─── Helper UI Widgets ───────────────────────────────────────────────────────
   Widget _buildStepHeader(int step, String title) {
     return Row(
       children: [
@@ -828,10 +1307,10 @@ class _InputPageState extends State<InputPage>
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         border: Border.all(
-          color: file != null ? const Color(0xFF86efac) : Colors.grey.shade300,
+          color: file != null ? const Color(0xFF86EFAC) : Colors.grey.shade300,
         ),
         borderRadius: BorderRadius.circular(10),
-        color: file != null ? const Color(0xFFf0fdf4) : Colors.white,
+        color: file != null ? const Color(0xFFF0FDF4) : Colors.white,
       ),
       child: Column(
         children: [
@@ -839,12 +1318,12 @@ class _InputPageState extends State<InputPage>
             width: 52,
             height: 52,
             decoration: BoxDecoration(
-              color: file != null ? const Color(0xFFdcfce7) : iconBgColor,
+              color: file != null ? const Color(0xFFDCFCE7) : iconBgColor,
               shape: BoxShape.circle,
             ),
             child: Icon(
               file != null ? Icons.check : icon,
-              color: file != null ? const Color(0xFF16a34a) : iconColor,
+              color: file != null ? const Color(0xFF16A34A) : iconColor,
               size: 26,
             ),
           ),
@@ -852,11 +1331,7 @@ class _InputPageState extends State<InputPage>
           Text(
             title,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-              color: Color(0xFF1A1A1A),
-            ),
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 4),
           Text(
@@ -864,8 +1339,8 @@ class _InputPageState extends State<InputPage>
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 11,
-              color: file != null ? const Color(0xFF16a34a) : Colors.grey,
-              fontWeight: file != null ? FontWeight.w600 : FontWeight.normal,
+              color: file != null ? const Color(0xFF16A34A) : Colors.grey,
+              fontWeight: file != null ? FontWeight.bold : FontWeight.normal,
             ),
           ),
           if (file == null) ...[
@@ -903,7 +1378,7 @@ class _InputPageState extends State<InputPage>
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(
                       color: file != null
-                          ? const Color(0xFF16a34a)
+                          ? const Color(0xFF16A34A)
                           : const Color(0xFF1565C0),
                     ),
                     shape: RoundedRectangleBorder(
@@ -919,7 +1394,7 @@ class _InputPageState extends State<InputPage>
                     style: TextStyle(
                       fontSize: 12,
                       color: file != null
-                          ? const Color(0xFF16a34a)
+                          ? const Color(0xFF16A34A)
                           : const Color(0xFF1565C0),
                     ),
                   ),
@@ -928,7 +1403,7 @@ class _InputPageState extends State<InputPage>
                   onPressed: onTap,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: file != null
-                        ? const Color(0xFF16a34a)
+                        ? const Color(0xFF16A34A)
                         : primaryColor,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(6),
