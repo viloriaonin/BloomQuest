@@ -771,6 +771,156 @@ async def generate_questions(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# --- NEW SCHEMAS FOR MANUAL ENTERED OPERATIONS ---
+class SubjectCreateRequest(BaseModel):
+    name: str
+    code: str = None
+
+class ManualQuestionRequest(BaseModel):
+    question: str
+    question_type: str
+    subject_id: int
+
+# --- NEW ROUTE: MANUAL SUBJECT CREATION ---
+@app.post("/api/subjects", status_code=201)
+def create_subject_manually(payload: SubjectCreateRequest, db: Session = Depends(get_db)):
+    existing_subject = db.query(models.Subject).filter(
+        func.lower(models.Subject.name) == payload.name.strip().lower()
+    ).first()
+    
+    if existing_subject:
+        raise HTTPException(status_code=400, detail="A subject with this name already exists.")
+        
+    new_subject = models.Subject(
+        name=payload.name.strip(),
+        code=payload.code.strip() if payload.code else None,
+        description="Manually added subject area."
+    )
+    db.add(new_subject)
+    db.commit()
+    db.refresh(new_subject)
+    
+    return {
+        "id": new_subject.id,
+        "name": new_subject.name,
+        "code": new_subject.code,
+        "message": "Subject registered successfully!"
+    }
+
+# --- NEW ROUTE: SINGLE QUESTION MANUAL CLASSIFICATION ---
+@app.post("/api/questions/manual", status_code=201)
+def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Session = Depends(get_db)):
+    subject = db.query(models.Subject).filter(models.Subject.id == payload.subject_id).first()
+    if not subject:
+        raise HTTPException(status_code=404, detail="Subject context not found.")
+
+    # 1. Run semantic similarity logic / duplicate validation against existing items
+    duplicate_check = db.query(models.GeneratedQuestion).filter(
+        models.GeneratedQuestion.subject_id == payload.subject_id,
+        func.lower(models.GeneratedQuestion.question) == payload.question.strip().lower()
+    ).first()
+
+    if duplicate_check:
+        raise HTTPException(status_code=400, detail="This identical question text already exists inside this subject pool.")
+
+    # 2. Leverage your classifier pipeline engine to evaluate Bloom's Taxonomy tier
+    bloom_level = classify_question(payload.question.strip())
+
+    # 3. Save entry directly to database row structures
+    new_question = models.GeneratedQuestion(
+        subject_id=payload.subject_id,
+        bloom_level=bloom_level,
+        question_type=payload.question_type,
+        question=payload.question.strip(),
+        options=None,
+        correct_answer="Evaluated text payload.",
+        explanation="Manually classified entry item."
+    )
+    db.add(new_question)
+    db.commit()
+    db.refresh(new_question)
+
+    return {
+        "id": new_question.id,
+        "bloom_level": bloom_level,
+        "message": f"Successfully classified question under {bloom_level} tier!"
+    }
+
+# =====================================================================
+# 🆕 INJECTED SCHEMAS AND MANUALLY CONTROLLED ROUTES 
+# =====================================================================
+
+class SubjectCreateRequest(BaseModel):
+    name: str
+    code: str = None
+
+class ManualQuestionRequest(BaseModel):
+    question: str
+    question_type: str
+    subject_id: int
+
+@app.post("/api/subjects", status_code=201)
+def create_subject_manually(payload: SubjectCreateRequest, db: Session = Depends(get_db)):
+    # Case-insensitive validation check
+    existing_subject = db.query(models.Subject).filter(
+        func.lower(models.Subject.name) == payload.name.strip().lower()
+    ).first()
+    
+    if existing_subject:
+        raise HTTPException(status_code=400, detail="A subject with this name already exists.")
+        
+    new_subject = models.Subject(
+        name=payload.name.strip(),
+        code=payload.code.strip() if payload.code else None,
+        description="Manually added subject area framework context."
+    )
+    db.add(new_subject)
+    db.commit() # Safely commits transaction to PostgreSQL/MySQL
+    db.refresh(new_subject)
+    
+    return {
+        "id": new_subject.id,
+        "name": new_subject.name,
+        "code": new_subject.code,
+        "message": "Subject registered successfully!"
+    }
+
+@app.post("/api/questions/manual", status_code=201)
+def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Session = Depends(get_db)):
+    subject = db.query(models.Subject).filter(models.Subject.id == payload.subject_id).first()
+    if not subject:
+        raise HTTPException(status_code=404, detail="Subject context reference point not found.")
+
+    # Prevent Duplicate Thoughts across this explicit subject area
+    duplicate_check = db.query(models.GeneratedQuestion).filter(
+        models.GeneratedQuestion.subject_id == payload.subject_id,
+        func.lower(models.GeneratedQuestion.question) == payload.question.strip().lower()
+    ).first()
+
+    if duplicate_check:
+        raise HTTPException(status_code=400, detail="This exact question already exists within this framework.")
+
+    # Call your core ML Taxonomy classifier
+    bloom_level = classify_question(payload.question.strip())
+
+    new_question = models.GeneratedQuestion(
+        subject_id=payload.subject_id,
+        bloom_level=bloom_level,
+        question_type=payload.question_type,
+        question=payload.question.strip(),
+        options=None,
+        correct_answer="Evaluated manual answer entry.",
+        explanation="Manually processed single taxonomy item context."
+    )
+    db.add(new_question)
+    db.commit()
+    db.refresh(new_question)
+
+    return {
+        "id": new_question.id,
+        "bloom_level": bloom_level,
+        "message": f"Successfully classified question under {bloom_level}!"
+      }
 
 @app.get("/api/subjects")
 def get_subjects(db: Session = Depends(get_db)):
