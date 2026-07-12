@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 const API_URL = 'http://localhost:8000';
 const BLOOMS_LEVELS = ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'];
@@ -14,22 +14,172 @@ const QUESTION_TYPE_OPTIONS = [
 
 const InputQuestion = () => {
   const [activeTab, setActiveTab] = useState('upload');
+  const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
-  // Upload states
+  // Shared Core States
+  const [subjects, setSubjects] = useState([]);
+  const [selectedSubject, setSelectedSubject] = useState('');
+  const [isAddingNewSubject, setIsAddingNewSubject] = useState(false);
+  const [newSubjectName, setNewSubjectName] = useState('');
+  const [newSubjectCode, setNewSubjectCode] = useState('');
+
+  // Manual Tab States
+  const [manualQuestion, setManualQuestion] = useState('');
+  const [manualQuestionType, setManualQuestionType] = useState('MCQ');
+  const [classifying, setClassifying] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState('');
+
+  // Upload & Auto-Gen Tab States
   const [moduleFile, setModuleFile] = useState(null);
   const [syllabusFile, setSyllabusFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState(null);
-
-  // TOS states
   const [totalItems, setTotalItems] = useState('');
   const [selectedQuestionTypes, setSelectedQuestionTypes] = useState([]);
   const [generating, setGenerating] = useState(false);
   const [generationResult, setGenerationResult] = useState(null);
-  const [error, setError] = useState('');
 
   const moduleInputRef = useRef();
   const syllabusInputRef = useRef();
+
+  // Load active global subject filters from question bank configurations on tab mounts
+  useEffect(() => {
+    fetchSubjects();
+  }, []);
+
+  const fetchSubjects = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/subjects`);
+      if (!response.ok) throw new Error('Failed to synchronize subject matrix context data records.');
+      const data = await response.json();
+      setSubjects(data);
+    } catch (err) {
+      setError('Could not establish persistent communication hooks with active subjects database schemas.');
+    }
+  };
+
+  // Perform continuous lookahead checking on keystroke breaks to ensure "same thoughts" don't match existing vectors
+  useEffect(() => {
+    if (manualQuestion.trim().length < 10 || !selectedSubject) {
+      setDuplicateWarning('');
+      return;
+    }
+    
+    const delayDebounceCheck = setTimeout(async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/questions?subject_id=${selectedSubject}`);
+        if (response.ok) {
+          const matchingQuestionBankItems = await response.json();
+          const targetInputText = manualQuestion.trim().toLowerCase();
+          
+          // Checks for exact or close structural sentence phrasing similarities matching bank schemas
+          const isDuplicateThought = matchingQuestionBankItems.some(q => 
+            q.question.toLowerCase().includes(targetInputText) || 
+            targetInputText.includes(q.question.toLowerCase())
+          );
+
+          if (isDuplicateThought) {
+            setDuplicateWarning('⚠️ A question item with this identical concept or matching core text already exists within this subject layout block.');
+          } else {
+            setDuplicateWarning('');
+          }
+        }
+      } catch (err) {
+        console.error("Lookahead query safety verification check encountered an unexpected routing exception:", err);
+      }
+    }, 600); // 600ms input debounce delay tracker
+
+    return () => clearTimeout(delayDebounceCheck);
+  }, [manualQuestion, selectedSubject]);
+
+  const handleSubjectDropdownChange = (e) => {
+    const val = e.target.value;
+    if (val === 'add_new') {
+      setIsAddingNewSubject(true);
+      setSelectedSubject('');
+    } else {
+      setIsAddingNewSubject(false);
+      setSelectedSubject(val);
+    }
+  };
+
+const handleCreateCustomSubject = async (e) => {
+    e.preventDefault();
+    if (!newSubjectName.trim()) return;
+
+    setError('');
+    setSuccessMessage('');
+    try {
+      // Pointing cleanly to your new dedicated API endpoint handler
+      const response = await fetch(`${API_URL}/api/subjects`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: newSubjectName.trim(),
+          code: newSubjectCode.trim() || null,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Failed to register subject.');
+
+      // Capture the exact database structural id from the response payload
+      setSubjects(prev => [...prev, data]);
+      setSelectedSubject(data.id); 
+      setIsAddingNewSubject(false);
+      setNewSubjectName('');
+      setNewSubjectCode('');
+      setSuccessMessage('🎉 Course area injected into registry framework layout records successfully!');
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleManualClassification = async () => {
+    if (!selectedSubject) {
+      setError('You must select a subject tracking reference framework before classifying items.');
+      return;
+    }
+    if (!manualQuestion.trim()) {
+      setError('Question block workspace cannot be submitted while empty.');
+      return;
+    }
+    if (duplicateWarning) {
+      setError('Cannot proceed: Conceptual duplicate detected within this course pool.');
+      return;
+    }
+
+    setError('');
+    setSuccessMessage('');
+    setClassifying(true);
+
+    try {
+      const response = await fetch(`${API_URL}/api/questions/manual`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          question: manualQuestion.trim(),
+          question_type: manualQuestionType,
+          subject_id: parseInt(selectedSubject),
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Classification engine execution failed.');
+      
+      setSuccessMessage(`🎉 Success! Machine Learning model analyzed the structure and placed the item into the "${data.bloom_level}" taxonomy rank tier inside your question bank.`);
+      setManualQuestion('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setClassifying(false);
+    }
+  };
 
   const toggleQuestionType = (value) => {
     setSelectedQuestionTypes((current) =>
@@ -37,7 +187,6 @@ const InputQuestion = () => {
     );
   };
 
-  // Handle file upload
   const handleUpload = async () => {
     if (!moduleFile || !syllabusFile) {
       setError('Please upload both module and syllabus files.');
@@ -67,7 +216,6 @@ const InputQuestion = () => {
     }
   };
 
-  // Handle question generation
   const handleGenerate = async () => {
     if (!totalItems || totalItems < 1) {
       setError('Please enter a valid number of items.');
@@ -110,7 +258,11 @@ const InputQuestion = () => {
                 ? 'border-b-2 border-red-600 text-red-600'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
-            onClick={() => setActiveTab('manual')}
+            onClick={() => {
+              setActiveTab('manual');
+              setError('');
+              setSuccessMessage('');
+            }}
           >
             Input Manually
           </button>
@@ -120,16 +272,137 @@ const InputQuestion = () => {
                 ? 'border-b-2 border-red-600 text-red-600'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
-            onClick={() => setActiveTab('upload')}
+            onClick={() => {
+              setActiveTab('upload');
+              setError('');
+              setSuccessMessage('');
+            }}
           >
             Upload File / Module
           </button>
         </div>
 
-        {/* Error Message */}
+        {/* Diagnostic Status Alerts */}
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
             {error}
+          </div>
+        )}
+        {successMessage && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md text-sm text-green-700">
+            {successMessage}
+          </div>
+        )}
+
+        {/* MANUAL TAB */}
+        {activeTab === 'manual' && (
+          <div className="space-y-6">
+            
+            {/* Subject Selector and Target Type Deck Configs */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Target Course Subject</label>
+                <select
+                  className="w-full border border-gray-200 rounded-md p-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-400 cursor-pointer"
+                  value={selectedSubject}
+                  onChange={handleSubjectDropdownChange}
+                >
+                  <option value="">— Select Associated Subject Framework —</option>
+                  {subjects.map(s => (
+                    <option key={s.id} value={s.id}>{s.name} {s.code ? `(${s.code})` : ''}</option>
+                  ))}
+                  <option value="add_new" className="text-red-600 font-semibold">+ Add New Subject Option...</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Intended Item Assessment Type</label>
+                <select
+                  className="w-full border border-gray-200 rounded-md p-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-400 cursor-pointer"
+                  value={manualQuestionType}
+                  onChange={(e) => setManualQuestionType(e.target.value)}
+                >
+                  {QUESTION_TYPE_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Dynamic Inline Subject Registry Creation Dock Section */}
+            {isAddingNewSubject && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3 animation-fade-in">
+                <h4 className="text-xs font-bold text-gray-700 uppercase">Register New Curricular Course Component</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input 
+                    type="text" 
+                    placeholder="Subject Title (e.g., Software Engineering)" 
+                    className="border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+                    value={newSubjectName}
+                    onChange={(e) => setNewSubjectName(e.target.value)}
+                  />
+                  <input 
+                    type="text" 
+                    placeholder="Subject Key Code (e.g., COMSCI302)" 
+                    className="border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+                    value={newSubjectCode}
+                    onChange={(e) => setNewSubjectCode(e.target.value)}
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button 
+                    onClick={() => setIsAddingNewSubject(false)}
+                    className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded-md font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleCreateCustomSubject}
+                    className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-md font-medium"
+                  >
+                    Save Subject
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Primary Question Entry Frame Workspace */}
+            <div className="relative">
+              <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Question Input Content Area</label>
+              <textarea
+                className={`w-full h-44 p-4 border rounded-md focus:ring-1 outline-none resize-none text-gray-700 text-sm transition-all ${
+                  duplicateWarning 
+                    ? 'border-orange-400 focus:ring-orange-400 focus:border-orange-400 bg-orange-50/20' 
+                    : 'border-gray-200 focus:ring-red-500 focus:border-red-500'
+                }`}
+                placeholder="Type the unique draft assessment question parameters here..."
+                maxLength={500}
+                value={manualQuestion}
+                onChange={(e) => setManualQuestion(e.target.value)}
+              />
+              <div className="flex justify-between items-center mt-1">
+                <span className="text-xs font-medium text-orange-600">{duplicateWarning}</span>
+                <span className="text-xs text-gray-400 ml-auto">{manualQuestion.length} / 500 characters</span>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button 
+                onClick={handleManualClassification}
+                disabled={classifying || !!duplicateWarning || !manualQuestion.trim() || !selectedSubject}
+                className="bg-[#b90000] hover:bg-[#990000] disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-medium text-sm py-2.5 px-6 rounded-md transition-colors flex items-center gap-2"
+              >
+                {classifying ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                    </svg>
+                    Running ML Classifiers...
+                  </>
+                ) : 'Classify & Save Question'}
+              </button>
+            </div>
           </div>
         )}
 
@@ -438,24 +711,6 @@ const InputQuestion = () => {
                 </p>
               </div>
             )}
-          </div>
-        )}
-
-        {/* MANUAL TAB */}
-        {activeTab === 'manual' && (
-          <div className="space-y-6">
-            <div className="relative">
-              <textarea
-                className="w-full h-48 p-4 border border-gray-200 rounded-md focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none resize-none text-gray-700"
-                placeholder="Type your question here..."
-                maxLength={500}
-              />
-            </div>
-            <div className="flex justify-end">
-              <button className="bg-[#b90000] hover:bg-[#990000] text-white font-medium text-sm py-2.5 px-6 rounded-md">
-                Classify Question
-              </button>
-            </div>
           </div>
         )}
 
