@@ -61,3 +61,13 @@ class AccountRequest(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     status = Column(String(50), default="pending")
     created_at = Column(DateTime, server_default=func.now())
+
+class ActivityLog(Base):
+    __tablename__ = "activity_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    action = Column(String)
+    details = Column(Text)
+    type = Column(String)       # "generate", "upload", "classify", "login"
+    status = Column(String, default="success")   # "success", "error", "info"
+    created_at = Column(DateTime, server_default=func.now())
