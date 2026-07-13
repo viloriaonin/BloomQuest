@@ -32,6 +32,18 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "database.env"))
 models.Base.metadata.create_all(bind=engine)
 
 
+def log_activity(db: Session, action: str, details: str, type: str, status: str = "success", user_id: int = None):
+    entry = models.ActivityLog(
+        user_id=user_id,
+        action=action,
+        details=details,
+        type=type,
+        status=status
+    )
+    db.add(entry)
+    db.commit()
+
+
 def build_assessment_document(questions, subject_name, export_format):
     SubjectLike = type("SubjectLike", (), {"name": subject_name})
     docx_path = build_assessment_docx(SubjectLike(), questions)
@@ -358,6 +370,8 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
 
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+    log_activity(db, "System Login", f"Logged in as {user.email}.", "login", user_id=user.id)
 
     # Return response (replace with JWT later)
     return {
@@ -689,6 +703,8 @@ async def upload_files(
         db.commit()
         db.refresh(upload)
 
+        log_activity(db, "Uploaded Module", f"Processed '{module_file.filename}' for Table of Specifications.", "upload")
+
         return {
             "upload_id": upload.id,
             "subject": subject_info,
@@ -696,6 +712,7 @@ async def upload_files(
             "message": "Files uploaded! Now enter total number of items."
         }
     except Exception as e:
+        log_activity(db, "Failed Upload", f"File '{module_file.filename}' could not be processed.", "upload", status="error")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -758,6 +775,8 @@ async def generate_questions(
             )
             db.add(question)
         db.commit()
+
+        log_activity(db, "Generated Assessment", f"Created '{subject.name}' with {len(questions)} questions.", "generate")
 
         return {
             "tos_id": tos_record.id,
@@ -840,87 +859,13 @@ def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Sessio
     db.commit()
     db.refresh(new_question)
 
+    log_activity(db, "Classified Question", f"Manual Input: '{payload.question[:60]}' → Categorized as {bloom_level}.", "classify")
+
     return {
         "id": new_question.id,
         "bloom_level": bloom_level,
         "message": f"Successfully classified question under {bloom_level} tier!"
     }
-
-# =====================================================================
-# 🆕 INJECTED SCHEMAS AND MANUALLY CONTROLLED ROUTES 
-# =====================================================================
-
-class SubjectCreateRequest(BaseModel):
-    name: str
-    code: str = None
-
-class ManualQuestionRequest(BaseModel):
-    question: str
-    question_type: str
-    subject_id: int
-
-@app.post("/api/subjects", status_code=201)
-def create_subject_manually(payload: SubjectCreateRequest, db: Session = Depends(get_db)):
-    # Case-insensitive validation check
-    existing_subject = db.query(models.Subject).filter(
-        func.lower(models.Subject.name) == payload.name.strip().lower()
-    ).first()
-    
-    if existing_subject:
-        raise HTTPException(status_code=400, detail="A subject with this name already exists.")
-        
-    new_subject = models.Subject(
-        name=payload.name.strip(),
-        code=payload.code.strip() if payload.code else None,
-        description="Manually added subject area framework context."
-    )
-    db.add(new_subject)
-    db.commit() # Safely commits transaction to PostgreSQL/MySQL
-    db.refresh(new_subject)
-    
-    return {
-        "id": new_subject.id,
-        "name": new_subject.name,
-        "code": new_subject.code,
-        "message": "Subject registered successfully!"
-    }
-
-@app.post("/api/questions/manual", status_code=201)
-def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Session = Depends(get_db)):
-    subject = db.query(models.Subject).filter(models.Subject.id == payload.subject_id).first()
-    if not subject:
-        raise HTTPException(status_code=404, detail="Subject context reference point not found.")
-
-    # Prevent Duplicate Thoughts across this explicit subject area
-    duplicate_check = db.query(models.GeneratedQuestion).filter(
-        models.GeneratedQuestion.subject_id == payload.subject_id,
-        func.lower(models.GeneratedQuestion.question) == payload.question.strip().lower()
-    ).first()
-
-    if duplicate_check:
-        raise HTTPException(status_code=400, detail="This exact question already exists within this framework.")
-
-    # Call your core ML Taxonomy classifier
-    bloom_level = classify_question(payload.question.strip())
-
-    new_question = models.GeneratedQuestion(
-        subject_id=payload.subject_id,
-        bloom_level=bloom_level,
-        question_type=payload.question_type,
-        question=payload.question.strip(),
-        options=None,
-        correct_answer="Evaluated manual answer entry.",
-        explanation="Manually processed single taxonomy item context."
-    )
-    db.add(new_question)
-    db.commit()
-    db.refresh(new_question)
-
-    return {
-        "id": new_question.id,
-        "bloom_level": bloom_level,
-        "message": f"Successfully classified question under {bloom_level}!"
-      }
 
 @app.get("/api/subjects")
 def get_subjects(db: Session = Depends(get_db)):
@@ -939,6 +884,25 @@ def get_questions(
     if bloom_level:
         query = query.filter(models.GeneratedQuestion.bloom_level == bloom_level)
     return query.all()
+
+
+@app.get("/api/history")
+def get_history(user_id: int = None, db: Session = Depends(get_db)):
+    query = db.query(models.ActivityLog).order_by(models.ActivityLog.created_at.desc())
+    if user_id:
+        query = query.filter(models.ActivityLog.user_id == user_id)
+    logs = query.limit(100).all()
+    return [
+        {
+            "id": log.id,
+            "action": log.action,
+            "details": log.details,
+            "date": log.created_at.isoformat() if log.created_at else None,
+            "type": log.type,
+            "status": log.status,
+        }
+        for log in logs
+    ]
 
 
 @app.put("/api/questions/{question_id}")
@@ -968,8 +932,13 @@ def delete_question(question_id: int, db: Session = Depends(get_db)):
     ).first()
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
+
+    question_preview = q.question[:60] if q.question else f"Question #{question_id}"
     db.delete(q)
     db.commit()
+
+    log_activity(db, "Deleted Question", f"Removed question: '{question_preview}'.", "delete")
+
     return {"message": "Question deleted successfully"}
 
 @app.post("/api/questions/export")

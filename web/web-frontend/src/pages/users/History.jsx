@@ -1,48 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-// Mock data representing the user's activity log
-const mockHistory = [
-  {
-    id: 1,
-    action: "Generated Assessment",
-    details: "Created 'Midterm Exam - Data Structures' with 25 questions.",
-    date: "Today, 10:45 AM",
-    type: "generate", 
-    status: "success"
-  },
-  {
-    id: 2,
-    action: "Uploaded Module",
-    details: "Processed 'Chapter_4_Trees.pdf' for Table of Specifications.",
-    date: "Today, 09:30 AM",
-    type: "upload",
-    status: "success"
-  },
-  {
-    id: 3,
-    action: "Classified Question",
-    details: "Manual Input: 'What is a binary tree?' → Categorized as Remember.",
-    date: "Yesterday, 03:15 PM",
-    type: "classify",
-    status: "success"
-  },
-  {
-    id: 4,
-    action: "Failed Upload",
-    details: "File 'corrupted_syllabus.docx' could not be read.",
-    date: "Yesterday, 01:10 PM",
-    type: "upload",
-    status: "error"
-  },
-  {
-    id: 5,
-    action: "System Login",
-    details: "Logged in securely from Chrome (Windows).",
-    date: "Yesterday, 08:00 AM",
-    type: "login",
-    status: "info"
-  }
-];
+// Adjust this if your backend runs on a different host/port
+const API_URL = "http://localhost:8000/api/history";
+
+// Converts an ISO date string from the backend into a friendly display format
+const formatDate = (isoString) => {
+  if (!isoString) return "";
+  const date = new Date(isoString);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+
+  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (isToday) return `Today, ${time}`;
+  if (isYesterday) return `Yesterday, ${time}`;
+  return `${date.toLocaleDateString()}, ${time}`;
+};
 
 // Helper function to render the correct icon based on the activity type
 const getIcon = (type, status) => {
@@ -53,7 +28,7 @@ const getIcon = (type, status) => {
       </svg>
     );
   }
-  
+
   switch (type) {
     case 'generate':
       return (
@@ -73,6 +48,12 @@ const getIcon = (type, status) => {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
         </svg>
       );
+    case 'delete':
+      return (
+        <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+        </svg>
+      );
     case 'login':
     default:
       return (
@@ -85,23 +66,50 @@ const getIcon = (type, status) => {
 
 const History = () => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch(API_URL);
+        if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
+        const data = await res.json();
+        const formatted = data.map((item) => ({
+          ...item,
+          date: formatDate(item.date),
+        }));
+        setHistory(formatted);
+        setError(null);
+      } catch (err) {
+        console.error("Failed to load history:", err);
+        setError("Could not load activity history. Please try again later.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchHistory();
+  }, []);
 
   // Filter history based on search input
-  const filteredHistory = mockHistory.filter(item => 
+  const filteredHistory = history.filter(item =>
     item.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.details.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
     <div className="max-w-5xl w-full p-2 h-full flex flex-col">
-      
+
       {/* Header & Search Bar */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-xl font-bold text-gray-800">Activity History</h2>
           <p className="text-sm text-gray-500 mt-1">Review your recent actions and system logs.</p>
         </div>
-        
+
         <div className="relative w-full sm:w-72">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -120,12 +128,20 @@ const History = () => {
 
       {/* Timeline Content */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-8 flex-1 overflow-y-auto">
-        
-        {filteredHistory.length > 0 ? (
+
+        {loading ? (
+          <div className="flex flex-col items-center justify-center h-48 text-gray-400">
+            <p>Loading activity history...</p>
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center h-48 text-red-400">
+            <p>{error}</p>
+          </div>
+        ) : filteredHistory.length > 0 ? (
           <div className="relative border-l-2 border-gray-100 ml-3 md:ml-6 space-y-8 pb-4">
             {filteredHistory.map((item) => (
               <div key={item.id} className="relative pl-8 md:pl-10">
-                
+
                 {/* Timeline Dot with Icon */}
                 <div className={`absolute -left-[17px] top-1 w-8 h-8 rounded-full border-4 border-white flex items-center justify-center
                   ${item.status === 'error' ? 'bg-red-50' : 'bg-gray-50'} shadow-sm`}
