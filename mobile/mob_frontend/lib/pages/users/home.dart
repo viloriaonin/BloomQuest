@@ -1,122 +1,327 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:fl_chart/fl_chart.dart';
 
-class HomePage extends StatelessWidget {
+const String baseUrl = 'http://127.0.0.1:8000';
+
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  int _totalSubjects = 0;
+  int _totalQuestions = 0;
+  final int _assessmentsGenerated = 12;
+  bool _loading = true;
 
   static const primaryColor = Color(0xFF7B1113);
 
+  // Mapping configurations matching web layout exactly
+  final Map<String, double> _bloomsData = {
+    "Rem": 45, // Remember
+    "Und": 30, // Understand
+    "App": 22, // Apply
+    "Ana": 28, // Analyze
+    "Eva": 15, // Evaluate
+    "Cre": 10, // Create
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchDashboardAnalytics();
+  }
+
+  Future<void> _fetchDashboardAnalytics() async {
+    try {
+      final subjectsRes = await http.get(Uri.parse('$baseUrl/api/subjects'));
+      final questionsRes = await http.get(Uri.parse('$baseUrl/api/questions'));
+
+      if (subjectsRes.statusCode == 200 && questionsRes.statusCode == 200) {
+        final List<dynamic> subjectsData = jsonDecode(subjectsRes.body);
+        final List<dynamic> questionsData = jsonDecode(questionsRes.body);
+
+        setState(() {
+          _totalSubjects = subjectsData.length;
+          _totalQuestions = questionsData.length;
+          _loading = false;
+        });
+      } else {
+        setState(() => _loading = false);
+      }
+    } catch (_) {
+      setState(() => _loading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
+        ),
+      );
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Stats row
-          Row(
-            children: [
-              _StatCard(
-                icon: Icons.quiz_outlined,
-                label: 'Questions',
-                value: '0',
-                color: primaryColor,
-              ),
-              const SizedBox(width: 12),
-              _StatCard(
-                icon: Icons.assessment_outlined,
-                label: 'Assessments',
-                value: '0',
-                color: const Color(0xFF1565C0),
-              ),
-              const SizedBox(width: 12),
-              _StatCard(
-                icon: Icons.check_circle_outline,
-                label: 'Completed',
-                value: '0',
-                color: const Color(0xFF2E7D32),
-              ),
-            ],
+          // ─── 1. KPI COUNTERS ───
+          _buildKpiCard(
+            title: "MANAGED SUBJECTS",
+            value: "$_totalSubjects",
+            icon: Icons.book_outlined,
+          ),
+          const SizedBox(height: 12),
+          _buildKpiCard(
+            title: "TOTAL QUESTION POOL",
+            value: "$_totalQuestions",
+            icon: Icons.quiz_outlined,
+          ),
+          const SizedBox(height: 12),
+          _buildKpiCard(
+            title: "ASSESSMENTS EXPORTED",
+            value: "$_assessmentsGenerated",
+            icon: Icons.assessment_outlined,
           ),
 
           const SizedBox(height: 24),
 
-          // Quick Actions
-          const Text(
-            'Quick Actions',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF333333),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _QuickActionCard(
-                icon: Icons.add_circle_outline,
-                label: 'Add Question',
-                color: primaryColor,
-                onTap: () {},
-              ),
-              const SizedBox(width: 12),
-              _QuickActionCard(
-                icon: Icons.library_books_outlined,
-                label: 'Question Bank',
-                color: const Color(0xFF1565C0),
-                onTap: () {},
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _QuickActionCard(
-                icon: Icons.history_outlined,
-                label: 'View History',
-                color: const Color(0xFF2E7D32),
-                onTap: () {},
-              ),
-              const SizedBox(width: 12),
-              _QuickActionCard(
-                icon: Icons.bar_chart_outlined,
-                label: 'Reports',
-                color: const Color(0xFFE65100),
-                onTap: () {},
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 24),
-
-          // Recent Activity
-          const Text(
-            'Recent Activity',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF333333),
-            ),
-          ),
-          const SizedBox(height: 12),
+          // ─── 2. FL_CHART BAR GRAPH (BLOOM'S) ───
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(32),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.grey.shade200),
             ),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  Icons.inbox_outlined,
-                  size: 48,
-                  color: Colors.grey.shade400,
+                const Text(
+                  "COGNITIVE DOMAIN SPREAD (BLOOM'S LEVELS)",
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                    letterSpacing: 0.5,
+                  ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'No recent activity yet',
-                  style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+                const SizedBox(height: 24),
+                SizedBox(
+                  height: 200,
+                  child: BarChart(
+                    BarChartData(
+                      alignment: BarChartAlignment.spaceAround,
+                      maxY: 50,
+                      barTouchData: BarTouchData(enabled: true),
+                      titlesData: FlTitlesData(
+                        show: true,
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            getTitlesWidget: (double value, TitleMeta meta) {
+                              List<String> labels = _bloomsData.keys.toList();
+                              if (value.toInt() >= 0 &&
+                                  value.toInt() < labels.length) {
+                                return SideTitleWidget(
+                                  // ✅ Pass meta direct layout structures or drop named contexts to match your fl_chart cache configuration rules
+                                  meta: meta,
+                                  child: Text(
+                                    labels[value.toInt()],
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                );
+                              }
+                              return const SizedBox();
+                            },
+                          ),
+                        ),
+                        leftTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 28,
+                            interval: 10,
+                          ),
+                        ),
+                        topTitles: AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        rightTitles: AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                      ),
+                      borderData: FlBorderData(show: false),
+                      gridData: FlGridData(
+                        show: true,
+                        drawVerticalLine: false,
+                        horizontalInterval: 10,
+                      ),
+                      barGroups: _bloomsData.values
+                          .toList()
+                          .asMap()
+                          .entries
+                          .map((entry) {
+                            return BarChartGroupData(
+                              x: entry.key,
+                              barRods: [
+                                BarChartRodData(
+                                  toY: entry.value,
+                                  color: _getBloomColor(entry.key),
+                                  width: 16,
+                                  borderRadius: const BorderRadius.only(
+                                    topLeft: Radius.circular(4),
+                                    topRight: Radius.circular(4),
+                                  ),
+                                ),
+                              ],
+                            );
+                          })
+                          .toList(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // ─── 3. FL_CHART PIE GRAPH (QUESTION FORMS) ───
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "QUESTION FORMS SPREAD",
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 4,
+                      child: SizedBox(
+                        height: 140,
+                        child: PieChart(
+                          PieChartData(
+                            sectionsSpace: 2,
+                            centerSpaceRadius: 30,
+                            sections: [
+                              PieChartSectionData(
+                                color: Colors.blue,
+                                value: 65,
+                                title: '43%',
+                                radius: 40,
+                                titleStyle: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              PieChartSectionData(
+                                color: Colors.green,
+                                value: 28,
+                                title: '18%',
+                                radius: 40,
+                                titleStyle: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              PieChartSectionData(
+                                color: Colors.amber,
+                                value: 32,
+                                title: '21%',
+                                radius: 40,
+                                titleStyle: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              PieChartSectionData(
+                                color: Colors.pink,
+                                value: 15,
+                                title: '10%',
+                                radius: 40,
+                                titleStyle: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              PieChartSectionData(
+                                color: Colors.grey,
+                                value: 10,
+                                title: '7%',
+                                radius: 40,
+                                titleStyle: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const Expanded(
+                      flex: 5,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _ChartIndicator(color: Colors.blue, text: "MCQ (65)"),
+                          SizedBox(height: 6),
+                          _ChartIndicator(
+                            color: Colors.green,
+                            text: "True/False (28)",
+                          ),
+                          SizedBox(height: 6),
+                          _ChartIndicator(
+                            color: Colors.amber,
+                            text: "Identification (32)",
+                          ),
+                          SizedBox(height: 6),
+                          _ChartIndicator(
+                            color: Colors.pink,
+                            text: "Essay (15)",
+                          ),
+                          SizedBox(height: 6),
+                          _ChartIndicator(
+                            color: Colors.grey,
+                            text: "Situational (10)",
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -125,98 +330,98 @@ class HomePage extends StatelessWidget {
       ),
     );
   }
-}
 
-// ─── Reusable Widgets ─────────────────────────────────────────────────────────
+  Color _getBloomColor(int index) {
+    List<Color> colors = [
+      Colors.red,
+      Colors.pink,
+      Colors.orange,
+      Colors.teal,
+      Colors.blue,
+      Colors.purple,
+    ];
+    return colors[index % colors.length];
+  }
 
-class _StatCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color color;
-
-  const _StatCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade200),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 28),
-            const SizedBox(height: 6),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: color,
+  Widget _buildKpiCard({
+    required String title,
+    required String value,
+    required IconData icon,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey,
+                  letterSpacing: 0.5,
+                ),
               ),
+              const SizedBox(height: 6),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1A1A1A),
+                  letterSpacing: -0.5,
+                  fontFamily: 'Inter',
+                ),
+              ),
+            ],
+          ),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF5F5),
+              borderRadius: BorderRadius.circular(8),
             ),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
+            child: Icon(icon, color: primaryColor, size: 22),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _QuickActionCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
+class _ChartIndicator extends StatelessWidget {
   final Color color;
-  final VoidCallback onTap;
-
-  const _QuickActionCard({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
+  final String text;
+  const _ChartIndicator({required this.color, required this.text});
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.08),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color.withOpacity(0.2)),
-          ),
-          child: Column(
-            children: [
-              Icon(icon, color: color, size: 32),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                ),
-              ),
-            ],
+    return Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          text,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF555555),
           ),
         ),
-      ),
+      ],
     );
   }
 }
