@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:typed_data';
+import '../../utils/web_downloader_stub.dart'
+    if (dart.library.html) '../../utils/web_downloader_html.dart'
+    as web_downloader;
 // import '../widgets/adminSidebar.dart'; // Ensure this points to your sidebar
 
 const String baseUrl = 'http://127.0.0.1:8000/api';
@@ -36,6 +42,12 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
   List<dynamic> _questions = [];
   bool _loadingSubjects = true;
   bool _loadingQuestions = false;
+  Set<int> _selectedQuestionIds = {};
+
+  // Add question form controllers
+  final TextEditingController _newQuestionController = TextEditingController();
+  final TextEditingController _newAnswerController = TextEditingController();
+  String _newQuestionType = 'MCQ';
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -51,6 +63,8 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
   void dispose() {
     _tabController.dispose();
     _searchController.dispose();
+    _newQuestionController.dispose();
+    _newAnswerController.dispose();
     super.dispose();
   }
 
@@ -225,6 +239,247 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
     );
   }
 
+  Future<void> _deleteQuestion(dynamic id) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Question'),
+        content: const Text('Are you sure you want to delete this question?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: kPrimary)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      final res = await http.delete(Uri.parse('$baseUrl/questions/$id'));
+      if (res.statusCode == 200) {
+        setState(() {
+          _questions.removeWhere((q) => q['id'] == id);
+          _selectedQuestionIds.remove(id);
+        });
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Question deleted')));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Delete failed (${res.statusCode})')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Delete error: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Network error')));
+    }
+  }
+
+  Future<void> _showAddQuestionDialog() async {
+    _newQuestionController.clear();
+    _newAnswerController.clear();
+    _newQuestionType = 'MCQ';
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add Question', style: TextStyle(color: kPrimary)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _newQuestionController,
+                maxLines: 4,
+                decoration: const InputDecoration(labelText: 'Question'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _newAnswerController,
+                decoration: const InputDecoration(labelText: 'Correct Answer'),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _newQuestionType,
+                items: ['MCQ', 'Short Answer', 'Essay']
+                    .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                    .toList(),
+                onChanged: (v) => _newQuestionType = v ?? 'MCQ',
+                decoration: const InputDecoration(labelText: 'Question Type'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: kPrimary),
+            onPressed: () async {
+              final qText = _newQuestionController.text.trim();
+              if (qText.isEmpty || _selectedSubjectId == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter question and select subject'),
+                  ),
+                );
+                return;
+              }
+              Navigator.pop(ctx);
+              await _addQuestion(
+                qText,
+                _newAnswerController.text.trim(),
+                _newQuestionType,
+              );
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addQuestion(String qText, String answer, String type) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/questions/manual'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'question': qText,
+          'question_type': type,
+          'subject_id': int.parse(_selectedSubjectId!),
+        }),
+      );
+      if (res.statusCode == 201 || res.statusCode == 200) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Question added')));
+        if (_selectedSubjectId != null) _fetchQuestions(_selectedSubjectId!);
+      } else {
+        debugPrint('Add failed: ${res.statusCode} ${res.body}');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Add failed (${res.statusCode})')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Add error: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Network error')));
+    }
+  }
+
+  Future<void> _importBank() async {
+    // Pick two files: module & syllabus
+    try {
+      final result = await FilePicker.pickFiles(allowMultiple: true);
+      if (result == null || result.files.length < 2) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please pick module and syllabus files'),
+          ),
+        );
+        return;
+      }
+      final module = result.files[0];
+      final syllabus = result.files[1];
+
+      final uri = Uri.parse('$baseUrl/upload');
+      final request = http.MultipartRequest('POST', uri);
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'module_file',
+          module.bytes!,
+          filename: module.name,
+        ),
+      );
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'syllabus_file',
+          syllabus.bytes!,
+          filename: syllabus.name,
+        ),
+      );
+
+      final streamed = await request.send();
+      final res = await http.Response.fromStream(streamed);
+      if (res.statusCode == 200) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Files uploaded')));
+        // Possibly show next steps
+      } else {
+        debugPrint('Upload failed ${res.statusCode} ${res.body}');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Upload failed (${res.statusCode})')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Import error: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Import failed')));
+    }
+  }
+
+  Future<void> _generateAssessmentExport() async {
+    if (_selectedQuestionIds.isEmpty || _selectedSubjectId == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Select questions first')));
+      return;
+    }
+
+    try {
+      final uri = Uri.parse('$baseUrl/questions/export');
+      final request = http.MultipartRequest('POST', uri);
+      request.fields['subject_id'] = _selectedSubjectId!;
+      request.fields['question_ids'] = _selectedQuestionIds.join(',');
+      request.fields['export_format'] = 'pdf';
+
+      final streamed = await request.send();
+      if (streamed.statusCode != 200) {
+        final text = await streamed.stream.bytesToString();
+        debugPrint('Export failed: ${streamed.statusCode} $text');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed (${streamed.statusCode})')),
+        );
+        return;
+      }
+
+      final bytes = await streamed.stream.toBytes();
+      final cd = streamed.headers['content-disposition'] ?? '';
+      final match = RegExp(r'filename=(?:"?)([^";]+)(?:"?)').firstMatch(cd);
+      final filename = match != null
+          ? match.group(1)!
+          : 'assessment_${DateTime.now().millisecondsSinceEpoch}.pdf';
+
+      if (kIsWeb) {
+        web_downloader.downloadFileWeb(bytes, filename, 'application/pdf');
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Assessment downloaded')));
+      } else {
+        // Non-web behavior (not used on Chrome) - attempt to save and open
+        // Keep for desktop/mobile builds; platform-specific saving can be implemented here.
+      }
+    } catch (e) {
+      debugPrint('Export error: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Export failed')));
+    }
+  }
+
   // 1. Add 'explanation' as a required parameter here
   Future<void> _updateQuestion(
     dynamic id,
@@ -289,224 +544,375 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
 
   @override
   Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Container(
+          color: kBg,
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Header Section ──
+              const Text(
+                'QUESTION BANK',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: kPrimary,
+                  letterSpacing: 0.6,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Manage exam questions and bank items',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1A1A1A),
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Browse, create, and manage exam questions by subject and level.',
+                style: TextStyle(color: Colors.grey, fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+
+              // ── Analytics Cards ──
+              Row(
+                children: [
+                  Expanded(
+                    child: _AnalyticsCard(
+                      label: 'Total questions',
+                      value: _selectedSubjectId != null
+                          ? '${_questions.length}'
+                          : '—',
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _AnalyticsCard(
+                      label: 'Ready for review',
+                      value: _selectedSubjectId != null
+                          ? '${_questions.where((q) => (q['explanation']?.toString() ?? '').trim().isEmpty).length}'
+                          : '—',
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _AnalyticsCard(
+                      label: 'High-order items',
+                      value: _selectedSubjectId != null
+                          ? '${_questions.where((q) => const ['Analyze', 'Evaluate', 'Create'].contains(q['bloom_level'])).length}'
+                          : '—',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // ── Subject Dropdown (Maroon Border as pictured) ──
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: kPrimary, width: 1.5),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    value: _selectedSubjectId,
+                    icon: const Icon(Icons.arrow_drop_down, color: Colors.grey),
+                    hint: const Text(
+                      'Select a subject...',
+                      style: TextStyle(color: Colors.grey, fontSize: 14),
+                    ),
+                    items: _subjects.map<DropdownMenuItem<String>>((s) {
+                      return DropdownMenuItem(
+                        value: s['id'].toString(),
+                        child: Text(
+                          s['name'].toString(),
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() {
+                          _selectedSubjectId = val;
+                          _searchController.clear();
+                          _searchQuery = '';
+                        });
+                        _fetchQuestions(val);
+                      }
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // ── Add / Import Buttons (copied from web) ──
+              if (_selectedSubjectId != null)
+                Row(
+                  children: [
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: kPrimary,
+                      ),
+                      onPressed: _showAddQuestionDialog,
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('Add Question'),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: _importBank,
+                      icon: const Icon(Icons.upload_file, size: 18),
+                      label: const Text('Import Bank'),
+                    ),
+                  ],
+                ),
+              if (_selectedSubjectId != null) const SizedBox(height: 12),
+
+              // ── Search Bar (Light Grey Border) ──
+              TextField(
+                controller: _searchController,
+                onChanged: (val) => setState(() => _searchQuery = val),
+                decoration: InputDecoration(
+                  hintText: 'Search questions...',
+                  hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
+                  prefixIcon: const Icon(
+                    Icons.search,
+                    color: Colors.grey,
+                    size: 20,
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    borderSide: BorderSide(color: Colors.grey.shade400),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // ── Tabs & Download Button ──
+              if (_selectedSubjectId != null) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: TabBar(
+                        controller: _tabController,
+                        isScrollable: true,
+                        labelColor: kPrimary,
+                        unselectedLabelColor: Colors.grey,
+                        indicatorColor: kPrimary,
+                        indicatorWeight: 3,
+                        tabAlignment: TabAlignment.start,
+                        dividerColor: Colors.grey.shade300,
+                        tabs: bloomsLevels.map((level) {
+                          final count = _countByLevel(level['name']);
+                          return Tab(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    color: level['color'],
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  level['name'],
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade200,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '$count',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    // Maroon Download Button
+                    Container(
+                      margin: const EdgeInsets.only(left: 8, bottom: 8),
+                      decoration: BoxDecoration(
+                        color: kPrimary,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: IconButton(
+                        icon: const Icon(
+                          Icons.download,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                        onPressed: _generateAssessmentExport,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // ── Tab Views (Question List) ──
+                Expanded(
+                  child: _loadingQuestions
+                      ? const Center(
+                          child: CircularProgressIndicator(color: kPrimary),
+                        )
+                      : TabBarView(
+                          controller: _tabController,
+                          children: bloomsLevels.map((level) {
+                            final levelQs = _questionsByLevel(level['name']);
+                            if (levelQs.isEmpty) {
+                              return const Center(
+                                child: Text(
+                                  'No questions match your criteria.',
+                                  style: TextStyle(color: Colors.grey),
+                                ),
+                              );
+                            }
+                            return ListView.builder(
+                              itemCount: levelQs.length,
+                              itemBuilder: (context, i) {
+                                return _QuestionCard(
+                                  question: levelQs[i],
+                                  levelColor: level['color'],
+                                  onEdit: () =>
+                                      _showEditQuestionDialog(levelQs[i]),
+                                  onDelete: () =>
+                                      _deleteQuestion(levelQs[i]['id']),
+                                  isSelected: _selectedQuestionIds.contains(
+                                    levelQs[i]['id'],
+                                  ),
+                                  onToggleSelect: (sel) {
+                                    setState(() {
+                                      if (sel) {
+                                        _selectedQuestionIds.add(
+                                          levelQs[i]['id'],
+                                        );
+                                      } else {
+                                        _selectedQuestionIds.remove(
+                                          levelQs[i]['id'],
+                                        );
+                                      }
+                                    });
+                                  },
+                                );
+                              },
+                            );
+                          }).toList(),
+                        ),
+                ),
+              ] else ...[
+                const Expanded(
+                  child: Center(
+                    child: Text(
+                      'Select a subject to begin.',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        _buildSelectionBar(),
+      ],
+    );
+  }
+
+  // Sticky bottom bar for selected questions
+  Widget _buildSelectionBar() {
+    if (_selectedQuestionIds.isEmpty) return const SizedBox.shrink();
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: Container(
+        color: Colors.white,
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Text('Selected: ', style: TextStyle(color: Colors.black54)),
+            Text(
+              '${_selectedQuestionIds.length}',
+              style: const TextStyle(
+                color: kPrimary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const Spacer(),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: kPrimary),
+              onPressed: _generateAssessmentExport,
+              child: Text(
+                'Generate Assessment (${_selectedQuestionIds.length})',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Analytics Stat Card (matches web's grey stat tiles) ──
+class _AnalyticsCard extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _AnalyticsCard({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      color: kBg,
-      padding: const EdgeInsets.all(24.0),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9F9F9),
+        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(14),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Header Section ──
-          const Text(
-            'Question Bank',
-            style: TextStyle(
-              fontSize: 22,
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11, color: Colors.black45),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 24,
               fontWeight: FontWeight.bold,
               color: Color(0xFF1A1A1A),
             ),
           ),
-          const SizedBox(height: 4),
-          const Text(
-            'Browse and manage your questions by subject',
-            style: TextStyle(color: Colors.grey, fontSize: 13),
-          ),
-          const SizedBox(height: 20),
-
-          // ── Subject Dropdown (Maroon Border as pictured) ──
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: kPrimary, width: 1.5),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                isExpanded: true,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                value: _selectedSubjectId,
-                icon: const Icon(Icons.arrow_drop_down, color: Colors.grey),
-                hint: const Text(
-                  'Select a subject...',
-                  style: TextStyle(color: Colors.grey, fontSize: 14),
-                ),
-                items: _subjects.map<DropdownMenuItem<String>>((s) {
-                  return DropdownMenuItem(
-                    value: s['id'].toString(),
-                    child: Text(
-                      s['name'].toString(),
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                  );
-                }).toList(),
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() {
-                      _selectedSubjectId = val;
-                      _searchController.clear();
-                      _searchQuery = '';
-                    });
-                    _fetchQuestions(val);
-                  }
-                },
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // ── Search Bar (Light Grey Border) ──
-          TextField(
-            controller: _searchController,
-            onChanged: (val) => setState(() => _searchQuery = val),
-            decoration: InputDecoration(
-              hintText: 'Search questions...',
-              hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
-              prefixIcon: const Icon(
-                Icons.search,
-                color: Colors.grey,
-                size: 20,
-              ),
-              filled: true,
-              fillColor: Colors.white,
-              contentPadding: const EdgeInsets.symmetric(vertical: 0),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(6),
-                borderSide: BorderSide(color: Colors.grey.shade300),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(6),
-                borderSide: BorderSide(color: Colors.grey.shade400),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // ── Tabs & Download Button ──
-          if (_selectedSubjectId != null) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: TabBar(
-                    controller: _tabController,
-                    isScrollable: true,
-                    labelColor: kPrimary,
-                    unselectedLabelColor: Colors.grey,
-                    indicatorColor: kPrimary,
-                    indicatorWeight: 3,
-                    tabAlignment: TabAlignment.start,
-                    dividerColor: Colors.grey.shade300,
-                    tabs: bloomsLevels.map((level) {
-                      final count = _countByLevel(level['name']);
-                      return Tab(
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: level['color'],
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              level['name'],
-                              style: const TextStyle(fontSize: 14),
-                            ),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade200,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                '$count',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.black54,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-                // Maroon Download Button
-                Container(
-                  margin: const EdgeInsets.only(left: 8, bottom: 8),
-                  decoration: BoxDecoration(
-                    color: kPrimary,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: IconButton(
-                    icon: const Icon(
-                      Icons.download,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                    onPressed: () {
-                      // Add your generate assessment logic here
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Downloading Assessment...'),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // ── Tab Views (Question List) ──
-            Expanded(
-              child: _loadingQuestions
-                  ? const Center(
-                      child: CircularProgressIndicator(color: kPrimary),
-                    )
-                  : TabBarView(
-                      controller: _tabController,
-                      children: bloomsLevels.map((level) {
-                        final levelQs = _questionsByLevel(level['name']);
-                        if (levelQs.isEmpty) {
-                          return const Center(
-                            child: Text(
-                              'No questions match your criteria.',
-                              style: TextStyle(color: Colors.grey),
-                            ),
-                          );
-                        }
-                        return ListView.builder(
-                          itemCount: levelQs.length,
-                          itemBuilder: (context, i) {
-                            return _QuestionCard(
-                              question: levelQs[i],
-                              levelColor: level['color'],
-                              onEdit: () => _showEditQuestionDialog(levelQs[i]),
-                              onDelete: () {
-                                // Add delete confirmation logic
-                              },
-                            );
-                          },
-                        );
-                      }).toList(),
-                    ),
-            ),
-          ] else ...[
-            const Expanded(
-              child: Center(
-                child: Text(
-                  'Select a subject to begin.',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -519,12 +925,16 @@ class _QuestionCard extends StatelessWidget {
   final Color levelColor;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final bool? isSelected;
+  final ValueChanged<bool>? onToggleSelect;
 
   const _QuestionCard({
     required this.question,
     required this.levelColor,
     required this.onEdit,
     required this.onDelete,
+    this.isSelected,
+    this.onToggleSelect,
   });
 
   @override
@@ -548,6 +958,15 @@ class _QuestionCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Selection Checkbox
+              if (onToggleSelect != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8.0, top: 2),
+                  child: Checkbox(
+                    value: isSelected ?? false,
+                    onChanged: (v) => onToggleSelect?.call(v ?? false),
+                  ),
+                ),
               Expanded(
                 child: Text(
                   question['question']?.toString() ?? '',

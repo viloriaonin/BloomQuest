@@ -240,7 +240,7 @@ class _InputPageState extends State<InputPage>
   // ─── Pick Files ──────────────────────────────────────────────────────────────
   Future<void> _pickModuleFile() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'pptx', 'ppt', 'docx'],
         withData: true,
@@ -268,7 +268,7 @@ class _InputPageState extends State<InputPage>
 
   Future<void> _pickSyllabusFile() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'docx', 'xlsx', 'xls'],
         withData: true,
