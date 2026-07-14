@@ -53,18 +53,14 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
         final active = usersResponse['active'];
         final archived = usersResponse['archived'];
         if (active is List) {
-          activeUsers.addAll(
-            active
-                .map((item) => Map<String, dynamic>.from(item))
-                .where(isFaculty),
-          );
+          activeUsers.addAll(active
+              .map((item) => Map<String, dynamic>.from(item))
+              .where(isFaculty));
         }
         if (archived is List) {
-          archivedUsers.addAll(
-            archived
-                .map((item) => Map<String, dynamic>.from(item))
-                .where(isFaculty),
-          );
+          archivedUsers.addAll(archived
+              .map((item) => Map<String, dynamic>.from(item))
+              .where(isFaculty));
         }
       } else if (usersResponse is List) {
         for (final item in usersResponse) {
@@ -79,9 +75,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
       }
 
       setState(() {
-        _pendingRequests = pending
-            .map((item) => Map<String, dynamic>.from(item as Map))
-            .toList();
+        _pendingRequests = pending.map((item) => Map<String, dynamic>.from(item as Map)).toList();
         _activeUsers = activeUsers;
         _archivedUsers = archivedUsers;
       });
@@ -126,9 +120,9 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
     try {
       await ApiService.archiveUser(email);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Archived user $email.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Archived user $email.')),
+      );
       await _loadUserManagementData();
     } catch (e) {
       _showError(e.toString());
@@ -139,9 +133,9 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
     try {
       await ApiService.restoreUser(email);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Restored user $email.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Restored user $email.')),
+      );
       await _loadUserManagementData();
     } catch (e) {
       _showError(e.toString());
@@ -178,9 +172,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
   Future<void> _verifyAdminPassword() async {
     if (_selectedUser == null) return;
     if (_adminPassword.trim().isEmpty) {
-      setState(
-        () => _adminAuthError = 'Enter your admin password to continue.',
-      );
+      setState(() => _adminAuthError = 'Enter your admin password to continue.');
       return;
     }
 
@@ -191,8 +183,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
       });
 
       final prefs = await SharedPreferences.getInstance();
-      final adminEmail =
-          prefs.getString('user_email') ?? prefs.getString('email') ?? '';
+      final adminEmail = prefs.getString('user_email') ?? prefs.getString('email') ?? '';
       if (adminEmail.isEmpty) {
         throw Exception('Admin email missing. Please log in again.');
       }
@@ -250,8 +241,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
     final name = _displayName(user);
     final role = user['role']?.toString() ?? 'faculty';
     final archived = user['archived'] == true;
-    final revealedPassword =
-        _verifiedUserCredentials?['password']?.toString() ?? '';
+    final revealedPassword = _verifiedUserCredentials?['password']?.toString() ?? '';
 
     return Container(
       padding: EdgeInsets.only(
@@ -272,10 +262,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Manage User',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
+                const Text('Manage User', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 IconButton(
                   icon: const Icon(Icons.close),
                   onPressed: () => Navigator.pop(context),
@@ -283,15 +270,9 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
               ],
             ),
             const SizedBox(height: 6),
-            Text(
-              name,
-              style: const TextStyle(fontSize: 14, color: Colors.black54),
-            ),
+            Text(name, style: const TextStyle(fontSize: 14, color: Colors.black54)),
             const SizedBox(height: 4),
-            Text(
-              email,
-              style: const TextStyle(fontSize: 12, color: Colors.black45),
-            ),
+            Text(email, style: const TextStyle(fontSize: 12, color: Colors.black45)),
             const SizedBox(height: 20),
             Container(
               width: double.infinity,
@@ -303,15 +284,9 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Admin verification required',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
+                  const Text('Admin verification required', style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
-                  const Text(
-                    'Enter your admin password to view and update this user’s credentials.',
-                    style: TextStyle(fontSize: 12, color: Colors.black54),
-                  ),
+                  const Text('Enter your admin password to view and update this user’s credentials.', style: TextStyle(fontSize: 12, color: Colors.black54)),
                   const SizedBox(height: 14),
                   TextField(
                     obscureText: true,
@@ -319,35 +294,20 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                       labelText: 'Admin Password',
                       border: OutlineInputBorder(),
                     ),
-                    onChanged: (value) =>
-                        setState(() => _adminPassword = value),
+                    onChanged: (value) => setState(() => _adminPassword = value),
                   ),
                   if (_adminAuthError.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    Text(
-                      _adminAuthError,
-                      style: const TextStyle(color: Colors.red, fontSize: 12),
-                    ),
+                    Text(_adminAuthError, style: const TextStyle(color: Colors.red, fontSize: 12)),
                   ],
                   const SizedBox(height: 14),
                   ElevatedButton(
                     onPressed: _verifyLoading ? null : _verifyAdminPassword,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF7B1113),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
-                    child: _verifyLoading
-                        ? const SizedBox(
-                            height: 18,
-                            width: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text('Verify Admin Password'),
+                    child: _verifyLoading ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('Verify Admin Password'),
                   ),
                 ],
               ),
@@ -364,19 +324,13 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Verified credentials',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
+                    const Text('Verified credentials', style: TextStyle(fontWeight: FontWeight.w600)),
                     const SizedBox(height: 10),
                     _buildMetaRow('Role', role),
                     const SizedBox(height: 6),
                     _buildMetaRow('Archived', archived ? 'Yes' : 'No'),
                     const SizedBox(height: 6),
-                    _buildMetaRow(
-                      'Current password',
-                      revealedPassword.isEmpty ? 'Hidden' : revealedPassword,
-                    ),
+                    _buildMetaRow('Current password', revealedPassword.isEmpty ? 'Hidden' : revealedPassword),
                   ],
                 ),
               ),
@@ -394,9 +348,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                 onPressed: _updateUserPassword,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF7B1113),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
                 child: const Text('Save Password'),
               ),
@@ -419,8 +371,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
   }
 
   String _displayName(Map<String, dynamic> user) {
-    return (user['full_name'] ?? user['name'] ?? user['email'] ?? 'Unknown')
-        .toString();
+    return (user['full_name'] ?? user['name'] ?? user['email'] ?? 'Unknown').toString();
   }
 
   @override
@@ -449,7 +400,10 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                 color: Colors.red.shade50,
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: Text(_error, style: const TextStyle(color: Colors.red)),
+              child: Text(
+                _error,
+                style: const TextStyle(color: Colors.red),
+              ),
             ),
           if (_error.isNotEmpty) const SizedBox(height: 16),
           if (_loading)
@@ -478,33 +432,16 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
   }
 
   Widget _buildSummaryRow() {
-    final total =
-        _pendingRequests.length + _activeUsers.length + _archivedUsers.length;
+    final total = _activeUsers.length + _archivedUsers.length;
     return Row(
       children: [
-        _buildStatCard(
-          'Total Users',
-          total.toString(),
-          const Color(0xFF7B1113),
-        ),
+        _buildStatCard('Total Users', total.toString(), const Color(0xFF7B1113)),
         const SizedBox(width: 12),
-        _buildStatCard(
-          'Pending',
-          _pendingRequests.length.toString(),
-          Colors.amber.shade700,
-        ),
+        _buildStatCard('Pending', _pendingRequests.length.toString(), Colors.amber.shade700),
         const SizedBox(width: 12),
-        _buildStatCard(
-          'Active',
-          _activeUsers.length.toString(),
-          Colors.green.shade700,
-        ),
+        _buildStatCard('Active', _activeUsers.length.toString(), Colors.green.shade700),
         const SizedBox(width: 12),
-        _buildStatCard(
-          'Archived',
-          _archivedUsers.length.toString(),
-          Colors.grey.shade700,
-        ),
+        _buildStatCard('Archived', _archivedUsers.length.toString(), Colors.grey.shade700),
       ],
     );
   }
@@ -517,29 +454,15 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
           boxShadow: [
-            const BoxShadow(
-              color: Color.fromRGBO(0, 0, 0, 0.04),
-              blurRadius: 16,
-              offset: Offset(0, 8),
-            ),
+            const BoxShadow(color: Color.fromRGBO(0, 0, 0, 0.04), blurRadius: 16, offset: Offset(0, 8)),
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              label,
-              style: const TextStyle(fontSize: 12, color: Colors.black54),
-            ),
+            Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54)),
             const SizedBox(height: 10),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
+            Text(value, style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: color)),
           ],
         ),
       ),
@@ -550,10 +473,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Pending Account Requests',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-        ),
+        const Text('Pending Account Requests', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
         const SizedBox(height: 12),
         if (_pendingRequests.isEmpty)
           Container(
@@ -564,19 +484,13 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
               borderRadius: BorderRadius.circular(18),
               border: Border.all(color: Colors.grey.shade200),
             ),
-            child: const Text(
-              'No pending registration requests at the moment.',
-            ),
+            child: const Text('No pending registration requests at the moment.'),
           )
         else
           Column(
             children: _pendingRequests.map((request) {
-              final email =
-                  request['email']?.toString() ?? 'unknown@example.com';
-              final name =
-                  request['full_name']?.toString() ??
-                  request['name']?.toString() ??
-                  email;
+              final email = request['email']?.toString() ?? 'unknown@example.com';
+              final name = request['full_name']?.toString() ?? request['name']?.toString() ?? email;
               final department = request['department']?.toString() ?? 'N/A';
               final status = request['status']?.toString() ?? 'pending';
               return Container(
@@ -593,28 +507,14 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Expanded(
-                          child: Text(
-                            name,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        Text(
-                          status.toUpperCase(),
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.orange,
-                          ),
-                        ),
+                        Expanded(child: Text(name, style: const TextStyle(fontWeight: FontWeight.w600))),
+                        Text(status.toUpperCase(), style: const TextStyle(fontSize: 12, color: Colors.orange)),
                       ],
                     ),
                     const SizedBox(height: 8),
                     Text(email, style: const TextStyle(color: Colors.black54)),
                     const SizedBox(height: 4),
-                    Text(
-                      'Department: $department',
-                      style: const TextStyle(color: Colors.black54),
-                    ),
+                    Text('Department: $department', style: const TextStyle(color: Colors.black54)),
                     const SizedBox(height: 16),
                     Row(
                       children: [
@@ -623,9 +523,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                             onPressed: () => _approveRequest(email),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF7B1113),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                             ),
                             child: const Text('Approve'),
                           ),
@@ -636,9 +534,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                             onPressed: () => _declineRequest(email),
                             style: OutlinedButton.styleFrom(
                               side: BorderSide(color: Colors.grey.shade300),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                             ),
                             child: const Text('Decline'),
                           ),
@@ -658,10 +554,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Active Users',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-        ),
+        const Text('Active Users', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
         const SizedBox(height: 12),
         if (_activeUsers.isEmpty)
           Container(
@@ -703,10 +596,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                             .take(2)
                             .join()
                             .toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -714,34 +604,19 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            name,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
+                          Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
                           const SizedBox(height: 4),
-                          Text(
-                            email,
-                            style: const TextStyle(color: Colors.black54),
-                          ),
+                          Text(email, style: const TextStyle(color: Colors.black54)),
                           const SizedBox(height: 4),
-                          Text(
-                            'Dept: $department',
-                            style: const TextStyle(color: Colors.black54),
-                          ),
+                          Text('Dept: $department', style: const TextStyle(color: Colors.black54)),
                           const SizedBox(height: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                             decoration: BoxDecoration(
                               color: Colors.green.shade50,
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            child: Text(
-                              status,
-                              style: const TextStyle(color: Colors.green),
-                            ),
+                            child: Text(status, style: const TextStyle(color: Colors.green)),
                           ),
                         ],
                       ),
@@ -751,9 +626,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                         onPressed: () => _openManageUser(user),
                         style: OutlinedButton.styleFrom(
                           side: BorderSide(color: Colors.grey.shade300),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
                         child: const Text('Manage'),
                       ),
@@ -764,9 +637,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                         onPressed: () => _archiveUser(email),
                         style: OutlinedButton.styleFrom(
                           side: BorderSide(color: Colors.grey.shade300),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
                         child: const Text('Archive'),
                       ),
@@ -784,10 +655,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Archived Users',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-        ),
+        const Text('Archived Users', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
         const SizedBox(height: 12),
         if (_archivedUsers.isEmpty)
           Container(
@@ -828,10 +696,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                             .take(2)
                             .join()
                             .toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -839,20 +704,11 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            name,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
+                          Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
                           const SizedBox(height: 4),
-                          Text(
-                            email,
-                            style: const TextStyle(color: Colors.black54),
-                          ),
+                          Text(email, style: const TextStyle(color: Colors.black54)),
                           const SizedBox(height: 4),
-                          Text(
-                            'Dept: $department',
-                            style: const TextStyle(color: Colors.black54),
-                          ),
+                          Text('Dept: $department', style: const TextStyle(color: Colors.black54)),
                         ],
                       ),
                     ),
@@ -860,9 +716,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                       onPressed: () => _restoreUser(email),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF7B1113),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
                       child: const Text('Restore'),
                     ),
