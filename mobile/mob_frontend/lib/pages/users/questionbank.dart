@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:mob_frontend/config/api_config.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:typed_data';
@@ -10,7 +11,7 @@ import 'web_download_stub.dart'
     if (dart.library.html) 'web_download_web.dart'
     as web_download;
 
-const String baseUrl = 'http://127.0.0.1:8000';
+// Use ApiConfig.baseUrl for environment-aware API URLs
 
 const primaryColor = Color(0xFF7B1113);
 
@@ -65,7 +66,7 @@ class _QuestionBankPageState extends State<QuestionBankPage>
 
   Future<void> _fetchSubjects() async {
     try {
-      final res = await http.get(Uri.parse('$baseUrl/api/subjects'));
+      final res = await http.get(Uri.parse('${ApiConfig.baseUrl}/subjects'));
       if (res.statusCode == 200) {
         setState(() {
           _subjects = jsonDecode(res.body);
@@ -94,7 +95,7 @@ class _QuestionBankPageState extends State<QuestionBankPage>
     });
     try {
       final res = await http.get(
-        Uri.parse('$baseUrl/api/questions?subject_id=$subjectId'),
+        Uri.parse('${ApiConfig.baseUrl}/questions?subject_id=$subjectId'),
       );
       if (res.statusCode == 200) {
         setState(() {
@@ -199,7 +200,7 @@ class _QuestionBankPageState extends State<QuestionBankPage>
       // Map selected IDs to pass them to your API query (e.g. ?question_ids=1,2,3)
       final idsParam = _selectedQuestionIds.join(',');
       final uri = Uri.parse(
-        '$baseUrl/api/assessment/generate?subject_id=$_selectedSubjectId&file_type=$fileType&question_ids=$idsParam',
+        '${ApiConfig.baseUrl}/assessment/generate?subject_id=$_selectedSubjectId&file_type=$fileType&question_ids=$idsParam',
       );
       final res = await http.get(uri);
 
@@ -377,7 +378,7 @@ class _QuestionBankPageState extends State<QuestionBankPage>
   ) async {
     try {
       final res = await http.put(
-        Uri.parse('$baseUrl/api/questions/$questionId'),
+        Uri.parse('${ApiConfig.baseUrl}/questions/$questionId'),
         body: {
           'question': question,
           'correct_answer': correctAnswer,
@@ -407,41 +408,54 @@ class _QuestionBankPageState extends State<QuestionBankPage>
   }
 
   void _confirmDeleteQuestion(dynamic question) {
+    bool deleting = false;
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete Question'),
-        content: const Text(
-          'Are you sure you want to delete this question? This cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Delete Question'),
+          content: const Text(
+            'Are you sure you want to delete this question? This cannot be undone.',
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.shade600,
-              foregroundColor: Colors.white,
+          actions: [
+            TextButton(
+              onPressed: deleting ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
             ),
-            onPressed: () async {
-              Navigator.pop(dialogContext);
-              final success = await _deleteQuestion(question['id']);
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      success
-                          ? 'Question deleted.'
-                          : 'Failed to delete question.',
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade600,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: deleting ? null : () async {
+                setDialogState(() => deleting = true);
+                final success = await _deleteQuestion(question['id']);
+                if (dialogContext.mounted) {
+                  Navigator.pop(dialogContext);
+                }
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        success
+                            ? 'Question deleted.'
+                            : 'Failed to delete question.',
+                      ),
                     ),
-                  ),
-                );
-              }
-            },
-            child: const Text('Delete'),
-          ),
-        ],
+                  );
+                }
+              },
+              child: deleting 
+                  ? const SizedBox(
+                      width: 16, 
+                      height: 16, 
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
+                    ) 
+                  : const Text('Delete'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -449,7 +463,7 @@ class _QuestionBankPageState extends State<QuestionBankPage>
   Future<bool> _deleteQuestion(dynamic questionId) async {
     try {
       final res = await http.delete(
-        Uri.parse('$baseUrl/api/questions/$questionId'),
+        Uri.parse('${ApiConfig.baseUrl}/questions/$questionId'),
       );
       if (res.statusCode == 200) {
         setState(() {

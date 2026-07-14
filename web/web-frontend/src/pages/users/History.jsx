@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
 // Adjust this if your backend runs on a different host/port
-const API_URL = "http://localhost:8000/api/history";
+const API_URL = "/api/history";
 
 // Converts an ISO date string from the backend into a friendly display format
 const formatDate = (isoString) => {
@@ -40,6 +40,12 @@ const getIcon = (type, status) => {
       return (
         <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+        </svg>
+      );
+    case 'download':
+      return (
+        <svg className="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
         </svg>
       );
     case 'classify':

@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 import 'dart:typed_data';
-import 'package:BloomQuest/config/api_config.dart';
+import 'package:mob_frontend/config/api_config.dart';
 
 class InputPage extends StatefulWidget {
   const InputPage({super.key});
@@ -26,6 +26,7 @@ class _InputPageState extends State<InputPage>
 
   // Inline Add New Subject States
   bool _isAddingNewSubject = false;
+  bool _savingSubject = false;
   final TextEditingController _newSubjectNameController =
       TextEditingController();
   final TextEditingController _newSubjectCodeController =
@@ -163,6 +164,7 @@ class _InputPageState extends State<InputPage>
     setState(() {
       _error = '';
       _successMessage = '';
+      _savingSubject = true;
     });
 
     try {
@@ -190,6 +192,8 @@ class _InputPageState extends State<InputPage>
       }
     } catch (e) {
       setState(() => _error = 'Exception logged writing metadata parameters.');
+    } finally {
+      setState(() => _savingSubject = false);
     }
   }
 
@@ -243,7 +247,7 @@ class _InputPageState extends State<InputPage>
   // ─── Pick Files ──────────────────────────────────────────────────────────────
   Future<void> _pickModuleFile() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'pptx', 'ppt', 'docx'],
         withData: true,
@@ -271,7 +275,7 @@ class _InputPageState extends State<InputPage>
 
   Future<void> _pickSyllabusFile() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'docx', 'xlsx', 'xls'],
         withData: true,
@@ -695,12 +699,12 @@ class _InputPageState extends State<InputPage>
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: primaryColor,
+                          foregroundColor: Colors.white,
                         ),
-                        onPressed: _handleCreateCustomSubject,
-                        child: const Text(
-                          'Save Subject',
-                          style: TextStyle(color: Colors.white, fontSize: 12),
-                        ),
+                        onPressed: _savingSubject ? null : _handleCreateCustomSubject,
+                        child: _savingSubject 
+                            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
+                            : const Text('Save Subject', style: TextStyle(color: Colors.white, fontSize: 12)),
                       ),
                     ],
                   ),
@@ -784,6 +788,7 @@ class _InputPageState extends State<InputPage>
                   : _handleManualClassification,
               style: ElevatedButton.styleFrom(
                 backgroundColor: primaryColor,
+                foregroundColor: Colors.white,
                 disabledBackgroundColor: Colors.grey.shade300,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 24,
@@ -861,6 +866,7 @@ class _InputPageState extends State<InputPage>
                   : _handleUpload,
               style: ElevatedButton.styleFrom(
                 backgroundColor: primaryColor,
+                foregroundColor: Colors.white,
                 disabledBackgroundColor: Colors.grey.shade300,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
@@ -1091,6 +1097,7 @@ class _InputPageState extends State<InputPage>
                     : _handleGenerate,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryColor,
+                  foregroundColor: Colors.white,
                   disabledBackgroundColor: Colors.grey.shade300,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
@@ -1101,7 +1108,6 @@ class _InputPageState extends State<InputPage>
                     ? const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          // FIX: Removed the unneeded wrapper and isMaterial3 named parameter completely
                           SizedBox(
                             width: 18,
                             height: 18,
@@ -1408,6 +1414,7 @@ class _InputPageState extends State<InputPage>
                     backgroundColor: file != null
                         ? const Color(0xFF16A34A)
                         : primaryColor,
+                    foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(6),
                     ),

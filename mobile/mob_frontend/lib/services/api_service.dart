@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-import 'package:BloomQuest/config/api_config.dart';
+import 'package:mob_frontend/config/api_config.dart';
 
 class ApiService {
   static Future<Map<String, dynamic>> login(
@@ -377,6 +377,32 @@ class ApiService {
       if (response.statusCode != 200) {
         final error = jsonDecode(response.body);
         throw Exception(error['detail'] ?? 'Failed to update password.');
+      }
+    } catch (e) {
+      print('API Error: $e');
+      rethrow;
+    }
+  }
+
+  static Future<void> deleteUser(String email) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('${ApiConfig.baseUrl}/users/${Uri.encodeComponent(email)}'),
+        headers: {
+          'Accept': 'application/json',
+        },
+      );
+
+      print('Status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode != 200) {
+        try {
+          final error = jsonDecode(response.body);
+          throw Exception(error['detail'] ?? 'Failed to delete user.');
+        } catch (_) {
+          throw Exception('Failed to delete user.');
+        }
       }
     } catch (e) {
       print('API Error: $e');

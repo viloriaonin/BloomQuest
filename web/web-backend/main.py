@@ -448,8 +448,8 @@ def list_admin_users(db: Session = Depends(get_db)):
 
     format_user = lambda user: {
         "id": user.id,
-        "full_name": user.email.split("@", 1)[0],
-        "department": "N/A",
+        "full_name": user.name or user.email.split("@", 1)[0],
+        "department": user.department or "N/A",
         "email": user.email,
         "role": user.role,
         "status": "Active" if not user.archived else "Archived",
@@ -485,12 +485,16 @@ async def approve_account_request(payload: AccountActionRequest, background_task
         existing_user.password = temp_password
         existing_user.role = "faculty"
         existing_user.archived = False
+        existing_user.department = department
+        existing_user.name = full_name or existing_user.name
     else:
         new_user = models.User(
             email=normalized_email,
             password=temp_password,
             role="faculty",
             archived=False,
+            name=full_name,
+            department=department,
         )
         db.add(new_user)
 
@@ -508,8 +512,8 @@ async def approve_account_request(payload: AccountActionRequest, background_task
     if created_user:
         formatted = {
             "id": created_user.id,
-            "full_name": created_user.email.split("@", 1)[0],
-            "department": "N/A",
+            "full_name": created_user.name or created_user.email.split("@", 1)[0],
+            "department": created_user.department or "N/A",
             "email": created_user.email,
             "role": created_user.role,
             "status": "Active" if not created_user.archived else "Archived",
@@ -997,4 +1001,5 @@ def export_assessment(
 
 app.include_router(questions.router)
 app.include_router(assessment.router)
+app.include_router(assessment.export_router)
 app.include_router(activity.router)

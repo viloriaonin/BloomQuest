@@ -14,9 +14,17 @@ class ContactAdminPage extends StatefulWidget {
 
 class _ContactAdminPageState extends State<ContactAdminPage> {
   final _fullNameController = TextEditingController();
-  final _departmentController = TextEditingController();
   final _emailController = TextEditingController();
   final _emailFocusNode = FocusNode();
+
+  static const List<String> _departments = [
+    'CICS', // College of Information and Computing Sciences
+    'CBA',  // College of Business Administration
+    'COE',  // College of Engineering
+    'CAS',  // College of Arts and Sciences
+    'CTE',  // College of Teacher Education
+  ];
+  String? _selectedDepartment;
 
   bool _loading = false;
   String _error = '';
@@ -37,7 +45,6 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
   @override
   void dispose() {
     _fullNameController.dispose();
-    _departmentController.dispose();
     _emailController.dispose();
     _emailFocusNode.dispose();
     super.dispose();
@@ -79,9 +86,6 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
     if (!_isValidEmail(sanitized)) return;
 
     try {
-      // NOTE: Add this method to ApiService if it doesn't exist yet.
-      // It should hit GET /api/contact-admin/check-status?email=... and
-      // return a Map like { "exists": true, "status": "pending" }.
       final data = await ApiService.checkContactAdminStatus(sanitized);
       if (data['exists'] == true) {
         setState(() {
@@ -98,7 +102,7 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
 
   Future<void> _submitRequest() async {
     final fullName = _fullNameController.text.trim();
-    final department = _departmentController.text.trim();
+    final department = _selectedDepartment ?? '';
     final email = _emailController.text.trim();
 
     setState(() {
@@ -136,7 +140,7 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
         _success = 'Request submitted. Please wait for admin approval.';
         _existingRequestStatus = 'pending';
         _fullNameController.clear();
-        _departmentController.clear();
+        _selectedDepartment = null;
       });
     } catch (e) {
       setState(() {
@@ -365,11 +369,7 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
                           controller: _fullNameController,
                         ),
                         const SizedBox(height: 16),
-                        _buildLabeledField(
-                          label: 'Department',
-                          hint: 'Enter your department',
-                          controller: _departmentController,
-                        ),
+                        _buildDepartmentDropdown(),
                         const SizedBox(height: 16),
                         _buildLabeledField(
                           label: 'Email Address',
@@ -392,6 +392,7 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
                               : _submitRequest,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _kAccentRed,
+                            foregroundColor: Colors.white, // Contrast Fixed
                             disabledBackgroundColor: _kAccentRed.withOpacity(0.6),
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
@@ -446,6 +447,58 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildDepartmentDropdown() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Department',
+          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+        ),
+        const SizedBox(height: 6),
+        DropdownButtonFormField<String>(
+          value: _selectedDepartment,
+          isExpanded: true,
+          icon: const Icon(Icons.keyboard_arrow_down_rounded),
+          style: const TextStyle(fontSize: 13, color: Colors.black87),
+          decoration: InputDecoration(
+            hintText: 'Select your department',
+            hintStyle: const TextStyle(fontSize: 13),
+            filled: true,
+            fillColor: const Color(0xFFF9FAFB),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: _kPrimary, width: 1.4),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
+          ),
+          items: _departments
+              .map(
+                (dept) => DropdownMenuItem<String>(
+                  value: dept,
+                  child: Text(dept),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            setState(() => _selectedDepartment = value);
+          },
+        ),
+      ],
     );
   }
 

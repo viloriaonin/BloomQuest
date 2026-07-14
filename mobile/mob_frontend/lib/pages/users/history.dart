@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:BloomQuest/config/api_config.dart';
+import 'package:mob_frontend/config/api_config.dart';
 
 // TODO: Update this to match your backend's actual reachable address.
 // - Flutter web (Chrome): localhost works, since it's a real browser
@@ -114,6 +114,8 @@ class _HistoryPageState extends State<HistoryPage> {
         return Icons.description_outlined;
       case 'upload':
         return Icons.cloud_upload_outlined;
+      case 'download':
+        return Icons.download_outlined;
       case 'classify':
         return Icons.category_outlined;
       case 'delete':
@@ -132,6 +134,8 @@ class _HistoryPageState extends State<HistoryPage> {
         return Colors.purple;
       case 'upload':
         return Colors.blue;
+      case 'download':
+        return Colors.teal;
       case 'classify':
         return const Color(0xFFB90000);
       case 'delete':
@@ -234,6 +238,7 @@ class _HistoryPageState extends State<HistoryPage> {
                             onPressed: _fetchHistory,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF7B1113),
+                              foregroundColor: Colors.white, // Contrast Fixed
                             ),
                             child: const Text(
                               'Retry',
