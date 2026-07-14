@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-const String baseUrl = 'http://localhost:8000';
+const String baseUrl = 'http://127.0.0.1:8000';
 
 class ApiService {
   static Future<Map<String, dynamic>> login(
@@ -158,13 +158,36 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> checkContactAdminStatus(
+    String email,
+  ) async {
+    try {
+      final response = await http.get(
+        Uri.parse(
+          '$baseUrl/api/contact-admin/check-status?email=${Uri.encodeComponent(email)}',
+        ),
+        headers: {'Accept': 'application/json'},
+      );
+
+      print('Status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      } else {
+        return {'exists': false};
+      }
+    } catch (e) {
+      print('API Error: $e');
+      return {'exists': false};
+    }
+  }
+
   static Future<List<dynamic>> fetchPendingContactRequests() async {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/api/contact-admin/pending'),
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers: {'Accept': 'application/json'},
       );
 
       print('Status code: ${response.statusCode}');
@@ -186,9 +209,7 @@ class ApiService {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/api/contact-admin/users'),
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers: {'Accept': 'application/json'},
       );
 
       print('Status code: ${response.statusCode}');
@@ -336,7 +357,10 @@ class ApiService {
     }
   }
 
-  static Future<void> updateUserPassword(String email, String newPassword) async {
+  static Future<void> updateUserPassword(
+    String email,
+    String newPassword,
+  ) async {
     try {
       final response = await http.put(
         Uri.parse('$baseUrl/api/users/update-password'),
@@ -344,10 +368,7 @@ class ApiService {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: jsonEncode({
-          'email': email,
-          'new_password': newPassword,
-        }),
+        body: jsonEncode({'email': email, 'new_password': newPassword}),
       );
 
       print('Status code: ${response.statusCode}');

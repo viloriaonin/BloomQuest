@@ -10,6 +10,8 @@ class User(Base):
     password = Column(String)
     role = Column(String)
     archived = Column(Boolean, default=False, nullable=False)
+    name = Column(String, nullable=True)         # <-- new
+    department = Column(String, nullable=True)   # <-- new, only set for role == "faculty"
 
 class Subject(Base):
     __tablename__ = "subjects"
