@@ -17,6 +17,7 @@ import random
 from routers import assessment 
 from routers import questions
 from routers.assessment import build_assessment_docx, cleanup_file
+from routers import activity
 from pydantic import BaseModel
 import secrets
 import smtplib
@@ -988,3 +989,4 @@ def export_assessment(
 
 app.include_router(questions.router)
 app.include_router(assessment.router)
+app.include_router(activity.router)
