@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../widgets/adminSidebar.dart';
-import 'package:BloomQuest/config/api_config.dart';
+import 'package:mob_frontend/config/api_config.dart';
 
 // ---------------------------------------------------------------------------
 // API CONFIG
@@ -41,6 +41,7 @@ class ActivityLogEntry {
   final int id;
   final String? name;
   final String? dept;
+  final String? role;
   final String action;
   final String? detail;
   final String? type;
@@ -52,6 +53,7 @@ class ActivityLogEntry {
     required this.id,
     this.name,
     this.dept,
+    this.role,
     required this.action,
     this.detail,
     this.type,
@@ -65,6 +67,7 @@ class ActivityLogEntry {
       id: json['id'] as int,
       name: json['name'] as String?,
       dept: json['dept'] as String?,
+      role: json['role'] as String?,
       action: json['action'] as String? ?? '',
       detail: json['detail'] as String?,
       type: json['type'] as String?,
@@ -112,6 +115,8 @@ Color _typeColor(String? type) {
       return const Color(0xFFDBEAFE); // blue-100-ish
     case 'upload':
       return const Color(0xFFFEF3C7); // amber-100-ish
+    case 'download':
+      return const Color(0xFFD1FAE5); // teal/green-100-ish
     case 'classify':
       return const Color(0xFFEDE9FE); // purple-100-ish
     case 'login':
@@ -127,6 +132,8 @@ Color _typeTextColor(String? type) {
       return const Color(0xFF1D4ED8);
     case 'upload':
       return const Color(0xFFB45309);
+    case 'download':
+      return const Color(0xFF047857);
     case 'classify':
       return const Color(0xFF6D28D9);
     case 'login':
@@ -162,7 +169,7 @@ Color _statusTextColor(String? status) {
   }
 }
 
-bool _withinPeriod(String dateStr, int? days) {
+bool withinPeriod(String dateStr, int? days) {
   if (days == null) return true;
   final entryDate = DateTime.tryParse(dateStr);
   if (entryDate == null) return true;
@@ -216,7 +223,9 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
         _activityLog
             .where(
               (row) =>
-                  _department == 'All Departments' || row.dept == _department,
+                  row.role?.toLowerCase() != 'admin' &&
+                  row.name?.toLowerCase() != 'system' &&
+                  (_department == 'All Departments' || row.dept == _department),
             )
             .map((row) => row.name)
             .where((name) => name != null && name.isNotEmpty)
@@ -233,7 +242,9 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
         : 'All Faculty';
     final days = kPeriods[_period];
     final filtered = _activityLog.where((row) {
-      final matchesPeriod = _withinPeriod(row.date, days);
+      if (row.role?.toLowerCase() == 'admin') return false;
+      if (row.name?.toLowerCase() == 'system') return false;
+      final matchesPeriod = withinPeriod(row.date, days);
       final matchesDept =
           _department == 'All Departments' || row.dept == _department;
       final matchesFaculty =

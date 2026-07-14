@@ -16,6 +16,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   int _currentIndex = 0;
   String adminName = '';
   String adminEmail = '';
+  bool _analyticsLoading = true;
+  String? _analyticsError;
+  int _totalQuestions = 0;
+  int _totalAssessments = 0;
+  int _activeFaculty = 0;
+  int _avgQuestionsPerFaculty = 0;
+  double _avgAssessmentsPerWeek = 0.0;
+  String _mostActiveDept = 'N/A';
+  int _successRate = 0;
+  List<ActivityLogEntry> _dashboardActivityLog = [];
 
   static const primaryColor = Color(0xFF7B1113);
 
@@ -23,6 +33,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   void initState() {
     super.initState();
     _loadUserData();
+    _loadDashboardAnalytics();
   }
 
   Future<void> _loadUserData() async {
@@ -31,6 +42,82 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       adminName = prefs.getString('user_name') ?? 'Admin';
       adminEmail = prefs.getString('user_email') ?? '';
     });
+  }
+
+  Future<void> _loadDashboardAnalytics() async {
+    setState(() {
+      _analyticsLoading = true;
+      _analyticsError = null;
+    });
+
+    try {
+      final rows = await fetchActivityLog();
+      final visibleRows = rows.where((row) {
+        final role = row.role?.toLowerCase();
+        final name = row.name?.toLowerCase();
+        return role != 'admin' && name != 'system';
+      }).toList();
+
+      final totalQuestions = visibleRows
+          .where((row) => row.type?.toLowerCase() == 'generate')
+          .length;
+      final totalAssessments = visibleRows
+          .where((row) => row.type?.toLowerCase() == 'download')
+          .length;
+      final activeFaculty = visibleRows
+          .map((row) => row.name?.toLowerCase())
+          .where((name) => name != null && name.isNotEmpty)
+          .toSet()
+          .length;
+      final successRate = visibleRows.isEmpty
+          ? 0
+          : ((visibleRows.where((row) => row.status?.toLowerCase() == 'success').length / visibleRows.length) * 100).round();
+      final deptCounts = <String, int>{};
+      for (final row in visibleRows) {
+        final dept = row.dept ?? 'Unknown';
+        deptCounts[dept] = (deptCounts[dept] ?? 0) + 1;
+      }
+      final mostActiveDept = deptCounts.entries
+          .fold<String>('N/A', (current, entry) {
+            if (current == 'N/A') return entry.key;
+            return (deptCounts[current] ?? 0) >= entry.value ? current : entry.key;
+          });
+      final downloadsLast30Days = visibleRows
+          .where((row) => row.type?.toLowerCase() == 'download' && _withinPeriod(row.date, 30))
+          .length;
+      final avgAssessmentsPerWeek = downloadsLast30Days / 4.0;
+      final avgQuestionsPerFaculty = activeFaculty == 0
+          ? 0
+          : (totalQuestions / activeFaculty).round();
+
+      setState(() {
+        _dashboardActivityLog = visibleRows;
+        _totalQuestions = totalQuestions;
+        _totalAssessments = totalAssessments;
+        _activeFaculty = activeFaculty;
+        _avgQuestionsPerFaculty = avgQuestionsPerFaculty;
+        _avgAssessmentsPerWeek = avgAssessmentsPerWeek;
+        _mostActiveDept = mostActiveDept;
+        _successRate = successRate;
+      });
+    } catch (e) {
+      setState(() {
+        _analyticsError = e.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _analyticsLoading = false;
+        });
+      }
+    }
+  }
+
+  bool _withinPeriod(String dateStr, int? days) {
+    if (days == null) return true;
+    final entryDate = DateTime.tryParse(dateStr);
+    if (entryDate == null) return true;
+    return DateTime.now().difference(entryDate).inDays <= days;
   }
 
   Future<void> _logout() async {
@@ -65,7 +152,21 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   @override
   Widget build(BuildContext context) {
     final List<Widget> pages = [
-      _DashboardHome(adminName: adminName),
+      _DashboardHome(
+        adminName: adminName,
+        onExportPressed: () => setState(() => _currentIndex = 4),
+        analyticsLoading: _analyticsLoading,
+        totalQuestions: _totalQuestions,
+        totalAssessments: _totalAssessments,
+        activeFaculty: _activeFaculty,
+        avgQuestionsPerFaculty: _avgQuestionsPerFaculty,
+        avgAssessmentsPerWeek: _avgAssessmentsPerWeek,
+        mostActiveDept: _mostActiveDept,
+        successRate: _successRate,
+        recentActivities: _dashboardActivityLog,
+        analyticsError: _analyticsError,
+        onRetryAnalytics: _loadDashboardAnalytics,
+      ),
       const AdminQuestionBankPage(),
       const AdminAcadMgtPage(),
       const AdminUserMgtPage(),
@@ -157,7 +258,34 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
 class _DashboardHome extends StatelessWidget {
   final String adminName;
-  const _DashboardHome({required this.adminName});
+  final VoidCallback onExportPressed;
+  final bool analyticsLoading;
+  final int totalQuestions;
+  final int totalAssessments;
+  final int activeFaculty;
+  final int avgQuestionsPerFaculty;
+  final double avgAssessmentsPerWeek;
+  final String mostActiveDept;
+  final int successRate;
+  final List<ActivityLogEntry> recentActivities;
+  final String? analyticsError;
+  final VoidCallback onRetryAnalytics;
+
+  const _DashboardHome({
+    required this.adminName,
+    required this.onExportPressed,
+    required this.analyticsLoading,
+    required this.totalQuestions,
+    required this.totalAssessments,
+    required this.activeFaculty,
+    required this.avgQuestionsPerFaculty,
+    required this.avgAssessmentsPerWeek,
+    required this.mostActiveDept,
+    required this.successRate,
+    required this.recentActivities,
+    required this.analyticsError,
+    required this.onRetryAnalytics,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -183,34 +311,34 @@ class _DashboardHome extends StatelessWidget {
           const SizedBox(height: 20),
 
           // ── Top stat row: Total Questions / Assessments / Active Faculty ──
-          const Row(
+          Row(
             children: [
               Expanded(
                 child: _StatCard(
                   icon: Icons.quiz_rounded,
-                  iconColor: Color(0xFF7B1113),
-                  iconBg: Color(0xFFF5E8E8),
-                  value: '520',
-                  label: 'Questions',
+                  iconColor: const Color(0xFF7B1113),
+                  iconBg: const Color(0xFFF5E8E8),
+                  value: analyticsLoading ? '...' : '$totalQuestions',
+                  label: 'Generated Questions',
                 ),
               ),
-              SizedBox(width: 10),
+              const SizedBox(width: 10),
               Expanded(
                 child: _StatCard(
                   icon: Icons.assignment_rounded,
-                  iconColor: Color(0xFF2E7D32),
-                  iconBg: Color(0xFFE6F4EA),
-                  value: '86',
-                  label: 'Assessments',
+                  iconColor: const Color(0xFF2E7D32),
+                  iconBg: const Color(0xFFE6F4EA),
+                  value: analyticsLoading ? '...' : '$totalAssessments',
+                  label: 'Downloaded Assessments',
                 ),
               ),
-              SizedBox(width: 10),
+              const SizedBox(width: 10),
               Expanded(
                 child: _StatCard(
                   icon: Icons.groups_rounded,
-                  iconColor: Color(0xFF1565C0),
-                  iconBg: Color(0xFFE3EDFB),
-                  value: '24',
+                  iconColor: const Color(0xFF1565C0),
+                  iconBg: const Color(0xFFE3EDFB),
+                  value: analyticsLoading ? '...' : '$activeFaculty',
                   label: 'Active Faculty',
                 ),
               ),
@@ -227,23 +355,23 @@ class _DashboardHome extends StatelessWidget {
           const SizedBox(height: 12),
 
           // ── Descriptive Analytics ──
-          const _AnalyticsInfoCard(
+          _AnalyticsInfoCard(
             title: 'Descriptive Analytics',
             rows: [
-              ('Avg Questions/Faculty', '21.7'),
-              ('Avg Assessments/Week', '5.2'),
-              ('Most Active Department', 'CICS'),
+              ('Avg Questions/Faculty', analyticsLoading ? '...' : '$avgQuestionsPerFaculty'),
+              ('Avg Assessments/Week', analyticsLoading ? '...' : avgAssessmentsPerWeek.toStringAsFixed(1)),
+              ('Most Active Department', analyticsLoading ? '...' : mostActiveDept),
             ],
           ),
           const SizedBox(height: 12),
 
           // ── Predictive Analytics ──
-          const _AnalyticsInfoCard(
+          _AnalyticsInfoCard(
             title: 'Predictive Analytics',
             rows: [
-              ('Projected Questions (May)', '590'),
-              ('Growth', '+13.5%'),
-              ('Expected Assessments', '95'),
+              ('Projected Questions (Next Month)', analyticsLoading ? '...' : '${(totalQuestions * 1.1).round()}'),
+              ('Success Rate', analyticsLoading ? '...' : '$successRate%'),
+              ('Expected Assessments', analyticsLoading ? '...' : '${(avgAssessmentsPerWeek * 4).round()}'),
             ],
           ),
           const SizedBox(height: 12),
@@ -281,7 +409,12 @@ class _DashboardHome extends StatelessWidget {
           const SizedBox(height: 24),
           const _SectionHeader(title: 'Recent Activity'),
           const SizedBox(height: 12),
-          const _RecentActivityCard(),
+          _RecentActivityCard(
+            entries: recentActivities,
+            isLoading: analyticsLoading,
+            error: analyticsError,
+            onRetry: onRetryAnalytics,
+          ),
 
           const SizedBox(height: 24),
           const _SectionHeader(title: 'Top Courses'),
@@ -327,7 +460,7 @@ class _DashboardHome extends StatelessWidget {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: () {},
+                    onPressed: onExportPressed,
                     icon: const Icon(Icons.ios_share_rounded, size: 16),
                     label: const Text(
                       'Export Report',
@@ -361,10 +494,10 @@ final BoxDecoration _cardDecoration = BoxDecoration(
   color: Colors.white,
   borderRadius: BorderRadius.circular(18),
   boxShadow: [
-    BoxShadow(
-      color: Colors.black.withOpacity(0.045),
+    const BoxShadow(
+      color: Color.fromRGBO(0, 0, 0, 0.045),
       blurRadius: 10,
-      offset: const Offset(0, 3),
+      offset: Offset(0, 3),
     ),
   ],
 );
@@ -627,69 +760,92 @@ class _AvgScoreCard extends StatelessWidget {
 // ─── Recent Activity ──────────────────────────────────────────────────────────
 
 class _RecentActivityCard extends StatelessWidget {
-  const _RecentActivityCard();
+  final List<ActivityLogEntry> entries;
+  final bool isLoading;
+  final String? error;
+  final VoidCallback onRetry;
 
-  static const _activities = [
-    _ActivityData(
-      icon: Icons.person_add_outlined,
-      text: 'New user registered',
-      sub: 'maria.santos@example.com',
-      time: '2 min ago',
-    ),
-    _ActivityData(
-      icon: Icons.quiz_outlined,
-      text: 'Question added to Math Bank',
-      sub: 'By Prof. Cruz',
-      time: '18 min ago',
-    ),
-    _ActivityData(
-      icon: Icons.school_outlined,
-      text: 'Course "STEM 101" published',
-      sub: 'Academic Management',
-      time: '1 hr ago',
-    ),
-    _ActivityData(
-      icon: Icons.bar_chart_outlined,
-      text: 'Monthly report generated',
-      sub: 'May 2025',
-      time: '3 hr ago',
-    ),
-    _ActivityData(
-      icon: Icons.edit_outlined,
-      text: 'User role updated',
-      sub: 'juan.dela.cruz → Faculty',
-      time: '5 hr ago',
-    ),
-  ];
+  const _RecentActivityCard({
+    required this.entries,
+    required this.isLoading,
+    required this.error,
+    required this.onRetry,
+  });
+
+  IconData _activityIcon(ActivityLogEntry entry) {
+    switch (entry.type?.toLowerCase()) {
+      case 'upload':
+        return Icons.upload_file;
+      case 'download':
+        return Icons.download;
+      case 'generate':
+        return Icons.auto_awesome;
+      case 'classify':
+        return Icons.analytics;
+      case 'login':
+        return Icons.login;
+      default:
+        return Icons.history;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (isLoading) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: _cardDecoration,
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (error != null) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: _cardDecoration,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Unable to load recent activity.', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text(error!, style: const TextStyle(color: Colors.redAccent)),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: onRetry,
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF7B1113)),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (entries.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: _cardDecoration,
+        child: const Center(
+          child: Text('No recent activity yet.', style: TextStyle(color: Colors.black54)),
+        ),
+      );
+    }
+
+    final items = entries.take(5).toList();
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: _cardDecoration,
       child: Column(
-        children: _activities.map((a) => _ActivityRow(data: a)).toList(),
+        children: items.map((entry) => _ActivityRow(entry: entry, icon: _activityIcon(entry))).toList(),
       ),
     );
   }
 }
 
-class _ActivityData {
-  final IconData icon;
-  final String text;
-  final String sub;
-  final String time;
-  const _ActivityData({
-    required this.icon,
-    required this.text,
-    required this.sub,
-    required this.time,
-  });
-}
-
 class _ActivityRow extends StatelessWidget {
-  final _ActivityData data;
-  const _ActivityRow({required this.data});
+  final ActivityLogEntry entry;
+  final IconData icon;
+
+  const _ActivityRow({required this.entry, required this.icon});
 
   @override
   Widget build(BuildContext context) {
@@ -705,7 +861,7 @@ class _ActivityRow extends StatelessWidget {
               color: const Color(0xFFF5E8E8),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(data.icon, color: const Color(0xFF7B1113), size: 16),
+            child: Icon(icon, color: const Color(0xFF7B1113), size: 16),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -713,22 +869,23 @@ class _ActivityRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  data.text,
+                  entry.action,
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                     color: Color(0xFF222222),
                   ),
                 ),
+                const SizedBox(height: 4),
                 Text(
-                  data.sub,
+                  '${entry.name ?? 'Unknown'} • ${entry.dept ?? 'No Dept'}',
                   style: const TextStyle(fontSize: 11, color: Colors.black45),
                 ),
               ],
             ),
           ),
           Text(
-            data.time,
+            entry.time,
             style: const TextStyle(fontSize: 10, color: Colors.black38),
           ),
         ],

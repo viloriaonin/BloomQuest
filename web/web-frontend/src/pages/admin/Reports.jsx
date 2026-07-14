@@ -52,10 +52,11 @@ const PERIODS = [
   { label: "All Time", days: null },
 ];
 
-// Matches activity_logs.type values from the schema: "generate", "upload", "classify", "login"
+// Matches activity_logs.type values from the schema: "generate", "upload", "download", "classify", "login"
 const TYPE_STYLES = {
   generate: "bg-blue-50 text-blue-700",
   upload:   "bg-amber-50 text-amber-700",
+  download: "bg-teal-50 text-teal-700",
   classify: "bg-purple-50 text-purple-700",
   login:    "bg-gray-100 text-gray-600",
 };
@@ -116,7 +117,11 @@ export const ReportsContent = () => {
 
   const facultyOptions = useMemo(() => {
     const names = activityLog
-      .filter((row) => department === "All Departments" || row.dept === department)
+      .filter((row) => {
+        const isAdminRow = String(row.role ?? "").toLowerCase() === "admin" ||
+          String(row.name ?? "").toLowerCase() === "system";
+        return !isAdminRow && (department === "All Departments" || row.dept === department);
+      })
       .map((row) => row.name);
     return ["All Faculty", ...Array.from(new Set(names)).sort()];
   }, [activityLog, department]);
@@ -127,10 +132,12 @@ export const ReportsContent = () => {
   const filteredLog = useMemo(() => {
     const selectedPeriod = PERIODS.find((p) => p.label === period);
     return activityLog.filter((row) => {
+      const isAdminRow = String(row.role ?? "").toLowerCase() === "admin" ||
+        String(row.name ?? "").toLowerCase() === "system";
       const matchesPeriod = withinPeriod(row.date, selectedPeriod.days);
       const matchesDept = department === "All Departments" || row.dept === department;
       const matchesFaculty = effectiveFaculty === "All Faculty" || row.name === effectiveFaculty;
-      return matchesPeriod && matchesDept && matchesFaculty;
+      return !isAdminRow && matchesPeriod && matchesDept && matchesFaculty;
     }).sort((a, b) => new Date(`${b.date} ${b.time}`) - new Date(`${a.date} ${a.time}`));
   }, [activityLog, period, department, effectiveFaculty]);
 
