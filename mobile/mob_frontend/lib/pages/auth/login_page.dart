@@ -3,6 +3,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api_service.dart';
 import 'contact_admin_page.dart';
 
+const _kPrimary = Color(0xFF7B1113);
+const _kAccentRed = Color(0xFFB01C1C);
+const _kGold = Color(0xFFD4AF37);
+
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -88,7 +92,7 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  // Mobile layout — stacked vertically
+  // Mobile layout — brand header + floating card, mirrors Contact Admin
   Widget _buildMobileLayout() {
     return SingleChildScrollView(
       child: Column(
@@ -96,7 +100,7 @@ class _LoginPageState extends State<LoginPage> {
           // Brand Panel — top
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 60, horizontal: 24),
+            padding: const EdgeInsets.fromLTRB(24, 48, 24, 40),
             decoration: const BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
@@ -108,10 +112,10 @@ class _LoginPageState extends State<LoginPage> {
               children: [
                 Image.asset(
                   'assets/images/bloomquest-logo.png',
-                  width: 130,
-                  height: 130,
+                  width: 110,
+                  height: 110,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 const Text(
                   'BloomQuest',
                   style: TextStyle(
@@ -122,7 +126,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Container(width: 40, height: 2, color: const Color(0xFFD4AF37)),
+                Container(width: 40, height: 2, color: _kGold),
                 const SizedBox(height: 8),
                 const Text(
                   'Empowering students to grow, learn, and lead.',
@@ -133,22 +137,39 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ),
 
-          // Login Form — bottom
-          Container(
-            width: double.infinity,
-            color: const Color(0xFFF9FAFB),
-            padding: const EdgeInsets.all(24),
-            child: _buildLoginForm(),
+          // Login Form — floating card, overlaps the header like Contact Admin
+          Transform.translate(
+            offset: const Offset(0, -24),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(22),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: _buildLoginForm(),
+              ),
+            ),
           ),
 
           // Footer
           Container(
             width: double.infinity,
+            margin: const EdgeInsets.only(top: 4),
             color: const Color(0xFF5c0d0f),
             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
             child: const Text(
               '© 2026 BloomQuest. All rights reserved.',
-              style: TextStyle(color: Color(0xFFD4AF37), fontSize: 11),
+              style: TextStyle(color: _kGold, fontSize: 11),
               textAlign: TextAlign.center,
             ),
           ),
@@ -190,7 +211,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Container(width: 60, height: 3, color: const Color(0xFFD4AF37)),
+                Container(width: 60, height: 3, color: _kGold),
                 const SizedBox(height: 12),
                 const Text(
                   'Empowering students to grow, learn, and lead.',
@@ -208,8 +229,22 @@ class _LoginPageState extends State<LoginPage> {
             padding: const EdgeInsets.all(48),
             child: Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 400),
-                child: _buildLoginForm(),
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Container(
+                  padding: const EdgeInsets.all(32),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: _buildLoginForm(),
+                ),
               ),
             ),
           ),
@@ -220,15 +255,15 @@ class _LoginPageState extends State<LoginPage> {
 
   Widget _buildLoginForm() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
         const Text(
           'Welcome back',
           style: TextStyle(
-            fontSize: 28,
+            fontSize: 26,
             fontWeight: FontWeight.bold,
-            color: Color(0xFF7B1113),
+            color: _kPrimary,
           ),
         ),
         const SizedBox(height: 4),
@@ -268,7 +303,20 @@ class _LoginPageState extends State<LoginPage> {
           decoration: InputDecoration(
             hintText: 'Enter your email',
             hintStyle: const TextStyle(fontSize: 13),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            filled: true,
+            fillColor: const Color(0xFFF9FAFB),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: _kPrimary, width: 1.4),
+            ),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
               vertical: 14,
@@ -290,7 +338,20 @@ class _LoginPageState extends State<LoginPage> {
           decoration: InputDecoration(
             hintText: 'Enter your password',
             hintStyle: const TextStyle(fontSize: 13),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            filled: true,
+            fillColor: const Color(0xFFF9FAFB),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: _kPrimary, width: 1.4),
+            ),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
               vertical: 14,
@@ -312,36 +373,47 @@ class _LoginPageState extends State<LoginPage> {
           alignment: Alignment.centerRight,
           child: TextButton(
             onPressed: _openForgotPasswordDialog,
+            style: TextButton.styleFrom(
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(0, 0),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
             child: const Text(
               'Forgot Password?',
-              style: TextStyle(color: Color(0xFFB01C1C), fontSize: 12),
+              style: TextStyle(color: _kAccentRed, fontSize: 12),
             ),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
 
-        // Login button
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: loading ? null : handleLogin,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFB01C1C),
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              disabledBackgroundColor: const Color(0xFFB01C1C).withOpacity(0.6),
-            ),
-            child: Text(
-              loading ? 'Signing in...' : 'Login',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-              ),
+        // Login button (primary CTA — solid)
+        ElevatedButton(
+          onPressed: loading ? null : handleLogin,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _kAccentRed,
+            disabledBackgroundColor: _kAccentRed.withOpacity(0.6),
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
             ),
           ),
+          child: loading
+              ? const SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text(
+                  'Login',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
         ),
         const SizedBox(height: 24),
 
@@ -369,7 +441,7 @@ class _LoginPageState extends State<LoginPage> {
             textAlign: TextAlign.center,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
         Center(
           child: Text(
             'Need help signing in? Contact the registrar\'s office.',
@@ -378,31 +450,28 @@ class _LoginPageState extends State<LoginPage> {
           ),
         ),
         const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ContactAdminPage(),
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF7B1113),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+
+        // Contact Admin button (secondary CTA — outlined, sits below primary)
+        OutlinedButton(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const ContactAdminPage(),
               ),
+            );
+          },
+          style: OutlinedButton.styleFrom(
+            foregroundColor: _kPrimary,
+            side: const BorderSide(color: _kPrimary, width: 1.3),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
             ),
-            child: const Text(
-              'Contact Admin',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+          ),
+          child: const Text(
+            'Contact Admin',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
           ),
         ),
       ],
@@ -548,7 +617,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
         _ForgotStep.email => 'Forgot Password',
         _ForgotStep.otp => 'Enter Verification Code',
         _ForgotStep.newPassword => 'Set New Password',
-      }, style: const TextStyle(fontSize: 17, color: Color(0xFF7B1113))),
+      }, style: const TextStyle(fontSize: 17, color: _kPrimary)),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -648,7 +717,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                   onPressed: loading ? null : _sendOtp,
                   child: const Text(
                     'Resend code',
-                    style: TextStyle(color: Color(0xFFB01C1C), fontSize: 12),
+                    style: TextStyle(color: _kAccentRed, fontSize: 12),
                   ),
                 ),
               ),
@@ -697,7 +766,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
         ),
         ElevatedButton(
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFB01C1C),
+            backgroundColor: _kAccentRed,
             foregroundColor: Colors.white,
           ),
           onPressed: loading
