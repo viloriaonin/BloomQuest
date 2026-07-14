@@ -378,20 +378,20 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
   Widget build(BuildContext context) {
     return Container(
       color: kBg,
-      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
             'User Management',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)),
           ),
           const SizedBox(height: 6),
           const Text(
             'Review pending registration requests, manage active faculty, and restore archived accounts.',
-            style: TextStyle(color: Colors.black54),
+            style: TextStyle(color: Colors.black54, fontSize: 13, height: 1.4),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           if (_error.isNotEmpty)
             Container(
               width: double.infinity,
@@ -414,13 +414,14 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                 onRefresh: _loadUserManagementData,
                 child: ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.only(bottom: 28),
                   children: [
                     _buildSummaryRow(),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 28),
                     _buildPendingRequestsSection(),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 28),
                     _buildActiveUsersSection(),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 28),
                     _buildArchivedUsersSection(),
                   ],
                 ),
@@ -433,26 +434,34 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
 
   Widget _buildSummaryRow() {
     final total = _activeUsers.length + _archivedUsers.length;
-    return Row(
+    return Column(
       children: [
-        _buildStatCard('Total Users', total.toString(), const Color(0xFF7B1113)),
-        const SizedBox(width: 12),
-        _buildStatCard('Pending', _pendingRequests.length.toString(), Colors.amber.shade700),
-        const SizedBox(width: 12),
-        _buildStatCard('Active', _activeUsers.length.toString(), Colors.green.shade700),
-        const SizedBox(width: 12),
-        _buildStatCard('Archived', _archivedUsers.length.toString(), Colors.grey.shade700),
+        Row(
+          children: [
+            _buildStatCard('Total Users', total.toString(), const Color(0xFF7B1113), Icons.groups_outlined),
+            const SizedBox(width: 12),
+            _buildStatCard('Pending', _pendingRequests.length.toString(), Colors.amber.shade700, Icons.hourglass_top_outlined),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            _buildStatCard('Active', _activeUsers.length.toString(), Colors.green.shade700, Icons.check_circle_outline),
+            const SizedBox(width: 12),
+            _buildStatCard('Archived', _archivedUsers.length.toString(), Colors.grey.shade700, Icons.inventory_2_outlined),
+          ],
+        ),
       ],
     );
   }
 
-  Widget _buildStatCard(String label, String value, Color color) {
+  Widget _buildStatCard(String label, String value, Color color, IconData icon) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(20),
           boxShadow: [
             const BoxShadow(color: Color.fromRGBO(0, 0, 0, 0.04), blurRadius: 16, offset: Offset(0, 8)),
           ],
@@ -460,9 +469,19 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 18, color: color),
+            ),
+            const SizedBox(height: 12),
+            Text(value, style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: color)),
+            const SizedBox(height: 2),
             Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54)),
-            const SizedBox(height: 10),
-            Text(value, style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: color)),
           ],
         ),
       ),
@@ -473,7 +492,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Pending Account Requests', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+        const Text('Pending Account Requests', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A))),
         const SizedBox(height: 12),
         if (_pendingRequests.isEmpty)
           Container(
@@ -498,7 +517,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: Colors.grey.shade200),
                 ),
                 child: Column(
@@ -507,14 +526,30 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Expanded(child: Text(name, style: const TextStyle(fontWeight: FontWeight.w600))),
-                        Text(status.toUpperCase(), style: const TextStyle(fontSize: 12, color: Colors.orange)),
+                        Expanded(
+                          child: Text(
+                            name,
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            status.toUpperCase(),
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.orange.shade800),
+                          ),
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    Text(email, style: const TextStyle(color: Colors.black54)),
-                    const SizedBox(height: 4),
-                    Text('Department: $department', style: const TextStyle(color: Colors.black54)),
+                    const SizedBox(height: 10),
+                    Text(email, style: const TextStyle(color: Colors.black54, fontSize: 13)),
+                    const SizedBox(height: 3),
+                    Text('Department: $department', style: const TextStyle(color: Colors.black45, fontSize: 12)),
                     const SizedBox(height: 16),
                     Row(
                       children: [
@@ -523,17 +558,21 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                             onPressed: () => _approveRequest(email),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF7B1113),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                             ),
                             child: const Text('Approve'),
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: OutlinedButton(
                             onPressed: () => _declineRequest(email),
                             style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.black87,
                               side: BorderSide(color: Colors.grey.shade300),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                             ),
                             child: const Text('Decline'),
@@ -554,7 +593,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Active Users', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+        const Text('Active Users', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A))),
         const SizedBox(height: 12),
         if (_activeUsers.isEmpty)
           Container(
@@ -579,68 +618,95 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: Colors.grey.shade200),
                 ),
-                child: Row(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    CircleAvatar(
-                      radius: 22,
-                      backgroundColor: const Color(0xFF7B1113),
-                      child: Text(
-                        name
-                            .split(' ')
-                            .where((part) => part.isNotEmpty)
-                            .map((part) => part[0])
-                            .take(2)
-                            .join()
-                            .toUpperCase(),
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 4),
-                          Text(email, style: const TextStyle(color: Colors.black54)),
-                          const SizedBox(height: 4),
-                          Text('Dept: $department', style: const TextStyle(color: Colors.black54)),
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.green.shade50,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(status, style: const TextStyle(color: Colors.green)),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        CircleAvatar(
+                          radius: 22,
+                          backgroundColor: const Color(0xFF7B1113),
+                          child: Text(
+                            name
+                                .split(' ')
+                                .where((part) => part.isNotEmpty)
+                                .map((part) => part[0])
+                                .take(2)
+                                .join()
+                                .toUpperCase(),
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                           ),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => _openManageUser(user),
-                        style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: Colors.grey.shade300),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
-                        child: const Text('Manage'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => _archiveUser(email),
-                        style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: Colors.grey.shade300),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name,
+                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                email,
+                                style: const TextStyle(color: Colors.black54, fontSize: 13),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Dept: $department',
+                                style: const TextStyle(color: Colors.black45, fontSize: 12),
+                              ),
+                            ],
+                          ),
                         ),
-                        child: const Text('Archive'),
-                      ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            status,
+                            style: const TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => _openManageUser(user),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF7B1113),
+                              side: BorderSide(color: Colors.grey.shade300),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            ),
+                            child: const Text('Manage'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => _archiveUser(email),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.black87,
+                              side: BorderSide(color: Colors.grey.shade300),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            ),
+                            child: const Text('Archive'),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -655,7 +721,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Archived Users', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+        const Text('Archived Users', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A))),
         const SizedBox(height: 12),
         if (_archivedUsers.isEmpty)
           Container(
@@ -679,46 +745,68 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: Colors.grey.shade200),
                 ),
-                child: Row(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    CircleAvatar(
-                      radius: 22,
-                      backgroundColor: Colors.grey.shade400,
-                      child: Text(
-                        name
-                            .split(' ')
-                            .where((part) => part.isNotEmpty)
-                            .map((part) => part[0])
-                            .take(2)
-                            .join()
-                            .toUpperCase(),
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        CircleAvatar(
+                          radius: 22,
+                          backgroundColor: Colors.grey.shade400,
+                          child: Text(
+                            name
+                                .split(' ')
+                                .where((part) => part.isNotEmpty)
+                                .map((part) => part[0])
+                                .take(2)
+                                .join()
+                                .toUpperCase(),
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name,
+                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                email,
+                                style: const TextStyle(color: Colors.black54, fontSize: 13),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Dept: $department',
+                                style: const TextStyle(color: Colors.black45, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 4),
-                          Text(email, style: const TextStyle(color: Colors.black54)),
-                          const SizedBox(height: 4),
-                          Text('Dept: $department', style: const TextStyle(color: Colors.black54)),
-                        ],
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () => _restoreUser(email),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF7B1113),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: const Text('Restore'),
                       ),
-                    ),
-                    ElevatedButton(
-                      onPressed: () => _restoreUser(email),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF7B1113),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                      child: const Text('Restore'),
                     ),
                   ],
                 ),

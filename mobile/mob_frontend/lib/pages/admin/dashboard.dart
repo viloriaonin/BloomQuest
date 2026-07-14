@@ -162,32 +162,69 @@ class _DashboardHome extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 8),
+          // ── Greeting ──
+          Text(
+            'Welcome back, $adminName',
+            style: const TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF1A1A1A),
+            ),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'Here\u2019s your academic overview.',
+            style: TextStyle(fontSize: 13, color: Colors.black45),
+          ),
+          const SizedBox(height: 20),
 
-          // ── Top stat cards: Total Questions / Assessments / Active Faculty ──
-          const _WebStatCard(
-            label: 'Total Questions',
-            value: '520',
-            badge: '+12% from last month',
+          // ── Top stat row: Total Questions / Assessments / Active Faculty ──
+          const Row(
+            children: [
+              Expanded(
+                child: _StatCard(
+                  icon: Icons.quiz_rounded,
+                  iconColor: Color(0xFF7B1113),
+                  iconBg: Color(0xFFF5E8E8),
+                  value: '520',
+                  label: 'Questions',
+                ),
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: _StatCard(
+                  icon: Icons.assignment_rounded,
+                  iconColor: Color(0xFF2E7D32),
+                  iconBg: Color(0xFFE6F4EA),
+                  value: '86',
+                  label: 'Assessments',
+                ),
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: _StatCard(
+                  icon: Icons.groups_rounded,
+                  iconColor: Color(0xFF1565C0),
+                  iconBg: Color(0xFFE3EDFB),
+                  value: '24',
+                  label: 'Active Faculty',
+                ),
+              ),
+            ],
           ),
+
           const SizedBox(height: 12),
-          const _WebStatCard(
-            label: 'Total Assessments',
-            value: '86',
-            badge: '+8% from last month',
-          ),
-          const SizedBox(height: 12),
-          const _WebStatCard(
-            label: 'Active Faculty',
-            value: '24',
-            badge: '+3 this month',
-          ),
+
+          // ── Avg. Score summary ──
+          const _AvgScoreCard(),
 
           const SizedBox(height: 24),
+          const _SectionHeader(title: 'Analytics'),
+          const SizedBox(height: 12),
 
           // ── Descriptive Analytics ──
           const _AnalyticsInfoCard(
@@ -215,17 +252,7 @@ class _DashboardHome extends StatelessWidget {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
+            decoration: _cardDecoration,
             child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -252,83 +279,110 @@ class _DashboardHome extends StatelessWidget {
           ),
 
           const SizedBox(height: 24),
+          const _SectionHeader(title: 'Recent Activity'),
+          const SizedBox(height: 12),
+          const _RecentActivityCard(),
+
+          const SizedBox(height: 24),
+          const _SectionHeader(title: 'Top Courses'),
+          const SizedBox(height: 12),
+          const _TopCoursesCard(),
+
+          const SizedBox(height: 24),
 
           // ── Classification Models Performance ──
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
+            decoration: _cardDecoration,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Classification Models Performance',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1A1A1A),
-                        ),
-                      ),
-                    ),
-                    ElevatedButton(
-                      onPressed: () {},
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF7B1113),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                      ),
-                      child: const Text(
-                        'Export Report',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
+                const Text(
+                  'Model Performance',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1A1A1A),
+                  ),
                 ),
                 const SizedBox(height: 4),
                 const Text(
                   'Model accuracy for question and faculty predictions.',
                   style: TextStyle(fontSize: 12, color: Colors.black54),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 const _ModelScoreRow(
                   name: 'Support Vector Machine (SVM)',
                   score: '92.5%',
                 ),
                 const SizedBox(height: 10),
-                const _ModelScoreRow(name: 'Naïve Bayes', score: '88.7%'),
+                const _ModelScoreRow(name: 'Na\u00efve Bayes', score: '88.7%'),
                 const SizedBox(height: 10),
                 const _ModelScoreRow(
                   name: 'Logistic Regression',
                   score: '89.3%',
                 ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {},
+                    icon: const Icon(Icons.ios_share_rounded, size: 16),
+                    label: const Text(
+                      'Export Report',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF7B1113),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
-
-          const SizedBox(height: 16),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Shared card decoration (used across dashboard home) ──────────────────────
+
+final BoxDecoration _cardDecoration = BoxDecoration(
+  color: Colors.white,
+  borderRadius: BorderRadius.circular(18),
+  boxShadow: [
+    BoxShadow(
+      color: Colors.black.withOpacity(0.045),
+      blurRadius: 10,
+      offset: const Offset(0, 3),
+    ),
+  ],
+);
+
+// ─── Small section label used to separate dashboard groups ────────────────────
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  const _SectionHeader({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w700,
+        color: Color(0xFF1A1A1A),
       ),
     );
   }
@@ -354,35 +408,25 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+      decoration: _cardDecoration,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
               color: iconBg,
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, color: iconColor, size: 22),
+            child: Icon(icon, color: iconColor, size: 19),
           ),
           const SizedBox(height: 8),
           Text(
             value,
             style: const TextStyle(
-              fontSize: 18,
+              fontSize: 17,
               fontWeight: FontWeight.bold,
               color: Color(0xFF1A1A1A),
             ),
@@ -392,81 +436,8 @@ class _StatCard extends StatelessWidget {
             label,
             style: const TextStyle(fontSize: 10, color: Colors.black45),
             textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Web-style Stat Card (value + growth badge) ────────────────────────────────
-
-class _WebStatCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final String badge;
-
-  const _WebStatCard({
-    required this.label,
-    required this.value,
-    required this.badge,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(fontSize: 12, color: Colors.black54),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF1A1A1A),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE6F4EA),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  badge,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF2E7D32),
-                  ),
-                ),
-              ),
-            ],
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -487,17 +458,7 @@ class _AnalyticsInfoCard extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      decoration: _cardDecoration,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -608,17 +569,7 @@ class _AvgScoreCard extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      decoration: _cardDecoration,
       child: Row(
         children: [
           Container(
@@ -715,17 +666,7 @@ class _RecentActivityCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      decoration: _cardDecoration,
       child: Column(
         children: _activities.map((a) => _ActivityRow(data: a)).toList(),
       ),
@@ -813,17 +754,7 @@ class _TopCoursesCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      decoration: _cardDecoration,
       child: Column(
         children: _courses.map((c) => _CourseRow(course: c)).toList(),
       ),
