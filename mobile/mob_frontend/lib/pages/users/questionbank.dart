@@ -1,10 +1,11 @@
-import 'dart:io' show File;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
-import 'package:open_filex/open_filex.dart';
 import 'dart:convert';
+import 'dart:typed_data';
+import '../../utils/file_saver_stub.dart'
+    if (dart.library.io) '../../utils/file_saver_io.dart'
+    as file_saver;
 import 'web_download_stub.dart'
     if (dart.library.html) 'web_download_web.dart'
     as web_download;
@@ -215,21 +216,8 @@ class _QuestionBankPageState extends State<QuestionBankPage>
             );
           }
         } else {
-          // Mobile/desktop: save to app documents dir and open it.
-          final dir = await getApplicationDocumentsDirectory();
-          final filePath = '${dir.path}/$filename';
-          final file = File(filePath);
-          await file.writeAsBytes(res.bodyBytes);
-
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Assessment generated. Opening...')),
-            );
-          }
-          final openResult = await OpenFilex.open(filePath);
-          debugPrint(
-            'OpenFilex result: ${openResult.type} - ${openResult.message}',
-          );
+          // Mobile/desktop: save to app documents dir and open it via helper
+          await file_saver.saveAndOpenFile(res.bodyBytes, filename);
         }
       } else {
         setState(

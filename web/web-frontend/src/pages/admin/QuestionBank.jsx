@@ -15,7 +15,11 @@ const BLOOMS_LEVELS = [
 const HIGH_ORDER_LEVELS = ['Analyze', 'Evaluate', 'Create'];
 
 export const QuestionBankContent = () => {
-  const { showConfirm } = usePopup();
+  const { showConfirm, showAlert } = usePopup();
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newQuestionText, setNewQuestionText] = useState("");
+  const [newQuestionType, setNewQuestionType] = useState("MCQ");
+  const [addingQuestion, setAddingQuestion] = useState(false);
   const [activeTab, setActiveTab]             = useState('Remember');
   const [subjects, setSubjects]               = useState([]);
   const [selectedSubject, setSelectedSubject] = useState('');
@@ -121,6 +125,90 @@ export const QuestionBankContent = () => {
     );
   };
 
+  const handleAddQuestion = async () => {
+    if (!newQuestionText.trim()) {
+      await showAlert("Please enter the question text.", "Missing Question");
+      return;
+    }
+    if (!selectedSubject) {
+      await showAlert("Please select a subject before adding a question.", "Missing Subject");
+      return;
+    }
+
+    setAddingQuestion(true);
+    try {
+      const payload = {
+        question: newQuestionText.trim(),
+        question_type: newQuestionType,
+        subject_id: parseInt(selectedSubject, 10)
+      };
+
+      const res = await fetch(`${API_URL}/api/questions/manual`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to add question');
+      }
+
+      await showAlert('Question added successfully and classified.', 'Added');
+      setShowAddModal(false);
+      setNewQuestionText('');
+      setNewQuestionType('MCQ');
+      fetchQuestions(selectedSubject);
+    } catch (err) {
+      console.error(err);
+      await showAlert(err.message || 'Error adding question.', 'Error');
+    } finally {
+      setAddingQuestion(false);
+    }
+  };
+
+  const handleGenerateAssessment = async () => {
+    if (selectedQuestions.length === 0) {
+      await showAlert('Select at least one question to generate an assessment.', 'No Questions');
+      return;
+    }
+    try {
+      const form = new FormData();
+      form.append('subject_id', selectedSubject);
+      form.append('question_ids', selectedQuestions.join(','));
+      form.append('export_format', 'pdf');
+
+      const res = await fetch(`${API_URL}/api/questions/export`, {
+        method: 'POST',
+        body: form,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Export failed');
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      // Attempt to get filename from content-disposition
+      const cd = res.headers.get('content-disposition') || '';
+      const match = /filename=(?:"?)([^";]+)(?:"?)/.exec(cd);
+      const filename = match ? match[1] : `assessment_${Date.now()}.pdf`;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+      await showAlert('Assessment generated and downloaded.', 'Export');
+    } catch (err) {
+      console.error(err);
+      await showAlert(err.message || 'Failed to export assessment.', 'Error');
+    }
+  };
+
   const countByLevel = (level) => questions.filter(q => q.bloom_level === level).length;
   const displayedQuestions = questions.filter(q => q.bloom_level === activeTab);
   const selectedSubjectName = subjects.find(s => s.id === parseInt(selectedSubject))?.name || '';
@@ -144,7 +232,7 @@ export const QuestionBankContent = () => {
             </p>
           </div>
           <div className="flex gap-2">
-            <button className="bg-[#b90000] hover:bg-[#990000] text-white text-sm font-medium px-5 py-2.5 rounded-full transition-colors whitespace-nowrap">
+            <button onClick={() => setShowAddModal(true)} className="bg-[#b90000] hover:bg-[#990000] text-white text-sm font-medium px-5 py-2.5 rounded-full transition-colors whitespace-nowrap">
               Add Question
             </button>
             <button className="border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium px-5 py-2.5 rounded-full transition-colors whitespace-nowrap">
@@ -385,6 +473,7 @@ export const QuestionBankContent = () => {
           <div className="text-gray-700 font-medium max-w-5xl mx-auto w-full flex justify-between items-center px-2">
             <span>Selected: <span className="text-red-600 font-bold text-lg">{selectedQuestions.length}</span></span>
             <button
+              onClick={handleGenerateAssessment}
               disabled={selectedQuestions.length === 0}
               className={`py-2 px-6 rounded-md font-medium text-sm transition-colors ${
                 selectedQuestions.length > 0
@@ -394,6 +483,42 @@ export const QuestionBankContent = () => {
             >
               Generate Assessment ({selectedQuestions.length})
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Add Question Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold">Add Question</h3>
+              <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-700">✕</button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+                <div className="text-sm text-gray-600">{selectedSubjectName}</div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Question</label>
+                <textarea value={newQuestionText} onChange={(e) => setNewQuestionText(e.target.value)} className="w-full rounded-md border border-gray-200 p-3 text-sm" rows={4} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Question Type</label>
+                <select value={newQuestionType} onChange={(e) => setNewQuestionType(e.target.value)} className="rounded-md border border-gray-200 p-2 text-sm">
+                  <option>MCQ</option>
+                  <option>Short Answer</option>
+                  <option>Essay</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setShowAddModal(false)} className="rounded-full border border-gray-300 px-4 py-2 text-sm">Cancel</button>
+                <button onClick={handleAddQuestion} disabled={addingQuestion} className="rounded-full bg-red-700 px-4 py-2 text-sm text-white">{addingQuestion ? 'Adding...' : 'Add Question'}</button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -73,9 +73,12 @@ def build_assessment_document(questions, subject_name, export_format):
     finally:
         cleanup_file(docx_path)
 
-# Ensure the new archive flag exists in the users table for soft-deletion support.
+# Ensure the new archive, name, and department columns exist in the users table.
+# SQLAlchemy's create_all does not alter existing tables, so we add missing columns explicitly.
 with engine.begin() as conn:
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"))
+    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR"))
+    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR"))
 
 app = FastAPI()
 
