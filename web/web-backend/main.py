@@ -22,8 +22,10 @@ from pydantic import BaseModel
 import secrets
 import smtplib
 import string
+import pythoncom
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -952,6 +954,7 @@ def export_assessment(
     export_format: str = Form("pdf"),
     db: Session = Depends(get_db)
 ):
+    pythoncom.CoInitialize()
     try:
         selected_ids = []
         for item in (question_ids or "").split(","):
@@ -989,6 +992,8 @@ def export_assessment(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        pythoncom.CoUninitialize()
 
 app.include_router(questions.router)
 app.include_router(assessment.router)

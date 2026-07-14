@@ -1,13 +1,13 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:BloomQuest/config/api_config.dart';
 
 // TODO: Update this to match your backend's actual reachable address.
 // - Flutter web (Chrome): localhost works, since it's a real browser
 // - Android emulator: use 10.0.2.2 instead of localhost
 // - iOS simulator: localhost works
 // - Physical device: use your computer's LAN IP, e.g. http://192.168.1.5:8000
-const String _baseUrl = "http://localhost:8000";
 
 class ActivityLogEntry {
   final int id;
@@ -43,9 +43,13 @@ class ActivityLogEntry {
     if (date == null) return isoString;
 
     final now = DateTime.now();
-    final isToday = date.year == now.year && date.month == now.month && date.day == now.day;
+    final isToday =
+        date.year == now.year && date.month == now.month && date.day == now.day;
     final yesterday = now.subtract(const Duration(days: 1));
-    final isYesterday = date.year == yesterday.year && date.month == yesterday.month && date.day == yesterday.day;
+    final isYesterday =
+        date.year == yesterday.year &&
+        date.month == yesterday.month &&
+        date.day == yesterday.day;
 
     final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
     final minute = date.minute.toString().padLeft(2, '0');
@@ -84,7 +88,9 @@ class _HistoryPageState extends State<HistoryPage> {
     });
 
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/api/history'));
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/history'),
+      );
       if (response.statusCode != 200) {
         throw Exception('Request failed with status ${response.statusCode}');
       }
@@ -141,9 +147,11 @@ class _HistoryPageState extends State<HistoryPage> {
     if (_searchTerm.isEmpty) return _history;
     final term = _searchTerm.toLowerCase();
     return _history
-        .where((item) =>
-            item.action.toLowerCase().contains(term) ||
-            item.details.toLowerCase().contains(term))
+        .where(
+          (item) =>
+              item.action.toLowerCase().contains(term) ||
+              item.details.toLowerCase().contains(term),
+        )
         .toList();
   }
 
@@ -164,7 +172,10 @@ class _HistoryPageState extends State<HistoryPage> {
                     children: [
                       const Text(
                         'Activity History',
-                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       const Text(
@@ -173,13 +184,16 @@ class _HistoryPageState extends State<HistoryPage> {
                       ),
                       const SizedBox(height: 16),
                       TextField(
-                        onChanged: (value) => setState(() => _searchTerm = value),
+                        onChanged: (value) =>
+                            setState(() => _searchTerm = value),
                         decoration: InputDecoration(
                           hintText: 'Search activity...',
                           prefixIcon: const Icon(Icons.search),
                           filled: true,
                           fillColor: Colors.white,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 0,
+                          ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
                             borderSide: BorderSide(color: Colors.grey.shade300),
@@ -192,7 +206,9 @@ class _HistoryPageState extends State<HistoryPage> {
               ),
               if (_loading)
                 const SliverFillRemaining(
-                  child: Center(child: CircularProgressIndicator(color: Color(0xFF7B1113))),
+                  child: Center(
+                    child: CircularProgressIndicator(color: Color(0xFF7B1113)),
+                  ),
                 )
               else if (_error != null)
                 SliverFillRemaining(
@@ -202,14 +218,27 @@ class _HistoryPageState extends State<HistoryPage> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.error_outline, size: 48, color: Colors.grey),
+                          const Icon(
+                            Icons.error_outline,
+                            size: 48,
+                            color: Colors.grey,
+                          ),
                           const SizedBox(height: 12),
-                          Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey)),
+                          Text(
+                            _error!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.grey),
+                          ),
                           const SizedBox(height: 16),
                           ElevatedButton(
                             onPressed: _fetchHistory,
-                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF7B1113)),
-                            child: const Text('Retry', style: TextStyle(color: Colors.white)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF7B1113),
+                            ),
+                            child: const Text(
+                              'Retry',
+                              style: TextStyle(color: Colors.white),
+                            ),
                           ),
                         ],
                       ),
@@ -222,7 +251,11 @@ class _HistoryPageState extends State<HistoryPage> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.history_outlined, size: 48, color: Colors.grey),
+                        const Icon(
+                          Icons.history_outlined,
+                          size: 48,
+                          color: Colors.grey,
+                        ),
                         const SizedBox(height: 12),
                         Text(
                           _searchTerm.isEmpty
@@ -238,76 +271,80 @@ class _HistoryPageState extends State<HistoryPage> {
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final item = _filteredHistory[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.grey.shade200),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  width: 36,
-                                  height: 36,
-                                  decoration: BoxDecoration(
-                                    color: item.status == 'error'
-                                        ? Colors.red.shade50
-                                        : Colors.grey.shade100,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    _iconFor(item.type, item.status),
-                                    size: 18,
-                                    color: _iconColorFor(item.type, item.status),
-                                  ),
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final item = _filteredHistory[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: item.status == 'error'
+                                      ? Colors.red.shade50
+                                      : Colors.grey.shade100,
+                                  shape: BoxShape.circle,
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              item.action,
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                                color: item.status == 'error'
-                                                    ? Colors.red.shade700
-                                                    : Colors.black87,
-                                              ),
+                                child: Icon(
+                                  _iconFor(item.type, item.status),
+                                  size: 18,
+                                  color: _iconColorFor(item.type, item.status),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            item.action,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              color: item.status == 'error'
+                                                  ? Colors.red.shade700
+                                                  : Colors.black87,
                                             ),
                                           ),
-                                          Text(
-                                            item.date,
-                                            style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                                        ),
+                                        Text(
+                                          item.date,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey.shade500,
                                           ),
-                                        ],
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      item.details,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.grey.shade700,
                                       ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        item.details,
-                                        style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-                                      ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                        );
-                      },
-                      childCount: _filteredHistory.length,
-                    ),
+                        ),
+                      );
+                    }, childCount: _filteredHistory.length),
                   ),
                 ),
             ],

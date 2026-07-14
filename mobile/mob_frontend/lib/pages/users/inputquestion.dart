@@ -4,8 +4,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 import 'dart:typed_data';
-
-const String baseUrl = 'http://127.0.0.1:8000';
+import 'package:BloomQuest/config/api_config.dart';
 
 class InputPage extends StatefulWidget {
   const InputPage({super.key});
@@ -88,7 +87,9 @@ class _InputPageState extends State<InputPage>
   // ─── Fetch Active Subjects from DB ───────────────────────────────────────────
   Future<void> _fetchSubjects() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/api/subjects'));
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/subjects'),
+      );
       if (response.statusCode == 200) {
         setState(() {
           _subjects = jsonDecode(response.body);
@@ -121,7 +122,9 @@ class _InputPageState extends State<InputPage>
     _debounceTimer = Timer(const Duration(milliseconds: 600), () async {
       try {
         final response = await http.get(
-          Uri.parse('$baseUrl/api/questions?subject_id=$_selectedSubjectId'),
+          Uri.parse(
+            '${ApiConfig.baseUrl}/questions?subject_id=$_selectedSubjectId',
+          ),
         );
         if (response.statusCode == 200) {
           final List<dynamic> questionsBank = jsonDecode(response.body);
@@ -164,7 +167,7 @@ class _InputPageState extends State<InputPage>
 
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/subjects'),
+        Uri.parse('${ApiConfig.baseUrl}/subjects'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'name': name, 'code': code.isNotEmpty ? code : null}),
       );
@@ -206,7 +209,7 @@ class _InputPageState extends State<InputPage>
 
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/questions/manual'),
+        Uri.parse('${ApiConfig.baseUrl}/questions/manual'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'question': questionText,
@@ -240,7 +243,7 @@ class _InputPageState extends State<InputPage>
   // ─── Pick Files ──────────────────────────────────────────────────────────────
   Future<void> _pickModuleFile() async {
     try {
-      final result = await FilePicker.pickFiles(
+      final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'pptx', 'ppt', 'docx'],
         withData: true,
@@ -268,7 +271,7 @@ class _InputPageState extends State<InputPage>
 
   Future<void> _pickSyllabusFile() async {
     try {
-      final result = await FilePicker.pickFiles(
+      final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'docx', 'xlsx', 'xls'],
         withData: true,
@@ -311,7 +314,7 @@ class _InputPageState extends State<InputPage>
     try {
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse('$baseUrl/api/upload'),
+        Uri.parse('${ApiConfig.baseUrl}/upload'),
       );
       request.files.add(
         http.MultipartFile.fromBytes(
@@ -368,7 +371,7 @@ class _InputPageState extends State<InputPage>
     try {
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse('$baseUrl/api/generate'),
+        Uri.parse('${ApiConfig.baseUrl}/generate'),
       );
       request.fields['upload_id'] = _uploadResult!['upload_id'].toString();
       request.fields['total_items'] = _totalItemsController.text;

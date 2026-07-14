@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:fl_chart/fl_chart.dart';
-
-const String baseUrl = 'http://127.0.0.1:8000';
+import 'package:BloomQuest/config/api_config.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -38,8 +37,12 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _fetchDashboardAnalytics() async {
     try {
-      final subjectsRes = await http.get(Uri.parse('$baseUrl/api/subjects'));
-      final questionsRes = await http.get(Uri.parse('$baseUrl/api/questions'));
+      final subjectsRes = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/subjects'),
+      );
+      final questionsRes = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/questions'),
+      );
 
       if (subjectsRes.statusCode == 200 && questionsRes.statusCode == 200) {
         final List<dynamic> subjectsData = jsonDecode(subjectsRes.body);

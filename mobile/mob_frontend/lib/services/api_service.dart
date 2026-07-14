@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-const String baseUrl = 'http://127.0.0.1:8000';
+import 'package:BloomQuest/config/api_config.dart';
 
 class ApiService {
   static Future<Map<String, dynamic>> login(
@@ -10,7 +10,7 @@ class ApiService {
   ) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/login'),
+        Uri.parse('${ApiConfig.baseUrl}/login'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -36,7 +36,7 @@ class ApiService {
   static Future<Map<String, dynamic>> sendPasswordResetOtp(String email) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/forgot-password/send-otp'),
+        Uri.parse('${ApiConfig.baseUrl}/forgot-password/send-otp'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -65,7 +65,7 @@ class ApiService {
   ) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/forgot-password/verify-otp'),
+        Uri.parse('${ApiConfig.baseUrl}/forgot-password/verify-otp'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -97,7 +97,7 @@ class ApiService {
   ) async {
     try {
       final response = await http.patch(
-        Uri.parse('$baseUrl/api/forgot-password/reset'),
+        Uri.parse('${ApiConfig.baseUrl}/forgot-password/reset'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -131,7 +131,7 @@ class ApiService {
   ) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/contact-admin'),
+        Uri.parse('${ApiConfig.baseUrl}/contact-admin'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -164,7 +164,7 @@ class ApiService {
     try {
       final response = await http.get(
         Uri.parse(
-          '$baseUrl/api/contact-admin/check-status?email=${Uri.encodeComponent(email)}',
+          '${ApiConfig.baseUrl}/contact-admin/check-status?email=${Uri.encodeComponent(email)}',
         ),
         headers: {'Accept': 'application/json'},
       );
@@ -186,7 +186,7 @@ class ApiService {
   static Future<List<dynamic>> fetchPendingContactRequests() async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/contact-admin/pending'),
+        Uri.parse('${ApiConfig.baseUrl}/contact-admin/pending'),
         headers: {'Accept': 'application/json'},
       );
 
@@ -208,7 +208,7 @@ class ApiService {
   static Future<dynamic> fetchAdminUsers() async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/contact-admin/users'),
+        Uri.parse('${ApiConfig.baseUrl}/contact-admin/users'),
         headers: {'Accept': 'application/json'},
       );
 
@@ -230,7 +230,7 @@ class ApiService {
   static Future<void> approveAccountRequest(String email) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/contact-admin/approve'),
+        Uri.parse('${ApiConfig.baseUrl}/contact-admin/approve'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -254,7 +254,7 @@ class ApiService {
   static Future<void> declineAccountRequest(String email) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/contact-admin/decline'),
+        Uri.parse('${ApiConfig.baseUrl}/contact-admin/decline'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -278,7 +278,7 @@ class ApiService {
   static Future<void> archiveUser(String email) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/users/archive'),
+        Uri.parse('${ApiConfig.baseUrl}/users/archive'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -302,7 +302,7 @@ class ApiService {
   static Future<void> restoreUser(String email) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/users/restore'),
+        Uri.parse('${ApiConfig.baseUrl}/users/restore'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -330,7 +330,7 @@ class ApiService {
   ) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/api/users/verify-admin-password'),
+        Uri.parse('${ApiConfig.baseUrl}/users/verify-admin-password'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -363,7 +363,7 @@ class ApiService {
   ) async {
     try {
       final response = await http.put(
-        Uri.parse('$baseUrl/api/users/update-password'),
+        Uri.parse('${ApiConfig.baseUrl}/users/update-password'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',

@@ -43,6 +43,9 @@ class _QuestionBankPageState extends State<QuestionBankPage>
   bool _generating = false;
   String _error = '';
 
+  // Track selected question IDs
+  final Set<dynamic> _selectedQuestionIds = {};
+
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -87,6 +90,7 @@ class _QuestionBankPageState extends State<QuestionBankPage>
       _loadingQuestions = true;
       _error = '';
       _questions = [];
+      _selectedQuestionIds.clear(); // Clear selections when subject changes
     });
     try {
       final res = await http.get(
@@ -148,18 +152,15 @@ class _QuestionBankPageState extends State<QuestionBankPage>
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-              child: Text(
+              child: const Text(
                 'Generate Assessment',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Text(
-                'Includes all $_selectedSubjectName questions + answer key',
+                'Includes ${_selectedQuestionIds.length} selected question(s) + answer key',
                 style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
             ),
@@ -187,7 +188,7 @@ class _QuestionBankPageState extends State<QuestionBankPage>
   }
 
   Future<void> _generateAssessment(String fileType) async {
-    if (_selectedSubjectId == null || _questions.isEmpty) return;
+    if (_selectedSubjectId == null || _selectedQuestionIds.isEmpty) return;
 
     setState(() {
       _generating = true;
@@ -195,8 +196,10 @@ class _QuestionBankPageState extends State<QuestionBankPage>
     });
 
     try {
+      // Map selected IDs to pass them to your API query (e.g. ?question_ids=1,2,3)
+      final idsParam = _selectedQuestionIds.join(',');
       final uri = Uri.parse(
-        '$baseUrl/api/assessment/generate?subject_id=$_selectedSubjectId&file_type=$fileType',
+        '$baseUrl/api/assessment/generate?subject_id=$_selectedSubjectId&file_type=$fileType&question_ids=$idsParam',
       );
       final res = await http.get(uri);
 
@@ -451,6 +454,7 @@ class _QuestionBankPageState extends State<QuestionBankPage>
       if (res.statusCode == 200) {
         setState(() {
           _questions.removeWhere((q) => q['id'] == questionId);
+          _selectedQuestionIds.remove(questionId); // Clean selection tracking
         });
         return true;
       }
@@ -600,93 +604,100 @@ class _QuestionBankPageState extends State<QuestionBankPage>
                   const SizedBox(height: 12),
                 ],
 
-                // ── Bloom's Tabs + Generate Assessment button ──
+                // ── Bloom's Tabs ──
                 if (_selectedSubjectId != null)
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: TabBar(
-                          controller: _tabController,
-                          isScrollable: true,
-                          labelColor: primaryColor,
-                          unselectedLabelColor: Colors.grey,
-                          indicatorColor: primaryColor,
-                          indicatorWeight: 2.5,
-                          labelStyle: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                          unselectedLabelStyle: const TextStyle(fontSize: 13),
-                          tabAlignment: TabAlignment.start,
-                          tabs: bloomsLevels.map((level) {
-                            final count = _countByLevel(level['name']);
-                            return Tab(
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 8,
-                                    height: 8,
-                                    decoration: BoxDecoration(
-                                      color: level['color'],
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(level['name']),
-                                  const SizedBox(width: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.shade100,
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Text(
-                                      '$count',
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                      if (_questions.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8, bottom: 4),
-                          child: IconButton(
-                            onPressed: _generating
-                                ? null
-                                : _showGenerateAssessmentSheet,
-                            tooltip: 'Generate Assessment',
-                            style: IconButton.styleFrom(
-                              backgroundColor: primaryColor,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
+                  TabBar(
+                    controller: _tabController,
+                    isScrollable: true,
+                    labelColor: primaryColor,
+                    unselectedLabelColor: Colors.grey,
+                    indicatorColor: primaryColor,
+                    indicatorWeight: 2.5,
+                    labelStyle: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                    unselectedLabelStyle: const TextStyle(fontSize: 13),
+                    tabAlignment: TabAlignment.start,
+                    tabs: bloomsLevels.map<Widget>((level) {
+                      final count = _countByLevel(level['name']);
+                      return Tab(
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: level['color'],
+                                shape: BoxShape.circle,
                               ),
                             ),
-                            icon: _generating
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Icon(Icons.file_download, size: 18),
-                          ),
+                            const SizedBox(width: 6),
+                            Text(level['name']),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '$count',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                    ],
+                      );
+                    }).toList(),
                   ),
+
+                // ── Generate Assessment Button (ONLY appears when questions are selected) ──
+                if (_selectedSubjectId != null &&
+                    _selectedQuestionIds.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _generating
+                          ? null
+                          : _showGenerateAssessmentSheet,
+                      icon: _generating
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.assignment_outlined),
+                      label: Text(
+                        'Generate Assessment (${_selectedQuestionIds.length})',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryColor,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(double.infinity, 48),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
               ],
             ),
           ),
@@ -752,7 +763,7 @@ class _QuestionBankPageState extends State<QuestionBankPage>
                 // Tabs with questions
                 : TabBarView(
                     controller: _tabController,
-                    children: bloomsLevels.map((level) {
+                    children: bloomsLevels.map<Widget>((level) {
                       final levelQuestions = _questionsByLevel(level['name']);
                       return levelQuestions.isEmpty
                           ? Center(
@@ -792,14 +803,27 @@ class _QuestionBankPageState extends State<QuestionBankPage>
                           : ListView.builder(
                               padding: const EdgeInsets.all(12),
                               itemCount: levelQuestions.length,
-                              itemBuilder: (context, i) => _QuestionCard(
-                                question: levelQuestions[i],
-                                levelColor: level['color'],
-                                onEdit: () =>
-                                    _showEditQuestionDialog(levelQuestions[i]),
-                                onDelete: () =>
-                                    _confirmDeleteQuestion(levelQuestions[i]),
-                              ),
+                              itemBuilder: (context, i) {
+                                final q = levelQuestions[i];
+                                final isSelected = _selectedQuestionIds
+                                    .contains(q['id']);
+                                return _QuestionCard(
+                                  question: q,
+                                  levelColor: level['color'],
+                                  isSelected: isSelected,
+                                  onSelectedChanged: (bool? val) {
+                                    setState(() {
+                                      if (val == true) {
+                                        _selectedQuestionIds.add(q['id']);
+                                      } else {
+                                        _selectedQuestionIds.remove(q['id']);
+                                      }
+                                    });
+                                  },
+                                  onEdit: () => _showEditQuestionDialog(q),
+                                  onDelete: () => _confirmDeleteQuestion(q),
+                                );
+                              },
                             );
                     }).toList(),
                   ),
@@ -815,12 +839,16 @@ class _QuestionBankPageState extends State<QuestionBankPage>
 class _QuestionCard extends StatelessWidget {
   final dynamic question;
   final Color levelColor;
+  final bool isSelected;
+  final ValueChanged<bool?> onSelectedChanged;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   const _QuestionCard({
     required this.question,
     required this.levelColor,
+    required this.isSelected,
+    required this.onSelectedChanged,
     required this.onEdit,
     required this.onDelete,
   });
@@ -832,90 +860,112 @@ class _QuestionCard extends StatelessWidget {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: Colors.grey.shade200),
       ),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Question text + actions
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  question['question'] ?? '',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1A1A1A),
-                  ),
-                ),
-              ),
-              InkWell(
-                onTap: onEdit,
-                borderRadius: BorderRadius.circular(4),
-                child: const Padding(
-                  padding: EdgeInsets.all(4),
-                  child: Icon(
-                    Icons.edit_outlined,
-                    size: 18,
-                    color: Colors.grey,
-                  ),
-                ),
-              ),
-              InkWell(
-                onTap: onDelete,
-                borderRadius: BorderRadius.circular(4),
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: Icon(
-                    Icons.delete_outline,
-                    size: 18,
-                    color: Colors.red.shade400,
-                  ),
-                ),
-              ),
-            ],
+          // Checkbox for selection
+          Checkbox(
+            value: isSelected,
+            onChanged: onSelectedChanged,
+            activeColor: primaryColor,
           ),
-          const SizedBox(height: 10),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 14.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Question text + actions
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          question['question'] ?? '',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                      ),
+                      InkWell(
+                        onTap: onEdit,
+                        borderRadius: BorderRadius.circular(4),
+                        child: const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.edit_outlined,
+                            size: 18,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                      InkWell(
+                        onTap: onDelete,
+                        borderRadius: BorderRadius.circular(4),
+                        child: const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.delete_outline,
+                            size: 18,
+                            color: Colors.red,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
 
-          // MCQ Options (no answer highlighted)
-          if (hasOptions) ...[
-            ...List.generate(options.length, (i) {
-              return Container(
-                margin: const EdgeInsets.only(bottom: 4),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 7,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: Text(
-                  options[i].toString(),
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                ),
-              );
-            }),
-            const SizedBox(height: 8),
-          ],
+                  // MCQ Options (no answer highlighted)
+                  if (hasOptions) ...[
+                    ...List.generate(options.length, (i) {
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: Text(
+                          options[i].toString(),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      );
+                    }),
+                    const SizedBox(height: 8),
+                  ],
 
-          // Tags
-          Row(
-            children: [
-              _Tag(label: question['bloom_level'] ?? '', color: levelColor),
-              const SizedBox(width: 6),
-              _Tag(
-                label: question['question_type'] ?? '',
-                color: Colors.grey.shade400,
+                  // Tags
+                  Row(
+                    children: [
+                      _Tag(
+                        label: question['bloom_level'] ?? '',
+                        color: levelColor,
+                      ),
+                      const SizedBox(width: 6),
+                      _Tag(
+                        label: question['question_type'] ?? '',
+                        color: Colors.grey.shade400,
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ],
       ),
