@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../services/api_service.dart';
 
+const _kPrimary = Color(0xFF7B1113);
+const _kAccentRed = Color(0xFFB01C1C);
+const _kGold = Color(0xFFD4AF37);
+
 class ContactAdminPage extends StatefulWidget {
   const ContactAdminPage({super.key});
 
@@ -151,152 +155,345 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
     final config = {
       'pending': (
         const Color(0xFFFFF7E6),
+        const Color(0xFFE8C97A),
         const Color(0xFF8A6516),
+        Icons.hourglass_top_rounded,
         'PENDING REVIEW',
       ),
       'approved': (
         const Color(0xFFE6F4EA),
+        const Color(0xFFA9D8B7),
         const Color(0xFF166534),
+        Icons.check_circle_outline_rounded,
         'APPROVED',
       ),
       'declined': (
         const Color(0xFFF3F4F6),
+        const Color(0xFFD1D5DB),
         const Color(0xFF374151),
+        Icons.cancel_outlined,
         'DECLINED',
       ),
       'existing': (
         const Color(0xFFF3F4F6),
+        const Color(0xFFD1D5DB),
         const Color(0xFF374151),
+        Icons.info_outline_rounded,
         'EXISTING REQUEST',
       ),
     };
 
-    final (bg, text, label) =
+    final (bg, border, text, icon, label) =
         config[_existingRequestStatus] ?? config['existing']!;
 
     return Container(
+      width: double.infinity,
       margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: bg,
+        border: Border.all(color: border),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Text(
-        'Existing Request Status: $label',
-        style: TextStyle(color: text, fontWeight: FontWeight.bold),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: text),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Existing request status: $label',
+              style: TextStyle(
+                color: text,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _messageBanner({
+    required String text,
+    required Color bg,
+    required Color border,
+    required Color fg,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: bg,
+        border: Border.all(color: border),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(text, style: TextStyle(color: fg, fontSize: 13)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Contact Admin'),
-        backgroundColor: const Color(0xFF7B1113),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'Submit a request to the administrator to get access to BloomQuest.',
-              style: TextStyle(fontSize: 16, color: Colors.black87),
-            ),
-            const SizedBox(height: 20),
-            if (_error.isNotEmpty)
+      backgroundColor: const Color(0xFFF9FAFB),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              // ── Brand header (matches Login page) ──
               Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFEE2E2),
-                  borderRadius: BorderRadius.circular(10),
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xFF9c1c1f), Color(0xFF5c0d0f)],
+                  ),
                 ),
-                child: Text(
-                  _error,
-                  style: const TextStyle(color: Color(0xFF991B1B)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.arrow_back, color: Colors.white),
+                          splashRadius: 20,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Center(
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.12),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: _kGold.withOpacity(0.6),
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.mail_outline_rounded,
+                              color: _kGold,
+                              size: 26,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          const Text(
+                            'Contact Admin',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Container(width: 36, height: 2, color: _kGold),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'Request access to BloomQuest',
+                            style: TextStyle(color: Color(0xFFe8c97a), fontSize: 12),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            if (_success.isNotEmpty)
+
+              // ── Form card (overlaps the header slightly) ──
+              Transform.translate(
+                offset: const Offset(0, -20),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.06),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                          'Submit a request to the administrator to get '
+                          'access to BloomQuest. You\u2019ll be notified once '
+                          'it\u2019s reviewed.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.black54,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+
+                        if (_error.isNotEmpty)
+                          _messageBanner(
+                            text: _error,
+                            bg: const Color(0xFFfef2f2),
+                            border: const Color(0xFFfecaca),
+                            fg: const Color(0xFF991B1B),
+                          ),
+                        if (_success.isNotEmpty)
+                          _messageBanner(
+                            text: _success,
+                            bg: const Color(0xFFE6F4EA),
+                            border: const Color(0xFFA9D8B7),
+                            fg: const Color(0xFF166534),
+                          ),
+                        _statusBanner(),
+
+                        _buildLabeledField(
+                          label: 'Full Name',
+                          hint: 'Enter your full name',
+                          controller: _fullNameController,
+                        ),
+                        const SizedBox(height: 16),
+                        _buildLabeledField(
+                          label: 'Department',
+                          hint: 'Enter your department',
+                          controller: _departmentController,
+                        ),
+                        const SizedBox(height: 16),
+                        _buildLabeledField(
+                          label: 'Email Address',
+                          hint: 'Enter your email',
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          focusNode: _emailFocusNode,
+                          onChanged: (_) {
+                            setState(() {
+                              _existingRequestStatus = null;
+                              _error = '';
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 24),
+
+                        ElevatedButton(
+                          onPressed: (_loading || _existingRequestStatus != null)
+                              ? null
+                              : _submitRequest,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _kAccentRed,
+                            disabledBackgroundColor: _kAccentRed.withOpacity(0.6),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: _loading
+                              ? const SizedBox(
+                                  height: 18,
+                                  width: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text(
+                                  'Send Request',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text(
+                            'Back to login',
+                            style: TextStyle(color: _kAccentRed, fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // ── Footer ──
               Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE6F4EA),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  _success,
-                  style: const TextStyle(color: Color(0xFF166534)),
-                ),
-              ),
-            if (_error.isNotEmpty || _success.isNotEmpty)
-              const SizedBox(height: 16),
-            _statusBanner(),
-            _buildTextField(_fullNameController, 'Full Name'),
-            const SizedBox(height: 12),
-            _buildTextField(_departmentController, 'Department'),
-            const SizedBox(height: 12),
-            _buildTextField(
-              _emailController,
-              'Email Address',
-              keyboardType: TextInputType.emailAddress,
-              focusNode: _emailFocusNode,
-              onChanged: (_) {
-                setState(() {
-                  _existingRequestStatus = null;
-                  _error = '';
-                });
-              },
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: (_loading || _existingRequestStatus != null)
-                  ? null
-                  : _submitRequest,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF7B1113),
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+                width: double.infinity,
+                margin: const EdgeInsets.only(top: 4),
+                color: const Color(0xFF5c0d0f),
+                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                child: const Text(
+                  '\u00a9 2026 BloomQuest. All rights reserved.',
+                  style: TextStyle(color: _kGold, fontSize: 11),
+                  textAlign: TextAlign.center,
                 ),
               ),
-              child: Text(
-                _loading ? 'Submitting...' : 'Send Request',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(height: 14),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Back to login'),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildTextField(
-    TextEditingController controller,
-    String label, {
+  Widget _buildLabeledField({
+    required String label,
+    required String hint,
+    required TextEditingController controller,
     TextInputType keyboardType = TextInputType.text,
     FocusNode? focusNode,
     ValueChanged<String>? onChanged,
   }) {
-    return TextField(
-      controller: controller,
-      keyboardType: keyboardType,
-      focusNode: focusNode,
-      onChanged: onChanged,
-      decoration: InputDecoration(
-        labelText: label,
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          focusNode: focusNode,
+          onChanged: onChanged,
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(fontSize: 13),
+            filled: true,
+            fillColor: const Color(0xFFF9FAFB),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: _kPrimary, width: 1.4),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
