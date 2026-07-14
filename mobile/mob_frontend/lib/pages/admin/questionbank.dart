@@ -4,12 +4,10 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:typed_data';
+import 'package:BloomQuest/config/api_config.dart'; // adjust path/package name
 import '../../utils/web_downloader_stub.dart'
     if (dart.library.html) '../../utils/web_downloader_html.dart'
     as web_downloader;
-// import '../widgets/adminSidebar.dart'; // Ensure this points to your sidebar
-
-const String baseUrl = 'http://127.0.0.1:8000/api';
 
 // Colors based on your sidebar and screenshot
 const kPrimary = Color(0xFF7B1113);
@@ -70,7 +68,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
 
   Future<void> _fetchSubjects() async {
     try {
-      final res = await http.get(Uri.parse('$baseUrl/subjects'));
+      final res = await http.get(Uri.parse('${ApiConfig.baseUrl}/subjects'));
       if (res.statusCode == 200) {
         setState(() {
           _subjects = jsonDecode(res.body);
@@ -90,7 +88,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
     });
     try {
       final res = await http.get(
-        Uri.parse('$baseUrl/questions?subject_id=$subjectId'),
+        Uri.parse('${ApiConfig.baseUrl}/questions?subject_id=$subjectId'),
       );
       if (res.statusCode == 200) {
         setState(() {
@@ -260,7 +258,9 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
     if (confirm != true) return;
 
     try {
-      final res = await http.delete(Uri.parse('$baseUrl/questions/$id'));
+      final res = await http.delete(
+        Uri.parse('${ApiConfig.baseUrl}/questions/$id'),
+      );
       if (res.statusCode == 200) {
         setState(() {
           _questions.removeWhere((q) => q['id'] == id);
@@ -351,7 +351,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
   Future<void> _addQuestion(String qText, String answer, String type) async {
     try {
       final res = await http.post(
-        Uri.parse('$baseUrl/questions/manual'),
+        Uri.parse('${ApiConfig.baseUrl}/questions/manual'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'question': qText,
@@ -379,9 +379,8 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
   }
 
   Future<void> _importBank() async {
-    // Pick two files: module & syllabus
     try {
-      final result = await FilePicker.pickFiles(allowMultiple: true);
+      final result = await FilePicker.platform.pickFiles(allowMultiple: true);
       if (result == null || result.files.length < 2) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -393,7 +392,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
       final module = result.files[0];
       final syllabus = result.files[1];
 
-      final uri = Uri.parse('$baseUrl/upload');
+      final uri = Uri.parse('${ApiConfig.baseUrl}/upload');
       final request = http.MultipartRequest('POST', uri);
       request.files.add(
         http.MultipartFile.fromBytes(
@@ -416,7 +415,6 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Files uploaded')));
-        // Possibly show next steps
       } else {
         debugPrint('Upload failed ${res.statusCode} ${res.body}');
         ScaffoldMessenger.of(context).showSnackBar(
@@ -440,7 +438,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
     }
 
     try {
-      final uri = Uri.parse('$baseUrl/questions/export');
+      final uri = Uri.parse('${ApiConfig.baseUrl}/questions/export');
       final request = http.MultipartRequest('POST', uri);
       request.fields['subject_id'] = _selectedSubjectId!;
       request.fields['question_ids'] = _selectedQuestionIds.join(',');
@@ -468,9 +466,6 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Assessment downloaded')));
-      } else {
-        // Non-web behavior (not used on Chrome) - attempt to save and open
-        // Keep for desktop/mobile builds; platform-specific saving can be implemented here.
       }
     } catch (e) {
       debugPrint('Export error: $e');
@@ -480,7 +475,6 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
     }
   }
 
-  // 1. Add 'explanation' as a required parameter here
   Future<void> _updateQuestion(
     dynamic id,
     String qText,
@@ -488,7 +482,6 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
     String bloom,
     String explanation,
   ) async {
-    // 1. Build the JSON tracker
     final String payload = jsonEncode({
       'question': qText,
       'correct_answer': answer,
@@ -496,25 +489,17 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
       'explanation': explanation,
     });
 
-    // 2. Print it to the console to PROVE it exists
     debugPrint('🚀 SENDING PAYLOAD TO PYTHON: $payload');
 
     try {
       final res = await http.put(
-        Uri.parse('$baseUrl/questions/$id'),
+        Uri.parse('${ApiConfig.baseUrl}/questions/$id'),
         headers: {
-          'Content-Type':
-              'application/json', // Removed the manual charset from here
+          'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        encoding:
-            utf8, // Explicitly tell the browser how to package the JSON string
-        body: jsonEncode({
-          'question': qText,
-          'correct_answer': answer,
-          'bloom_level': bloom,
-          'explanation': explanation,
-        }),
+        encoding: utf8,
+        body: payload,
       );
 
       if (res.statusCode == 200) {
@@ -544,309 +529,338 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Container(
-          color: kBg,
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── Header Section ──
-              const Text(
-                'QUESTION BANK',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: kPrimary,
-                  letterSpacing: 0.6,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Manage exam questions and bank items',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF1A1A1A),
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Browse, create, and manage exam questions by subject and level.',
-                style: TextStyle(color: Colors.grey, fontSize: 13),
-              ),
-              const SizedBox(height: 16),
-
-              // ── Analytics Cards ──
-              Row(
-                children: [
-                  Expanded(
-                    child: _AnalyticsCard(
-                      label: 'Total questions',
-                      value: _selectedSubjectId != null
-                          ? '${_questions.length}'
-                          : '—',
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _AnalyticsCard(
-                      label: 'Ready for review',
-                      value: _selectedSubjectId != null
-                          ? '${_questions.where((q) => (q['explanation']?.toString() ?? '').trim().isEmpty).length}'
-                          : '—',
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _AnalyticsCard(
-                      label: 'High-order items',
-                      value: _selectedSubjectId != null
-                          ? '${_questions.where((q) => const ['Analyze', 'Evaluate', 'Create'].contains(q['bloom_level'])).length}'
-                          : '—',
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-
-              // ── Subject Dropdown (Maroon Border as pictured) ──
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: kPrimary, width: 1.5),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    isExpanded: true,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    value: _selectedSubjectId,
-                    icon: const Icon(Icons.arrow_drop_down, color: Colors.grey),
-                    hint: const Text(
-                      'Select a subject...',
-                      style: TextStyle(color: Colors.grey, fontSize: 14),
-                    ),
-                    items: _subjects.map<DropdownMenuItem<String>>((s) {
-                      return DropdownMenuItem(
-                        value: s['id'].toString(),
-                        child: Text(
-                          s['name'].toString(),
-                          style: const TextStyle(fontSize: 14),
+    return Scaffold(
+      backgroundColor: kBg,
+      body: Stack(
+        children: [
+          NestedScrollView(
+            headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
+              return <Widget>[
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      // ── Header Section ──
+                      const Text(
+                        'QUESTION BANK',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: kPrimary,
+                          letterSpacing: 0.6,
                         ),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() {
-                          _selectedSubjectId = val;
-                          _searchController.clear();
-                          _searchQuery = '';
-                        });
-                        _fetchQuestions(val);
-                      }
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // ── Add / Import Buttons (copied from web) ──
-              if (_selectedSubjectId != null)
-                Row(
-                  children: [
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: kPrimary,
                       ),
-                      onPressed: _showAddQuestionDialog,
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text('Add Question'),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      onPressed: _importBank,
-                      icon: const Icon(Icons.upload_file, size: 18),
-                      label: const Text('Import Bank'),
-                    ),
-                  ],
-                ),
-              if (_selectedSubjectId != null) const SizedBox(height: 12),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Manage exam questions and bank items',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Browse, create, and manage exam questions by subject and level.',
+                        style: TextStyle(color: Colors.grey, fontSize: 13),
+                      ),
+                      const SizedBox(height: 16),
 
-              // ── Search Bar (Light Grey Border) ──
-              TextField(
-                controller: _searchController,
-                onChanged: (val) => setState(() => _searchQuery = val),
-                decoration: InputDecoration(
-                  hintText: 'Search questions...',
-                  hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
-                  prefixIcon: const Icon(
-                    Icons.search,
-                    color: Colors.grey,
-                    size: 20,
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide(color: Colors.grey.shade400),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
+                      // ── Analytics Cards ──
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _AnalyticsCard(
+                              label: 'Total questions',
+                              value: _selectedSubjectId != null
+                                  ? '${_questions.length}'
+                                  : '—',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _AnalyticsCard(
+                              label: 'Ready for review',
+                              value: _selectedSubjectId != null
+                                  ? '${_questions.where((q) => (q['explanation']?.toString() ?? '').trim().isEmpty).length}'
+                                  : '—',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _AnalyticsCard(
+                              label: 'High-order items',
+                              value: _selectedSubjectId != null
+                                  ? '${_questions.where((q) => const ['Analyze', 'Evaluate', 'Create'].contains(q['bloom_level'])).length}'
+                                  : '—',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
 
-              // ── Tabs & Download Button ──
-              if (_selectedSubjectId != null) ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: TabBar(
-                        controller: _tabController,
-                        isScrollable: true,
-                        labelColor: kPrimary,
-                        unselectedLabelColor: Colors.grey,
-                        indicatorColor: kPrimary,
-                        indicatorWeight: 3,
-                        tabAlignment: TabAlignment.start,
-                        dividerColor: Colors.grey.shade300,
-                        tabs: bloomsLevels.map((level) {
-                          final count = _countByLevel(level['name']);
-                          return Tab(
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    color: level['color'],
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  level['name'],
+                      // ── Subject Dropdown ──
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: kPrimary, width: 1.5),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            isExpanded: true,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            value: _selectedSubjectId,
+                            icon: const Icon(
+                              Icons.arrow_drop_down,
+                              color: Colors.grey,
+                            ),
+                            hint: const Text(
+                              'Select a subject...',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 14,
+                              ),
+                            ),
+                            items: _subjects.map<DropdownMenuItem<String>>((s) {
+                              return DropdownMenuItem(
+                                value: s['id'].toString(),
+                                child: Text(
+                                  s['name'].toString(),
                                   style: const TextStyle(fontSize: 14),
                                 ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade200,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    '$count',
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.black54,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                    // Maroon Download Button
-                    Container(
-                      margin: const EdgeInsets.only(left: 8, bottom: 8),
-                      decoration: BoxDecoration(
-                        color: kPrimary,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: IconButton(
-                        icon: const Icon(
-                          Icons.download,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                        onPressed: _generateAssessmentExport,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // ── Tab Views (Question List) ──
-                Expanded(
-                  child: _loadingQuestions
-                      ? const Center(
-                          child: CircularProgressIndicator(color: kPrimary),
-                        )
-                      : TabBarView(
-                          controller: _tabController,
-                          children: bloomsLevels.map((level) {
-                            final levelQs = _questionsByLevel(level['name']);
-                            if (levelQs.isEmpty) {
-                              return const Center(
-                                child: Text(
-                                  'No questions match your criteria.',
-                                  style: TextStyle(color: Colors.grey),
-                                ),
                               );
-                            }
-                            return ListView.builder(
-                              itemCount: levelQs.length,
-                              itemBuilder: (context, i) {
-                                return _QuestionCard(
-                                  question: levelQs[i],
-                                  levelColor: level['color'],
-                                  onEdit: () =>
-                                      _showEditQuestionDialog(levelQs[i]),
-                                  onDelete: () =>
-                                      _deleteQuestion(levelQs[i]['id']),
-                                  isSelected: _selectedQuestionIds.contains(
-                                    levelQs[i]['id'],
-                                  ),
-                                  onToggleSelect: (sel) {
-                                    setState(() {
-                                      if (sel) {
-                                        _selectedQuestionIds.add(
-                                          levelQs[i]['id'],
-                                        );
-                                      } else {
-                                        _selectedQuestionIds.remove(
-                                          levelQs[i]['id'],
-                                        );
-                                      }
-                                    });
-                                  },
-                                );
-                              },
-                            );
-                          }).toList(),
+                            }).toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() {
+                                  _selectedSubjectId = val;
+                                  _searchController.clear();
+                                  _searchQuery = '';
+                                });
+                                _fetchQuestions(val);
+                              }
+                            },
+                          ),
                         ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // ── Add / Import Buttons ──
+                      if (_selectedSubjectId != null) ...[
+                        Row(
+                          children: [
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: kPrimary,
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: _showAddQuestionDialog,
+                              icon: const Icon(Icons.add, size: 18),
+                              label: const Text('Add Question'),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              onPressed: _importBank,
+                              icon: const Icon(Icons.upload_file, size: 18),
+                              label: const Text('Import Bank'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+
+                      // ── Search Bar ──
+                      TextField(
+                        controller: _searchController,
+                        onChanged: (val) => setState(() => _searchQuery = val),
+                        decoration: InputDecoration(
+                          hintText: 'Search questions...',
+                          hintStyle: const TextStyle(
+                            color: Colors.grey,
+                            fontSize: 14,
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.search,
+                            color: Colors.grey,
+                            size: 20,
+                          ),
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 0,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(6),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(6),
+                            borderSide: BorderSide(color: Colors.grey.shade400),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ]),
+                  ),
                 ),
-              ] else ...[
-                const Expanded(
-                  child: Center(
+                if (_selectedSubjectId != null)
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: _SliverAppBarDelegate(
+                      minHeight: 60.0,
+                      maxHeight: 60.0,
+                      child: Container(
+                        color: kBg,
+                        padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TabBar(
+                                controller: _tabController,
+                                isScrollable: true,
+                                labelColor: kPrimary,
+                                unselectedLabelColor: Colors.grey,
+                                indicatorColor: kPrimary,
+                                indicatorWeight: 3,
+                                tabAlignment: TabAlignment.start,
+                                dividerColor: Colors.grey.shade300,
+                                tabs: bloomsLevels.map<Widget>((level) {
+                                  final count = _countByLevel(level['name']);
+                                  return Tab(
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Container(
+                                          width: 8,
+                                          height: 8,
+                                          decoration: BoxDecoration(
+                                            color: level['color'],
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          level['name'],
+                                          style: const TextStyle(fontSize: 14),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey.shade200,
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            '$count',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.black54,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                            // Maroon Download Button
+                            Container(
+                              margin: const EdgeInsets.only(left: 8),
+                              decoration: BoxDecoration(
+                                color: kPrimary,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: IconButton(
+                                icon: const Icon(
+                                  Icons.download,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                                onPressed: _generateAssessmentExport,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ];
+            },
+            body: _selectedSubjectId != null
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                    child: _loadingQuestions
+                        ? const Center(
+                            child: CircularProgressIndicator(color: kPrimary),
+                          )
+                        : TabBarView(
+                            controller: _tabController,
+                            children: bloomsLevels.map<Widget>((level) {
+                              final levelQs = _questionsByLevel(level['name']);
+                              if (levelQs.isEmpty) {
+                                return const Center(
+                                  child: Text(
+                                    'No questions match your criteria.',
+                                    style: TextStyle(color: Colors.grey),
+                                  ),
+                                );
+                              }
+                              return ListView.builder(
+                                padding: const EdgeInsets.only(
+                                  top: 12,
+                                  bottom: 80,
+                                ),
+                                itemCount: levelQs.length,
+                                itemBuilder: (context, i) {
+                                  return _QuestionCard(
+                                    question: levelQs[i],
+                                    levelColor: level['color'],
+                                    onEdit: () =>
+                                        _showEditQuestionDialog(levelQs[i]),
+                                    onDelete: () =>
+                                        _deleteQuestion(levelQs[i]['id']),
+                                    isSelected: _selectedQuestionIds.contains(
+                                      levelQs[i]['id'],
+                                    ),
+                                    onToggleSelect: (sel) {
+                                      setState(() {
+                                        if (sel) {
+                                          _selectedQuestionIds.add(
+                                            levelQs[i]['id'],
+                                          );
+                                        } else {
+                                          _selectedQuestionIds.remove(
+                                            levelQs[i]['id'],
+                                          );
+                                        }
+                                      });
+                                    },
+                                  );
+                                },
+                              );
+                            }).toList(),
+                          ),
+                  )
+                : const Center(
                     child: Text(
                       'Select a subject to begin.',
                       style: TextStyle(color: Colors.grey),
                     ),
                   ),
-                ),
-              ],
-            ],
           ),
-        ),
-        _buildSelectionBar(),
-      ],
+          _buildSelectionBar(),
+        ],
+      ),
     );
   }
 
-  // Sticky bottom bar for selected questions
   Widget _buildSelectionBar() {
     if (_selectedQuestionIds.isEmpty) return const SizedBox.shrink();
     return Positioned(
@@ -858,7 +872,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
         padding: const EdgeInsets.all(12),
         child: Row(
           children: [
-            Text('Selected: ', style: TextStyle(color: Colors.black54)),
+            const Text('Selected: ', style: TextStyle(color: Colors.black54)),
             Text(
               '${_selectedQuestionIds.length}',
               style: const TextStyle(
@@ -872,6 +886,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
               onPressed: _generateAssessmentExport,
               child: Text(
                 'Generate Assessment (${_selectedQuestionIds.length})',
+                style: const TextStyle(color: Colors.white),
               ),
             ),
           ],
@@ -881,7 +896,39 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
   }
 }
 
-// ── Analytics Stat Card (matches web's grey stat tiles) ──
+// Helper delegate for sliver tab header pinning behavior
+class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
+  _SliverAppBarDelegate({
+    required this.minHeight,
+    required this.maxHeight,
+    required this.child,
+  });
+  final double minHeight;
+  final double maxHeight;
+  final Widget child;
+
+  @override
+  double get minExtent => minHeight;
+  @override
+  double get maxExtent => maxHeight;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return SizedBox.expand(child: child);
+  }
+
+  @override
+  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) {
+    return maxHeight != oldDelegate.maxHeight ||
+        minHeight != oldDelegate.minHeight ||
+        child != oldDelegate.child;
+  }
+}
+
 class _AnalyticsCard extends StatelessWidget {
   final String label;
   final String value;
@@ -919,7 +966,6 @@ class _AnalyticsCard extends StatelessWidget {
   }
 }
 
-// ── Question Card Component ──
 class _QuestionCard extends StatelessWidget {
   final dynamic question;
   final Color levelColor;
@@ -939,8 +985,6 @@ class _QuestionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Assuming options come as a list from your Python backend.
-    // If they are just text, you can parse them or render a static list for now.
     final List<dynamic> options =
         question['options'] ??
         ['A. Front-end', 'B. Middleware', 'C. Backend', 'D. Network'];
@@ -951,6 +995,13 @@ class _QuestionCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -958,12 +1009,12 @@ class _QuestionCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Selection Checkbox
               if (onToggleSelect != null)
                 Padding(
                   padding: const EdgeInsets.only(right: 8.0, top: 2),
                   child: Checkbox(
                     value: isSelected ?? false,
+                    activeColor: kPrimary,
                     onChanged: (v) => onToggleSelect?.call(v ?? false),
                   ),
                 ),
@@ -978,13 +1029,11 @@ class _QuestionCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 16),
-              // Edit Icon
               InkWell(
                 onTap: onEdit,
                 child: const Icon(Icons.edit, color: Colors.grey, size: 18),
               ),
               const SizedBox(width: 16),
-              // Delete Icon
               InkWell(
                 onTap: onDelete,
                 child: Icon(
@@ -996,8 +1045,6 @@ class _QuestionCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-
-          // Options Chips
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -1019,13 +1066,9 @@ class _QuestionCard extends StatelessWidget {
               );
             }).toList(),
           ),
-
           const SizedBox(height: 16),
-
-          // Bottom Tags
           Row(
             children: [
-              // Bloom's Level Tag
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
@@ -1045,7 +1088,6 @@ class _QuestionCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              // MCQ Tag
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,

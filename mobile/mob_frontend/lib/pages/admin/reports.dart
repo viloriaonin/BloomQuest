@@ -2,20 +2,28 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../widgets/adminSidebar.dart';
+import 'package:BloomQuest/config/api_config.dart';
 
 // ---------------------------------------------------------------------------
 // API CONFIG
 //
-// You're running via `flutter run -d chrome`, which compiles to Flutter Web —
-// this behaves like a normal browser app, not a physical device. That means:
-//   - "localhost" refers to your own computer, same as your React app, so
-//     this works as long as FastAPI is running locally.
-//   - Because Chrome enforces CORS, your FastAPI backend must explicitly
-//     allow requests from whatever origin Flutter Web serves on (check the
-//     browser's address bar when the app opens — commonly something like
-//     http://localhost:PORT with a random port unless you set one).
+// Set this based on how you're running the app:
 //
-// Add this to your FastAPI main.py if you haven't already:
+// - `flutter run -d chrome` (Flutter Web) → use "http://localhost:8000/api"
+//   and make sure FastAPI has CORSMiddleware enabled (see below).
+//
+// - Physical phone → "localhost" means the PHONE itself, not your computer.
+//   Use your computer's actual LAN IP instead, e.g. "http://192.168.1.5:8000/api"
+//   Find it with:
+//     Mac:     ipconfig getifaddr en0
+//     Windows: ipconfig  (look for "IPv4 Address")
+//   Requirements:
+//     1. Phone and computer must be on the SAME Wi-Fi network.
+//     2. Start FastAPI with --host 0.0.0.0 (not the 127.0.0.1 default):
+//          uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+//     3. Your computer's firewall must allow incoming connections on port 8000.
+//
+// Add this to your FastAPI main.py for the Web case:
 //
 //   from fastapi.middleware.cors import CORSMiddleware
 //   app.add_middleware(
@@ -26,8 +34,8 @@ import '../widgets/adminSidebar.dart';
 //       allow_headers=["*"],
 //   )
 // ---------------------------------------------------------------------------
-const String kApiBaseUrl = "http://localhost:8000/api";
-const String kActivityLogEndpoint = "$kApiBaseUrl/activity-logs";
+final String kApiBaseUrl = ApiConfig.baseUrl;
+final String kActivityLogEndpoint = "$kApiBaseUrl/activity-logs";
 
 class ActivityLogEntry {
   final int id;
