@@ -34,12 +34,17 @@ class AdminQuestionBankPage extends StatefulWidget {
 class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  late final AnimationController _shimmerController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  )..repeat();
 
   List<dynamic> _subjects = [];
   String? _selectedSubjectId;
   List<dynamic> _questions = [];
   bool _loadingSubjects = true;
   bool _loadingQuestions = false;
+  bool _isGeneratingAssessment = false;
   Set<int> _selectedQuestionIds = {};
 
   // Add question form controllers
@@ -59,6 +64,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
 
   @override
   void dispose() {
+    _shimmerController.dispose();
     _tabController.dispose();
     _searchController.dispose();
     _newQuestionController.dispose();
@@ -430,12 +436,15 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
   }
 
   Future<void> _generateAssessmentExport() async {
+    if (_isGeneratingAssessment) return;
     if (_selectedQuestionIds.isEmpty || _selectedSubjectId == null) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Select questions first')));
       return;
     }
+
+    setState(() => _isGeneratingAssessment = true);
 
     try {
       final uri = Uri.parse('${ApiConfig.baseUrl}/questions/export');
@@ -472,6 +481,10 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Export failed')));
+    } finally {
+      if (mounted) {
+        setState(() => _isGeneratingAssessment = false);
+      }
     }
   }
 
@@ -571,6 +584,8 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
                         children: [
                           Expanded(
                             child: _AnalyticsCard(
+                              icon: Icons.library_books_rounded,
+                              color: const Color(0xFF7B1113),
                               label: 'Total questions',
                               value: _selectedSubjectId != null
                                   ? '${_questions.length}'
@@ -580,6 +595,8 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
                           const SizedBox(width: 12),
                           Expanded(
                             child: _AnalyticsCard(
+                              icon: Icons.pending_actions_rounded,
+                              color: const Color(0xFF0F766E),
                               label: 'Ready for review',
                               value: _selectedSubjectId != null
                                   ? '${_questions.where((q) => (q['explanation']?.toString() ?? '').trim().isEmpty).length}'
@@ -589,6 +606,8 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
                           const SizedBox(width: 12),
                           Expanded(
                             child: _AnalyticsCard(
+                              icon: Icons.psychology_rounded,
+                              color: const Color(0xFF2563EB),
                               label: 'High-order items',
                               value: _selectedSubjectId != null
                                   ? '${_questions.where((q) => const ['Analyze', 'Evaluate', 'Create'].contains(q['bloom_level'])).length}'
@@ -770,22 +789,6 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
                                 }).toList(),
                               ),
                             ),
-                            // Maroon Download Button
-                            Container(
-                              margin: const EdgeInsets.only(left: 8),
-                              decoration: BoxDecoration(
-                                color: kPrimary,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: IconButton(
-                                icon: const Icon(
-                                  Icons.download,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                                onPressed: _generateAssessmentExport,
-                              ),
-                            ),
                           ],
                         ),
                       ),
@@ -797,8 +800,22 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
                 ? Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24.0),
                     child: _loadingQuestions
-                        ? const Center(
-                            child: CircularProgressIndicator(color: kPrimary),
+                        ? TabBarView(
+                            controller: _tabController,
+                            children: bloomsLevels.map<Widget>((level) {
+                              return ListView.builder(
+                                padding: const EdgeInsets.only(
+                                  top: 12,
+                                  bottom: 80,
+                                ),
+                                itemCount: 4,
+                                itemBuilder: (context, index) {
+                                  return _ShimmerQuestionCard(
+                                    shimmerController: _shimmerController,
+                                  );
+                                },
+                              );
+                            }).toList(),
                           )
                         : TabBarView(
                             controller: _tabController,
@@ -882,12 +899,33 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
             ),
             const Spacer(),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: kPrimary),
-              onPressed: _generateAssessmentExport,
-              child: Text(
-                'Generate Assessment (${_selectedQuestionIds.length})',
-                style: const TextStyle(color: Colors.white),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: kPrimary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
+              onPressed: _isGeneratingAssessment
+                  ? null
+                  : _generateAssessmentExport,
+              child: _isGeneratingAssessment
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : Text(
+                      'Generate Assessment (${_selectedQuestionIds.length})',
+                      style: const TextStyle(color: Colors.white),
+                    ),
             ),
           ],
         ),
@@ -932,21 +970,44 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
 class _AnalyticsCard extends StatelessWidget {
   final String label;
   final String value;
+  final IconData icon;
+  final Color color;
 
-  const _AnalyticsCard({required this.label, required this.value});
+  const _AnalyticsCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9F9F9),
-        border: Border.all(color: Colors.grey.shade200),
-        borderRadius: BorderRadius.circular(14),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(height: 12),
           Text(
             label,
             style: const TextStyle(fontSize: 11, color: Colors.black45),
@@ -966,7 +1027,7 @@ class _AnalyticsCard extends StatelessWidget {
   }
 }
 
-class _QuestionCard extends StatelessWidget {
+class _QuestionCard extends StatefulWidget {
   final dynamic question;
   final Color levelColor;
   final VoidCallback onEdit;
@@ -984,132 +1045,338 @@ class _QuestionCard extends StatelessWidget {
   });
 
   @override
+  State<_QuestionCard> createState() => _QuestionCardState();
+}
+
+class _QuestionCardState extends State<_QuestionCard> {
+  bool _isHovered = false;
+
+  @override
   Widget build(BuildContext context) {
     final List<dynamic> options =
-        question['options'] ??
+        widget.question['options'] ??
         ['A. Front-end', 'B. Middleware', 'C. Backend', 'D. Network'];
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        margin: const EdgeInsets.only(bottom: 16),
+        transform: Matrix4.identity()..scale(_isHovered ? 1.01 : 1.0),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: (widget.isSelected ?? false)
+                ? kPrimary.withOpacity(0.6)
+                : Colors.grey.shade200,
+            width: (widget.isSelected ?? false) ? 2 : 1,
           ),
-        ],
+          boxShadow: [
+            BoxShadow(
+              color: _isHovered
+                  ? kPrimary.withOpacity(0.12)
+                  : Colors.black.withOpacity(0.03),
+              blurRadius: _isHovered ? 14 : 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            splashColor: kPrimary.withOpacity(0.08),
+            highlightColor: kPrimary.withOpacity(0.05),
+            onTap: widget.onToggleSelect != null
+                ? () =>
+                      widget.onToggleSelect?.call(!(widget.isSelected ?? false))
+                : null,
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (widget.onToggleSelect != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8.0, top: 2),
+                          child: Checkbox(
+                            value: widget.isSelected ?? false,
+                            activeColor: kPrimary,
+                            onChanged: (v) =>
+                                widget.onToggleSelect?.call(v ?? false),
+                          ),
+                        ),
+                      Expanded(
+                        child: Text(
+                          widget.question['question']?.toString() ?? '',
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      InkWell(
+                        onTap: widget.onEdit,
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: const Icon(
+                            Icons.edit,
+                            color: Colors.grey,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      InkWell(
+                        onTap: widget.onDelete,
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: Icon(
+                            Icons.delete_outline,
+                            color: Colors.red.shade400,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: options.map((opt) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          border: Border.all(color: Colors.grey.shade200),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          opt.toString(),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: widget.levelColor.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          widget.question['bloom_level']?.toString() ??
+                              'Unknown',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: widget.levelColor,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: const Text(
+                          'MCQ',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    );
+  }
+}
+
+class _ShimmerQuestionCard extends StatelessWidget {
+  final AnimationController shimmerController;
+
+  const _ShimmerQuestionCard({required this.shimmerController});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: shimmerController,
+      builder: (context, child) {
+        final shimmerOffset = shimmerController.value;
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (onToggleSelect != null)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8.0, top: 2),
-                  child: Checkbox(
-                    value: isSelected ?? false,
-                    activeColor: kPrimary,
-                    onChanged: (v) => onToggleSelect?.call(v ?? false),
+              Row(
+                children: [
+                  Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      gradient: LinearGradient(
+                        colors: const [
+                          Color(0xFFE5E7EB),
+                          Color(0xFFF3F4F6),
+                          Color(0xFFE5E7EB),
+                        ],
+                        stops: const [0.0, 0.5, 1.0],
+                        begin: Alignment(-1 + shimmerOffset * 2, 0),
+                        end: Alignment(1 + shimmerOffset * 2, 0),
+                      ),
+                    ),
                   ),
-                ),
-              Expanded(
-                child: Text(
-                  question['question']?.toString() ?? '',
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1A1A1A),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Container(
+                      height: 14,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(999),
+                        gradient: LinearGradient(
+                          colors: const [
+                            Color(0xFFE5E7EB),
+                            Color(0xFFF3F4F6),
+                            Color(0xFFE5E7EB),
+                          ],
+                          stops: const [0.0, 0.5, 1.0],
+                          begin: Alignment(-1 + shimmerOffset * 2, 0),
+                          end: Alignment(1 + shimmerOffset * 2, 0),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                height: 12,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(999),
+                  gradient: LinearGradient(
+                    colors: const [
+                      Color(0xFFE5E7EB),
+                      Color(0xFFF3F4F6),
+                      Color(0xFFE5E7EB),
+                    ],
+                    stops: const [0.0, 0.5, 1.0],
+                    begin: Alignment(-1 + shimmerOffset * 2, 0),
+                    end: Alignment(1 + shimmerOffset * 2, 0),
                   ),
                 ),
               ),
-              const SizedBox(width: 16),
-              InkWell(
-                onTap: onEdit,
-                child: const Icon(Icons.edit, color: Colors.grey, size: 18),
-              ),
-              const SizedBox(width: 16),
-              InkWell(
-                onTap: onDelete,
-                child: Icon(
-                  Icons.delete_outline,
-                  color: Colors.red.shade400,
-                  size: 18,
+              const SizedBox(height: 10),
+              Container(
+                height: 10,
+                width: 220,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(999),
+                  gradient: LinearGradient(
+                    colors: const [
+                      Color(0xFFE5E7EB),
+                      Color(0xFFF3F4F6),
+                      Color(0xFFE5E7EB),
+                    ],
+                    stops: const [0.0, 0.5, 1.0],
+                    begin: Alignment(-1 + shimmerOffset * 2, 0),
+                    end: Alignment(1 + shimmerOffset * 2, 0),
+                  ),
                 ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Container(
+                    width: 86,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      gradient: LinearGradient(
+                        colors: const [
+                          Color(0xFFE5E7EB),
+                          Color(0xFFF3F4F6),
+                          Color(0xFFE5E7EB),
+                        ],
+                        stops: const [0.0, 0.5, 1.0],
+                        begin: Alignment(-1 + shimmerOffset * 2, 0),
+                        end: Alignment(1 + shimmerOffset * 2, 0),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(
+                    width: 60,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      gradient: LinearGradient(
+                        colors: const [
+                          Color(0xFFE5E7EB),
+                          Color(0xFFF3F4F6),
+                          Color(0xFFE5E7EB),
+                        ],
+                        stops: const [0.0, 0.5, 1.0],
+                        begin: Alignment(-1 + shimmerOffset * 2, 0),
+                        end: Alignment(1 + shimmerOffset * 2, 0),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: options.map((opt) {
-              return Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  opt.toString(),
-                  style: const TextStyle(fontSize: 13, color: Colors.black87),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: levelColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  question['bloom_level']?.toString() ?? 'Unknown',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: levelColor,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'MCQ',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black54,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
