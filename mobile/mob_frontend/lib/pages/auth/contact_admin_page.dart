@@ -47,6 +47,7 @@ class _DeptOption {
 class _ContactAdminPageState extends State<ContactAdminPage> {
   final _fullNameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _otpController = TextEditingController(); // Added for OTP
   final _emailFocusNode = FocusNode();
 
   List<_DeptOption> _departments = [];
@@ -57,8 +58,12 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
   bool _loading = false;
   String _error = '';
   String _success = '';
+  
   // null | 'pending' | 'approved' | 'declined' | 'existing'
   String? _existingRequestStatus;
+  
+  // Controls whether the user is currently viewing the OTP form
+  bool _isOtpMode = false; 
 
   @override
   void initState() {
@@ -98,6 +103,7 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
   void dispose() {
     _fullNameController.dispose();
     _emailController.dispose();
+    _otpController.dispose();
     _emailFocusNode.dispose();
     super.dispose();
   }
@@ -189,12 +195,63 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
       final payloadEmail = _sanitizeEmail(email);
       _emailController.text = payloadEmail;
 
-      await ApiService.submitAccountRequest(fullName, department, payloadEmail);
+      final result = await ApiService.requestContactAdminOtp(
+        fullName,
+        department,
+        payloadEmail,
+      );
+
       if (!mounted) return;
+
+      final demoCode = result['demo_code']?.toString();
       setState(() {
-        _success = 'Request submitted. Please wait for admin approval.';
+        _success = demoCode != null && demoCode.isNotEmpty
+            ? 'OTP delivery is not configured in this environment. Demo code: $demoCode. Please verify.'
+            : 'An OTP has been sent to your email. Please verify.';
+        _isOtpMode = true;
+      });
+    } catch (e) {
+      setState(() {
+        _error = e.toString().replaceAll('Exception: ', '');
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _verifyOtp() async {
+    final otp = _otpController.text.trim();
+    final email = _emailController.text.trim();
+
+    setState(() {
+      _error = '';
+      _success = '';
+    });
+
+    if (otp.isEmpty) {
+      setState(() => _error = 'Please enter the OTP.');
+      return;
+    }
+
+    setState(() => _loading = true);
+
+    try {
+      // You will need to implement `verifyOtp` in your api_service.dart
+      await ApiService.verifyOtp(email, otp);
+      
+      if (!mounted) return;
+      
+      setState(() {
+        _success = 'Email verified! Request submitted. Please wait for admin approval.';
         _existingRequestStatus = 'pending';
+        _isOtpMode = false;
+        
+        // Clear fields on ultimate success
         _fullNameController.clear();
+        _emailController.clear();
+        _otpController.clear();
         _selectedDepartment = null;
       });
     } catch (e) {
@@ -352,11 +409,11 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Text(
-                          'Submit a request to the administrator to get '
-                          'access to BloomQuest. You\u2019ll be notified once '
-                          'it\u2019s reviewed.',
-                          style: TextStyle(
+                        Text(
+                          _isOtpMode 
+                              ? 'Enter the One-Time Password sent to your email to verify your request.'
+                              : 'Submit a request to the administrator to get access to BloomQuest. You\u2019ll be notified once it\u2019s reviewed.',
+                          style: const TextStyle(
                             fontSize: 13,
                             color: Colors.black54,
                             height: 1.4,
@@ -380,66 +437,118 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
                           ),
                         _statusBanner(),
 
-                        _buildLabeledField(
-                          label: 'Full Name',
-                          hint: 'Enter your full name',
-                          controller: _fullNameController,
-                        ),
-                        const SizedBox(height: 16),
-                        _buildDepartmentDropdown(),
-                        const SizedBox(height: 16),
-                        _buildLabeledField(
-                          label: 'Email Address',
-                          hint: 'Enter your email',
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          focusNode: _emailFocusNode,
-                          onChanged: (_) {
-                            setState(() {
-                              _existingRequestStatus = null;
-                              _error = '';
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 24),
+                        // ── Conditionally render OTP or Request Form ──
+                        if (_isOtpMode) ...[
+                          _buildLabeledField(
+                            label: 'One-Time Password',
+                            hint: 'Enter 6-digit OTP',
+                            controller: _otpController,
+                            keyboardType: TextInputType.number,
+                          ),
+                          const SizedBox(height: 24),
+                          ElevatedButton(
+                            onPressed: _loading ? null : _verifyOtp,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _kAccentRed,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: _kAccentRed.withOpacity(0.6),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: const StadiumBorder(),
+                            ),
+                            child: _loading
+                                ? const SizedBox(
+                                    height: 18,
+                                    width: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Verify OTP',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                _isOtpMode = false; // Allow user to go back to edit info
+                                _error = '';
+                                _success = '';
+                              });
+                            },
+                            child: const Text(
+                              'Cancel verification',
+                              style: TextStyle(color: Colors.black54, fontSize: 13),
+                            ),
+                          ),
+                        ] else ...[
+                          _buildLabeledField(
+                            label: 'Full Name',
+                            hint: 'Enter your full name',
+                            controller: _fullNameController,
+                          ),
+                          const SizedBox(height: 16),
+                          _buildDepartmentDropdown(),
+                          const SizedBox(height: 16),
+                          _buildLabeledField(
+                            label: 'Email Address',
+                            hint: 'Enter your email',
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            focusNode: _emailFocusNode,
+                            onChanged: (_) {
+                              setState(() {
+                                _existingRequestStatus = null;
+                                _error = '';
+                              });
+                            },
+                          ),
+                          const SizedBox(height: 24),
 
-                        ElevatedButton(
-                          onPressed: (_loading || _existingRequestStatus != null)
-                              ? null
-                              : _submitRequest,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _kAccentRed,
-                            foregroundColor: Colors.white, // Contrast Fixed
-                            disabledBackgroundColor: _kAccentRed.withOpacity(0.6),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: const StadiumBorder(),
-                          ),
-                          child: _loading
-                              ? const SizedBox(
-                                  height: 18,
-                                  width: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
+                          ElevatedButton(
+                            onPressed: (_loading || _existingRequestStatus != null)
+                                ? null
+                                : _submitRequest,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _kAccentRed,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: _kAccentRed.withOpacity(0.6),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: const StadiumBorder(),
+                            ),
+                            child: _loading
+                                ? const SizedBox(
+                                    height: 18,
+                                    width: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Send Request',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
                                   ),
-                                )
-                              : const Text(
-                                  'Send Request',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text(
-                            'Back to login',
-                            style: TextStyle(color: _kAccentRed, fontSize: 13),
                           ),
-                        ),
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text(
+                              'Back to login',
+                              style: TextStyle(color: _kAccentRed, fontSize: 13),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

@@ -303,6 +303,11 @@ class _InputPageState extends State<InputPage>
 
   // ─── Upload Files ────────────────────────────────────────────────────────────
   Future<void> _handleUpload() async {
+    if (_selectedSubjectId == null || _selectedSubjectId!.isEmpty) {
+      setState(() => _error = 'Please select a subject before uploading the files.');
+      return;
+    }
+
     if (_moduleFileBytes == null || _syllabusFileBytes == null) {
       setState(() => _error = 'Please select both module and syllabus files.');
       return;
@@ -320,6 +325,7 @@ class _InputPageState extends State<InputPage>
         'POST',
         Uri.parse('${ApiConfig.baseUrl}/upload'),
       );
+      request.fields['subject_id'] = _selectedSubjectId!;
       request.files.add(
         http.MultipartFile.fromBytes(
           'module_file',
