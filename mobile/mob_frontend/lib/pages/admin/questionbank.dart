@@ -166,7 +166,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
                 ],
               ),
             ),
-            const Icon(Icons.upload_file_rounded, size: 18, color: Colors.black54),
+            const Icon(Icons.add_circle_outline, size: 20, color: Colors.black54),
           ],
         ),
       ),
@@ -206,6 +206,11 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
   }
 
   Future<void> _applyImportedBank() async {
+    if (_selectedSubjectId == null || _selectedSubjectId!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a subject before importing the bank files.')));
+      return;
+    }
+
     if (_moduleFileBytes == null || _syllabusFileBytes == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select both module and syllabus files.')));
       return;
@@ -216,6 +221,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
     try {
       final uri = Uri.parse('${ApiConfig.baseUrl}/upload');
       final request = http.MultipartRequest('POST', uri);
+      request.fields['subject_id'] = _selectedSubjectId!;
       request.files.add(http.MultipartFile.fromBytes('module_file', _moduleFileBytes!, filename: _moduleFileName!));
       request.files.add(http.MultipartFile.fromBytes('syllabus_file', _syllabusFileBytes!, filename: _syllabusFileName!));
 
@@ -231,11 +237,13 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
           _syllabusFileName = null;
         });
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed (${res.statusCode})')));
+        final responseBody = res.body.trim();
+        final message = responseBody.isNotEmpty ? 'Upload failed (${res.statusCode}): $responseBody' : 'Upload failed (${res.statusCode})';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       }
     } catch (e) {
       debugPrint('Import bank error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Import failed')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Import failed: $e')));
     } finally {
       if (mounted) setState(() => _importingBank = false);
     }
@@ -653,7 +661,9 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
                                 SizedBox(
                                   width: double.infinity,
                                   child: ElevatedButton(
-                                    onPressed: (_importingBank || _moduleFileBytes == null || _syllabusFileBytes == null) ? null : _applyImportedBank,
+                                    onPressed: (_importingBank || _selectedSubjectId == null || _selectedSubjectId!.isEmpty || _moduleFileBytes == null || _syllabusFileBytes == null)
+                                        ? null
+                                        : _applyImportedBank,
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: kDarkButtonColor,
                                       foregroundColor: Colors.white,

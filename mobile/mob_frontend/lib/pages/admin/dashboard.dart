@@ -202,6 +202,55 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
     return DateTime.now().difference(entryDate).inDays <= days;
   }
 
+  // Implementation for exporting the dashboard analytics data
+  Future<void> _exportDashboardAnalytics() async {
+    try {
+      // Create a CSV-formatted string representing the dashboard data
+      final String csvContent = '''
+Dashboard Analytics Report
+Generated on: ${DateTime.now()}
+
+--- OVERVIEW ---
+Total Generated Questions, $_totalQuestions
+Total Downloaded Exams, $_totalAssessments
+Active Faculty, $_activeFaculty
+
+--- DESCRIPTIVE ANALYTICS ---
+Avg Questions / Faculty, $_avgQuestionsPerFaculty
+Avg Assessments / Week, ${_avgAssessmentsPerWeek.toStringAsFixed(1)}
+Most Active Department, $_mostActiveDept
+
+--- PREDICTIVE ANALYTICS ---
+Projected Questions (Next Mo), ${( _totalQuestions * 1.1 ).round()}
+Platform Success Rate, $_successRate%
+Expected Assessments, ${( _avgAssessmentsPerWeek * 4 ).round()}
+''';
+
+      // NOTE: In a complete app, you would save this using `path_provider` (mobile/desktop) 
+      // or trigger a download via `dart:html` (web). 
+      // For demonstration, we print it to the debug console.
+      debugPrint(csvContent);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Report exported successfully! Check console for output.'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to export report: $e'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _shimmerController.dispose();
@@ -221,7 +270,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       case 0:
       default:
         return _DashboardHome(
-          onExportPressed: () => setState(() => _currentIndex = 4),
+          onExportPressed: _exportDashboardAnalytics, // Hooked up the new export function
           analyticsLoading: _analyticsLoading,
           shimmerController: _shimmerController,
           totalQuestions: _totalQuestions,
@@ -372,9 +421,8 @@ class _DashboardHome extends StatelessWidget {
                           ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                const _AvgScoreCard(),
-                const SizedBox(height: 32),
+                // Removed the _AvgScoreCard and reduced padding here
+                const SizedBox(height: 32), 
                 const _SectionHeader(title: 'Analytics'),
                 const SizedBox(height: 16),
                 _AnalyticsInfoCard(
@@ -439,10 +487,7 @@ class _DashboardHome extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(height: 32),
-                const _SectionHeader(title: 'Top Courses'),
-                const SizedBox(height: 16),
-                const _TopCoursesCard(),
+                // Removed the _TopCoursesCard section and updated layout spacing here
                 const SizedBox(height: 32),
                 Container(
                   width: double.infinity,
@@ -617,116 +662,6 @@ class _BulletLine extends StatelessWidget {
         const Text('•  ', style: TextStyle(color: kAccentOrange, fontWeight: FontWeight.bold)),
         Expanded(child: Text(text, style: const TextStyle(fontSize: 14, color: Colors.black54))),
       ],
-    );
-  }
-}
-
-class _AvgScoreCard extends StatelessWidget {
-  const _AvgScoreCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: _flatCardDecoration,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          const Icon(Icons.bar_chart_rounded, color: kAccentOrange, size: 36),
-          const SizedBox(width: 16),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Avg. Score',
-                  style: TextStyle(fontSize: 13, color: Colors.black45),
-                ),
-                Text(
-                  '76.4%',
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1A1A1A),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerRight,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Icon(Icons.trending_down, size: 16, color: Colors.redAccent),
-                  SizedBox(width: 6),
-                  Text(
-                    '-1.2% vs last month',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TopCoursesCard extends StatelessWidget {
-  const _TopCoursesCard();
-  static const _courses = [
-    _CourseData(name: 'Mathematics 101', students: 312, pct: 0.88),
-    _CourseData(name: 'Science & Tech', students: 278, pct: 0.74),
-    _CourseData(name: 'English Comp', students: 245, pct: 0.68),
-    _CourseData(name: 'Filipino Studies', students: 198, pct: 0.55),
-    _CourseData(name: 'PE & Health', students: 165, pct: 0.46),
-  ];
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: _flatCardDecoration,
-      child: Column(children: _courses.map((c) => _CourseRow(course: c)).toList()),
-    );
-  }
-}
-
-class _CourseData {
-  final String name;
-  final int students;
-  final double pct;
-  const _CourseData({required this.name, required this.students, required this.pct});
-}
-
-class _CourseRow extends StatelessWidget {
-  final _CourseData course;
-  const _CourseRow({required this.course});
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(child: Text(course.name, style: const TextStyle(fontSize: 14, color: Color(0xFF222222), fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
-              Text('${course.students} students', style: const TextStyle(fontSize: 12, color: Colors.black45)),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(value: course.pct, minHeight: 6, backgroundColor: Colors.grey.shade200, valueColor: const AlwaysStoppedAnimation<Color>(kDarkButtonColor)),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -1161,4 +1096,3 @@ class _LineChartPainter extends CustomPainter {
   bool shouldRepaint(covariant _LineChartPainter oldDelegate) =>
       oldDelegate.data != data || oldDelegate.maxValue != maxValue || oldDelegate.color != color;
 }
-

@@ -90,6 +90,35 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> verifyOtp(
+    String email,
+    String otp,
+  ) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/contact-admin/verify-otp'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({'email': email.trim(), 'otp': otp.trim()}),
+      );
+
+      print('Status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        final error = jsonDecode(response.body);
+        throw Exception(error['detail'] ?? 'Invalid or expired verification code.');
+      }
+    } catch (e) {
+      print('API Error: $e');
+      rethrow;
+    }
+  }
+
   static Future<Map<String, dynamic>> resetPassword(
     String email,
     String otp,
@@ -117,6 +146,40 @@ class ApiService {
       } else {
         final error = jsonDecode(response.body);
         throw Exception(error['detail'] ?? 'Failed to reset password.');
+      }
+    } catch (e) {
+      print('API Error: $e');
+      rethrow;
+    }
+  }
+
+  static Future<Map<String, dynamic>> requestContactAdminOtp(
+    String fullName,
+    String department,
+    String email,
+  ) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/contact-admin/send-otp'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'full_name': fullName,
+          'department': department,
+          'email': email,
+        }),
+      );
+
+      print('Status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        final error = jsonDecode(response.body);
+        throw Exception(error['detail'] ?? 'Failed to send OTP request.');
       }
     } catch (e) {
       print('API Error: $e');
