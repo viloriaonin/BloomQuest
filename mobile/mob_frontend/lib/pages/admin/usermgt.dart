@@ -1,49 +1,56 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:mob_frontend/utils/theme_constants.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api_service.dart';
-import '../widgets/adminSidebar.dart';
+import 'account.dart'; // IMPORT THE ACCOUNT BAR
+
+const Color kScaffoldBackground = Colors.white;
+
+// Status Pill Colors
+const Color kBadgeActive = Color(0xFF22C55E);
+const Color kBadgeInactive = Color(0xFF94A3B8);
+const Color kBadgeBanned = Color(0xFFEF4444);
+const Color kBadgePending = Color(0xFF0F172A);
 
 class AdminUserMgtPage extends StatefulWidget {
   const AdminUserMgtPage({super.key});
-
   @override
   State<AdminUserMgtPage> createState() => _AdminUserMgtPageState();
 }
 
-class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
+class _AdminUserMgtPageState extends State<AdminUserMgtPage> with SingleTickerProviderStateMixin {
   bool _loading = true;
-  bool _actionLoading = false; // Global overlay for list actions
+  bool _actionLoading = false; 
   String _error = '';
+  
   List<Map<String, dynamic>> _pendingRequests = [];
   List<Map<String, dynamic>> _activeUsers = [];
   List<Map<String, dynamic>> _archivedUsers = [];
-
-  Map<String, dynamic>? _selectedUser;
-  bool _verifyLoading = false;
-  bool _savingPassword = false;
-  bool _credentialsVerified = false;
-  String _adminPassword = '';
-  String _newPassword = '';
-  String _adminAuthError = '';
-  String _lastAction = '';
-  Map<String, dynamic>? _verifiedUserCredentials;
+  
+  // Tab and Search Controls
+  late TabController _tabController;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 3, vsync: this);
     _loadUserManagementData();
   }
 
-  Future<void> _loadUserManagementData() async {
-    setState(() {
-      _loading = true;
-      _error = '';
-    });
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
 
+  Future<void> _loadUserManagementData() async {
+    setState(() { _loading = true; _error = ''; });
     try {
       final pending = await ApiService.fetchPendingContactRequests();
       final usersResponse = await ApiService.fetchAdminUsers();
-
       final activeUsers = <Map<String, dynamic>>[];
       final archivedUsers = <Map<String, dynamic>>[];
 
@@ -55,48 +62,36 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
       if (usersResponse is Map<String, dynamic>) {
         final active = usersResponse['active'];
         final archived = usersResponse['archived'];
-        if (active is List) {
-          activeUsers.addAll(
-            active
-                .map((item) => Map<String, dynamic>.from(item))
-                .where(isFaculty),
-          );
-        }
-        if (archived is List) {
-          archivedUsers.addAll(
-            archived
-                .map((item) => Map<String, dynamic>.from(item))
-                .where(isFaculty),
-          );
-        }
+        if (active is List) activeUsers.addAll(active.map((item) => Map<String, dynamic>.from(item)).where(isFaculty));
+        if (archived is List) archivedUsers.addAll(archived.map((item) => Map<String, dynamic>.from(item)).where(isFaculty));
       } else if (usersResponse is List) {
         for (final item in usersResponse) {
           final user = Map<String, dynamic>.from(item as Map);
           if (!isFaculty(user)) continue;
-          if (user['archived'] == true || user['is_active'] == false) {
-            archivedUsers.add(user);
-          } else {
-            activeUsers.add(user);
-          }
+          if (user['archived'] == true || user['is_active'] == false) archivedUsers.add(user);
+          else activeUsers.add(user);
         }
       }
 
       setState(() {
-        _pendingRequests = pending
-            .map((item) => Map<String, dynamic>.from(item as Map))
-            .toList();
+        _pendingRequests = pending.map((item) => Map<String, dynamic>.from(item as Map)).toList();
         _activeUsers = activeUsers;
         _archivedUsers = archivedUsers;
       });
     } catch (e) {
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-      });
+      setState(() { _error = e.toString().replaceAll('Exception: ', ''); });
     } finally {
-      setState(() {
-        _loading = false;
-      });
+      setState(() { _loading = false; });
     }
+  }
+
+  // Helper method to filter users based on the search query
+  bool _matchesSearch(Map<String, dynamic> user) {
+    if (_searchQuery.isEmpty) return true;
+    final q = _searchQuery.toLowerCase();
+    final name = _displayName(user).toLowerCase();
+    final email = (user['email']?.toString() ?? '').toLowerCase();
+    return name.contains(q) || email.contains(q);
   }
 
   Future<void> _approveRequest(String email) async {
@@ -104,17 +99,9 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
     try {
       await ApiService.approveAccountRequest(email);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Approved account request for $email.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Approved account request for $email.')));
       await _loadUserManagementData();
-      if (!mounted) return;
-      setState(() => _lastAction = 'Approved account request for $email.');
-    } catch (e) {
-      _showError(e.toString());
-    } finally {
-      if (mounted) setState(() => _actionLoading = false);
-    }
+    } catch (e) { _showError(e.toString()); } finally { if (mounted) setState(() => _actionLoading = false); }
   }
 
   Future<void> _declineRequest(String email) async {
@@ -122,17 +109,9 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
     try {
       await ApiService.declineAccountRequest(email);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Declined account request for $email.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Declined account request for $email.')));
       await _loadUserManagementData();
-      if (!mounted) return;
-      setState(() => _lastAction = 'Declined account request for $email.');
-    } catch (e) {
-      _showError(e.toString());
-    } finally {
-      if (mounted) setState(() => _actionLoading = false);
-    }
+    } catch (e) { _showError(e.toString()); } finally { if (mounted) setState(() => _actionLoading = false); }
   }
 
   Future<void> _archiveUser(String email) async {
@@ -140,383 +119,780 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
     try {
       await ApiService.archiveUser(email);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Archived user $email.')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Archived user $email.')));
       await _loadUserManagementData();
-      if (!mounted) return;
-      setState(() => _lastAction = 'Archived user $email.');
-    } catch (e) {
-      _showError(e.toString());
-    } finally {
-      if (mounted) setState(() => _actionLoading = false);
-    }
+    } catch (e) { _showError(e.toString()); } finally { if (mounted) setState(() => _actionLoading = false); }
   }
 
   Future<void> _restoreUser(String email) async {
-    setState(() => _actionLoading = true);
-    try {
-      await ApiService.restoreUser(email);
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Restored user $email.')));
-      await _loadUserManagementData();
-      if (!mounted) return;
-      setState(() => _lastAction = 'Restored user $email.');
-    } catch (e) {
-      _showError(e.toString());
-    } finally {
-      if (mounted) setState(() => _actionLoading = false);
-    }
-  }
-
-  Future<void> _deleteUser(String email) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                Icons.delete_forever_outlined,
-                color: Colors.red.shade700,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Text(
-              'Delete User',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
-            ),
-          ],
-        ),
-        content: Text(
-          'Are you sure you want to permanently delete "$email"? This action cannot be undone.',
-          style: const TextStyle(color: Colors.black54, height: 1.4),
-        ),
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text('Restore User', style: TextStyle(fontWeight: FontWeight.bold, color: kTextDark)),
+        content: const Text('Are you sure you want to unarchive this account?', style: TextStyle(color: kTextMuted)),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            onPressed: () => Navigator.pop(context, false), 
+            child: const Text('Cancel', style: TextStyle(color: kTextMuted))
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.shade700,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+              backgroundColor: kBadgeActive, // Green to show it's a positive/restorative action
+              elevation: 0, 
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
             ),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete Permanently'),
+            child: const Text('Restore', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
 
     if (confirmed != true) return;
+    
+    setState(() => _actionLoading = true);
+    try {
+      await ApiService.restoreUser(email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Restored user $email.')));
+      await _loadUserManagementData();
+    } catch (e) { 
+      _showError(e.toString()); 
+    } finally { 
+      if (mounted) setState(() => _actionLoading = false); 
+    }
+  }
+  
+  Future<void> _deleteUser(String email) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text('Delete User', style: TextStyle(fontWeight: FontWeight.bold, color: kTextDark)),
+        content: const Text('Are you sure you want to continue in deleting this account? This action cannot be undone.', style: TextStyle(color: kTextMuted)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel', style: TextStyle(color: kTextMuted))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: kBadgeBanned, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
 
+    if (confirmed != true) return;
     setState(() => _actionLoading = true);
     try {
       await ApiService.deleteUser(email);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Deleted user $email.'),
-          backgroundColor: Colors.red.shade700,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Deleted user $email.'), backgroundColor: kBadgeBanned));
       await _loadUserManagementData();
-      if (!mounted) return;
-      setState(() => _lastAction = 'Deleted user $email.');
-    } catch (e) {
-      _showError(e.toString());
-    } finally {
-      if (mounted) setState(() => _actionLoading = false);
-    }
+    } catch (e) { _showError(e.toString()); } finally { if (mounted) setState(() => _actionLoading = false); }
   }
 
   void _showError(String message) {
     if (!mounted) return;
     final text = message.replaceAll('Exception: ', '');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(text), backgroundColor: Colors.red.shade700),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text), backgroundColor: kBadgeBanned));
   }
 
   Future<void> _openManageUser(Map<String, dynamic> user) async {
-    setState(() {
-      _selectedUser = user;
-      _credentialsVerified = false;
-      _adminPassword = '';
-      _newPassword = '';
-      _adminAuthError = '';
-      _verifiedUserCredentials = null;
-    });
-
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
+    final email = user['email']?.toString() ?? '';
+    
+    final result = await showModalBottomSheet<dynamic>(
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       context: context,
-      builder: (_) => _buildManageUserSheet(context),
+      builder: (_) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: ManageUserBottomSheet(user: user),
+      ),
+    );
+
+    if (result == true) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password updated successfully.')));
+      _loadUserManagementData();
+    } else if (result == 'archive') {
+      if (!mounted) return;
+      await _archiveUser(email);
+    }
+  }
+
+  String _displayName(Map<String, dynamic> user) {
+    return (user['full_name'] ?? user['name'] ?? user['email'] ?? 'Unknown').toString();
+  }
+
+  Widget _buildStatCard(String title, int count, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.15)),
+        ),
+        child: Column(
+          children: [
+            Text(
+              count.toString(), 
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              title, 
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color), 
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
+  @override
+  Widget build(BuildContext context) {
+    int totalPending = _pendingRequests.length;
+    int totalActive = _activeUsers.length;
+    int totalArchived = _archivedUsers.length;
+    int totalUsers = totalActive + totalArchived;
+
+    return Scaffold(
+      backgroundColor: kScaffoldBackground,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        titleSpacing: 0,
+        title: const AccountTopBar(), // Sticky top bar
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(1),
+          child: Divider(height: 1, color: kBorderOutline, thickness: 1),
+        ),
+      ),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // PINNED HEADER: Title, Overview Stats, and Search
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('User Management', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: kTextDark)),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Manage all users in one place. Control access, assign roles, and monitor activity.', 
+                        style: TextStyle(color: kTextMuted, fontSize: 14, height: 1.4),
+                      ),
+                      
+                      const SizedBox(height: 20),
+                      // Stats Overview Row
+                      Row(
+                        children: [
+                          _buildStatCard('Total', totalUsers, Colors.blueAccent),
+                          const SizedBox(width: 8),
+                          _buildStatCard('Active', totalActive, kBadgeActive),
+                          const SizedBox(width: 8),
+                          _buildStatCard('Requests', totalPending, const Color(0xFFF59E0B)),
+                          const SizedBox(width: 8),
+                          _buildStatCard('Archived', totalArchived, kBadgeInactive),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Search Bar
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (val) => setState(() => _searchQuery = val),
+                    decoration: InputDecoration(
+                      hintText: 'Search by name or email...',
+                      hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
+                      prefixIcon: const Icon(Icons.search, color: kTextMuted, size: 20),
+                      filled: true,
+                      fillColor: Colors.grey.shade50,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kBorderOutline)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kPrimarySlate)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Error Message (if any)
+                if (_error.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Container(
+                      width: double.infinity, padding: const EdgeInsets.all(12), margin: const EdgeInsets.only(bottom: 16), 
+                      decoration: BoxDecoration(color: Colors.red.shade50, border: Border.all(color: Colors.red.shade200), borderRadius: BorderRadius.circular(8)), 
+                      child: Text(_error, style: const TextStyle(color: kBadgeBanned, fontSize: 13))
+                    ),
+                  ),
+
+                // TAB BAR
+                TabBar(
+                  controller: _tabController,
+                  labelColor: kPrimarySlate,
+                  unselectedLabelColor: kTextMuted,
+                  indicatorColor: kPrimarySlate,
+                  indicatorWeight: 3,
+                  dividerColor: kBorderOutline,
+                  tabs: [
+                    const Tab(child: Text('Active', style: TextStyle(fontWeight: FontWeight.w600))),
+                    Tab(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('Pending', style: TextStyle(fontWeight: FontWeight.w600)),
+                          if (totalPending > 0) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(10)),
+                              child: Text('$totalPending', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const Tab(child: Text('Archived', style: TextStyle(fontWeight: FontWeight.w600))),
+                  ],
+                ),
+
+                // SCROLLABLE LISTS (TAB VIEWS)
+                Expanded(
+                  child: _loading 
+                      ? const Center(child: CircularProgressIndicator(color: kPrimarySlate))
+                      : TabBarView(
+                          controller: _tabController,
+                          children: [
+                            _buildTabContent(
+                              items: _activeUsers,
+                              emptyMessage: 'No active users found.',
+                              emptyIcon: Icons.people_outline,
+                              itemBuilder: (u) => _buildMobileCard(
+                                user: u, statusLabel: 'Active', statusColor: kBadgeActive,
+                                button1Label: 'Manage', button1Icon: Icons.edit_outlined, onButton1: () => _openManageUser(u),
+                                // Archive is moved to the Manage bottom sheet
+                              ),
+                            ),
+                            _buildTabContent(
+                              items: _pendingRequests,
+                              emptyMessage: 'No pending requests.',
+                              emptyIcon: Icons.inbox_outlined,
+                              itemBuilder: (u) => _buildMobileCard(
+                                user: u, statusLabel: 'Pending', statusColor: kBadgePending,
+                                button1Label: 'Approve', button1Icon: Icons.check, onButton1: () => _approveRequest(u['email'] ?? ''),
+                                button2Label: 'Decline', button2Icon: Icons.close, onButton2: () => _declineRequest(u['email'] ?? ''),
+                              ),
+                            ),
+                            _buildTabContent(
+                              items: _archivedUsers,
+                              emptyMessage: 'No archived users found.',
+                              emptyIcon: Icons.inventory_2_outlined,
+                              itemBuilder: (u) => _buildMobileCard(
+                                user: u, statusLabel: 'Inactive', statusColor: kBadgeInactive,
+                                button1Label: 'Restore', button1Icon: Icons.restore_outlined, onButton1: () => _restoreUser(u['email'] ?? ''),
+                                button2Label: 'Delete', button2Icon: Icons.delete_outline, button2Color: kBadgeBanned, onButton2: () => _deleteUser(u['email'] ?? ''), 
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Action Loading Overlay
+          if (_actionLoading)
+            Container(
+              color: Colors.white.withOpacity(0.7), 
+              child: const Center(child: CircularProgressIndicator(color: kPrimarySlate))
+            ),
+        ],
+      ),
+    );
+  }
+
+  // Helper widget to render the content of a single tab
+  Widget _buildTabContent({
+    required List<Map<String, dynamic>> items, 
+    required String emptyMessage, 
+    required IconData emptyIcon, 
+    required Widget Function(Map<String, dynamic>) itemBuilder
+  }) {
+    final filteredItems = items.where(_matchesSearch).toList();
+    
+    return RefreshIndicator(
+      onRefresh: _loadUserManagementData,
+      color: kPrimarySlate,
+      child: filteredItems.isEmpty
+          // Stack + ListView ensures pull-to-refresh works even when the list is completely empty
+          ? Stack(
+              children: [
+                ListView(physics: const AlwaysScrollableScrollPhysics()), 
+                _buildCleanEmptyState(emptyMessage, emptyIcon),
+              ],
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
+              physics: const AlwaysScrollableScrollPhysics(),
+              itemCount: filteredItems.length,
+              itemBuilder: (context, index) => itemBuilder(filteredItems[index]),
+            ),
+    );
+  }
+
+  // Refined Empty State
+  Widget _buildCleanEmptyState(String message, IconData icon) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: Colors.grey.shade300, size: 64),
+          const SizedBox(height: 16),
+          Text(message, style: const TextStyle(color: kTextMuted, fontSize: 15)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileCard({
+    required Map<String, dynamic> user,
+    required String statusLabel,
+    required Color statusColor,
+    required String button1Label,
+    required IconData button1Icon,
+    required VoidCallback? onButton1,
+    Color button1Color = kTextDark,
+    String? button2Label,
+    IconData? button2Icon,
+    VoidCallback? onButton2,
+    Color button2Color = kTextDark,
+  }) {
+    final email = user['email']?.toString() ?? 'unknown@email.com';
+    final name = _displayName(user);
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kBorderOutline),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: kPrimarySlate,
+                  child: Text(initial, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: kTextDark)),
+                      const SizedBox(height: 2),
+                      Text(email, style: const TextStyle(color: kTextMuted, fontSize: 13)),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(color: statusColor, borderRadius: BorderRadius.circular(20)),
+                  child: Text(statusLabel, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ),
+          
+          const Divider(height: 1, color: kBorderOutline),
+          
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onButton1,
+                    icon: Icon(button1Icon, size: 16, color: button1Color),
+                    label: Text(button1Label, style: TextStyle(color: button1Color, fontSize: 13, fontWeight: FontWeight.w500)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      side: BorderSide(color: button1Color == kTextDark ? kBorderOutline : button1Color.withOpacity(0.5)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      backgroundColor: Colors.white,
+                    ),
+                  ),
+                ),
+                if (button2Label != null && button2Icon != null) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: onButton2,
+                      icon: Icon(button2Icon, size: 16, color: button2Color),
+                      label: Text(button2Label, style: TextStyle(color: button2Color, fontSize: 13, fontWeight: FontWeight.w500)),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        side: BorderSide(color: button2Color == kTextDark ? kBorderOutline : button2Color.withOpacity(0.5)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        backgroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                ]
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// --- DEDICATED STATEFUL WIDGET FOR BOTTOM SHEET ---
+class ManageUserBottomSheet extends StatefulWidget {
+  final Map<String, dynamic> user;
+
+  const ManageUserBottomSheet({Key? key, required this.user}) : super(key: key);
+
+  @override
+  State<ManageUserBottomSheet> createState() => _ManageUserBottomSheetState();
+}
+
+class _ManageUserBottomSheetState extends State<ManageUserBottomSheet> {
+  bool _verifyLoading = false;
+  bool _savingPassword = false;
+  bool _credentialsVerified = false;
+  
+  // Visibility State Variables
+  bool _obscureAdminPassword = true;
+  bool _obscureNewPassword = true;
+  bool _obscureCurrentPassword = true;
+  
+  String _adminPassword = '';
+  String _newPassword = '';
+  String _adminAuthError = '';
+  Map<String, dynamic>? _verifiedUserCredentials;
+
   Future<void> _verifyAdminPassword() async {
-    if (_selectedUser == null) return;
     if (_adminPassword.trim().isEmpty) {
-      setState(
-        () => _adminAuthError = 'Enter your admin password to continue.',
-      );
+      setState(() => _adminAuthError = 'Enter your admin password to continue.');
       return;
     }
 
+    setState(() { 
+      _verifyLoading = true; 
+      _adminAuthError = ''; 
+    });
+    
     try {
-      setState(() {
-        _verifyLoading = true;
-        _adminAuthError = '';
-      });
-
       final prefs = await SharedPreferences.getInstance();
-      final adminEmail =
-          prefs.getString('user_email') ?? prefs.getString('email') ?? '';
-      if (adminEmail.isEmpty) {
-        throw Exception('Admin email missing. Please log in again.');
+      final adminEmail = prefs.getString('user_email') ?? prefs.getString('email') ?? '';
+      if (adminEmail.isEmpty) throw Exception('Admin email missing. Please log in again.');
+
+      final verified = await ApiService.verifyAdminPassword(adminEmail, _adminPassword, widget.user['email']?.toString() ?? '');
+      
+      if (mounted) {
+        setState(() { 
+          _credentialsVerified = true; 
+          _verifiedUserCredentials = verified; 
+          _adminAuthError = ''; 
+        });
       }
-
-      final verified = await ApiService.verifyAdminPassword(
-        adminEmail,
-        _adminPassword,
-        _selectedUser!['email']?.toString() ?? '',
-      );
-
-      setState(() {
-        _credentialsVerified = true;
-        _verifiedUserCredentials = verified;
-        _adminAuthError = '';
-      });
     } catch (e) {
-      setState(() {
-        _credentialsVerified = false;
-        _verifiedUserCredentials = null;
-        _adminAuthError = e.toString().replaceAll('Exception: ', '');
-      });
+      if (mounted) {
+        setState(() { 
+          _credentialsVerified = false; 
+          _verifiedUserCredentials = null; 
+          _adminAuthError = e.toString().replaceAll('Exception: ', ''); 
+        });
+      }
     } finally {
-      setState(() => _verifyLoading = false);
+      if (mounted) {
+        setState(() => _verifyLoading = false);
+      }
     }
   }
 
   Future<void> _updateUserPassword() async {
-    if (_selectedUser == null) return;
     if (_newPassword.trim().isEmpty) {
-      _showError('Enter a new password before saving.');
+      setState(() => _adminAuthError = 'Enter a new password before saving.');
       return;
     }
-
-    final email = _selectedUser!['email']?.toString() ?? '';
+    
     setState(() => _savingPassword = true);
+    final email = widget.user['email']?.toString() ?? '';
+    
     try {
       await ApiService.updateUserPassword(email, _newPassword);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password updated successfully.')),
-      );
-      await _loadUserManagementData();
-      if (!mounted) return;
-      setState(() => _lastAction = 'Updated password for $email.');
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      _showError(e.toString());
-    } finally {
-      if (mounted) setState(() => _savingPassword = false);
+      Navigator.pop(context, true); 
+    } catch (e) { 
+      if (mounted) {
+        setState(() => _adminAuthError = e.toString().replaceAll('Exception: ', '')); 
+      }
+    } finally { 
+      if (mounted) {
+        setState(() => _savingPassword = false); 
+      }
     }
   }
 
-  Widget _buildManageUserSheet(BuildContext context) {
-    final user = _selectedUser;
-    if (user == null) return const SizedBox.shrink();
-
-    final email = user['email']?.toString() ?? '';
-    final name = _displayName(user);
-    final role = user['role']?.toString() ?? 'faculty';
-    final archived = user['archived'] == true;
-    final revealedPassword =
-        _verifiedUserCredentials?['password']?.toString() ?? '';
-
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
+  Future<void> _promptArchive() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Text('Archive User', style: TextStyle(fontWeight: FontWeight.bold, color: kTextDark)),
+        content: const Text('Are you sure you want to continue in archiving this account?', style: TextStyle(color: kTextMuted)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel', style: TextStyle(color: kTextMuted))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: kBadgeInactive, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Archive', style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
-      child: Container(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.88,
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Manage User',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                name,
-                style: const TextStyle(fontSize: 14, color: Colors.black54),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                email,
-                style: const TextStyle(fontSize: 12, color: Colors.black45),
-              ),
-              const SizedBox(height: 20),
+    );
+
+    if (confirmed == true && mounted) {
+      Navigator.pop(context, 'archive');
+    }
+  }
+
+  String _displayName(Map<String, dynamic> user) {
+    return (user['full_name'] ?? user['name'] ?? user['email'] ?? 'Unknown').toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final email = widget.user['email']?.toString() ?? '';
+    final name = _displayName(widget.user);
+    final role = widget.user['role']?.toString() ?? 'faculty';
+    final archived = widget.user['archived'] == true;
+    final revealedPassword = _verifiedUserCredentials?['password']?.toString() ?? '';
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: const BoxDecoration(
+        color: Colors.white, 
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24))
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Manage User', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: kTextDark)),
+                IconButton(icon: const Icon(Icons.close, color: kTextMuted), onPressed: () => Navigator.pop(context)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: kTextDark)),
+            const SizedBox(height: 2),
+            Text(email, style: const TextStyle(fontSize: 14, color: kTextMuted)),
+            const SizedBox(height: 24),
+
+            if (!_credentialsVerified)
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(16),
+                  color: Colors.white, 
+                  borderRadius: BorderRadius.circular(12), 
+                  border: Border.all(color: kBorderOutline)
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Admin verification required',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Enter your admin password to view and update this user’s credentials.',
-                      style: TextStyle(fontSize: 12, color: Colors.black54),
-                    ),
-                    const SizedBox(height: 14),
+                    const Text('Admin Verification Required', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: kTextDark)),
+                    const SizedBox(height: 6),
+                    const Text('Enter your admin password to view and update credentials.', style: TextStyle(fontSize: 13, color: kTextMuted)),
+                    const SizedBox(height: 20),
+                    
                     TextField(
-                      obscureText: true,
-                      decoration: const InputDecoration(
+                      obscureText: _obscureAdminPassword,
+                      decoration: InputDecoration(
                         labelText: 'Admin Password',
-                        border: OutlineInputBorder(),
+                        labelStyle: const TextStyle(color: kTextMuted, fontSize: 14),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: kBorderOutline)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF333333))),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscureAdminPassword ? Icons.visibility_off : Icons.visibility,
+                            color: kTextMuted,
+                            size: 20,
+                          ),
+                          onPressed: () => setState(() => _obscureAdminPassword = !_obscureAdminPassword),
+                        ),
                       ),
-                      onChanged: (value) =>
-                          setState(() => _adminPassword = value),
+                      onChanged: (value) => setState(() => _adminPassword = value),
                     ),
                     if (_adminAuthError.isNotEmpty) ...[
                       const SizedBox(height: 8),
-                      Text(
-                        _adminAuthError,
-                        style: const TextStyle(color: Colors.red, fontSize: 12),
-                      ),
+                      Text(_adminAuthError, style: const TextStyle(color: kBadgeBanned, fontSize: 12)),
                     ],
-                    const SizedBox(height: 14),
-                    ElevatedButton(
-                      onPressed: _verifyLoading ? null : _verifyAdminPassword,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF7B1113),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: _verifyLoading ? null : _verifyAdminPassword,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2D2D2D),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
+                        child: _verifyLoading 
+                            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                            : const Text('Verify Identity', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                       ),
-                      child: _verifyLoading
-                          ? const SizedBox(
-                              height: 18,
-                              width: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text('Verify Admin Password'),
                     ),
                   ],
                 ),
               ),
-              if (_credentialsVerified && _verifiedUserCredentials != null) ...[
-                const SizedBox(height: 20),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+
+            AnimatedSize(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+              child: (_credentialsVerified && _verifiedUserCredentials != null)
+                ? Column(
                     children: [
-                      const Text(
-                        'Verified credentials',
-                        style: TextStyle(fontWeight: FontWeight.w600),
+                      const SizedBox(height: 24),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.green.shade200)),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Verified Credentials', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+                            const SizedBox(height: 16),
+                            _buildMetaRow('Role', role),
+                            const SizedBox(height: 8),
+                            _buildMetaRow('Archived', archived ? 'Yes' : 'No'),
+                            const SizedBox(height: 8),
+                            // Current Password Row with eye toggle
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('Current password', style: TextStyle(color: kTextDark)),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      _obscureCurrentPassword ? '••••••••' : (revealedPassword.isEmpty ? 'Not set' : revealedPassword),
+                                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    InkWell(
+                                      onTap: () => setState(() => _obscureCurrentPassword = !_obscureCurrentPassword),
+                                      borderRadius: BorderRadius.circular(20),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(4.0),
+                                        child: Icon(
+                                          _obscureCurrentPassword ? Icons.visibility_off : Icons.visibility,
+                                          size: 16,
+                                          color: Colors.black54,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 10),
-                      _buildMetaRow('Role', role),
-                      const SizedBox(height: 6),
-                      _buildMetaRow('Archived', archived ? 'Yes' : 'No'),
-                      const SizedBox(height: 6),
-                      _buildMetaRow(
-                        'Current password',
-                        revealedPassword.isEmpty ? 'Hidden' : revealedPassword,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                TextField(
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'New password',
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: (value) => setState(() => _newPassword = value),
-                ),
-                const SizedBox(height: 14),
-                ElevatedButton(
-                  onPressed: _savingPassword ? null : _updateUserPassword,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF7B1113),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  child: _savingPassword
-                      ? const SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+                      const SizedBox(height: 24),
+                      TextField(
+                        obscureText: _obscureNewPassword,
+                        decoration: InputDecoration(
+                          labelText: 'New password',
+                          labelStyle: const TextStyle(color: kTextMuted),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: kBorderOutline)),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF333333))),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscureNewPassword ? Icons.visibility_off : Icons.visibility,
+                              color: kTextMuted,
+                              size: 20,
+                            ),
+                            onPressed: () => setState(() => _obscureNewPassword = !_obscureNewPassword),
                           ),
-                        )
-                      : const Text('Save Password'),
-                ),
-              ],
-              const SizedBox(height: 20),
-            ],
-          ),
+                        ),
+                        onChanged: (value) => setState(() => _newPassword = value),
+                      ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _savingPassword ? null : _updateUserPassword,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF2D2D2D),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          child: _savingPassword
+                              ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Text('Save Password', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                      
+                      // ARCHIVE BUTTON MOVED HERE
+                      if (!archived) ...[
+                        const SizedBox(height: 24),
+                        const Divider(color: kBorderOutline),
+                        const SizedBox(height: 24),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _promptArchive,
+                            icon: const Icon(Icons.archive_outlined, size: 18, color: kTextDark),
+                            label: const Text('Archive Account', style: TextStyle(color: kTextDark, fontSize: 14, fontWeight: FontWeight.w600)),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              side: const BorderSide(color: kBorderOutline),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  )
+                : const SizedBox.shrink(),
+            ),
+          ],
         ),
       ),
     );
@@ -526,797 +902,8 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(color: Colors.black54)),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
-      ],
-    );
-  }
-
-  String _displayName(Map<String, dynamic> user) {
-    return (user['full_name'] ?? user['name'] ?? user['email'] ?? 'Unknown')
-        .toString();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: kBg,
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'User Management',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF1A1A1A),
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Review pending registration requests, manage active faculty, and restore archived accounts.',
-            style: TextStyle(color: Colors.black54, fontSize: 13, height: 1.4),
-          ),
-          const SizedBox(height: 20),
-          if (_error.isNotEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(_error, style: const TextStyle(color: Colors.red)),
-            ),
-          if (_error.isNotEmpty) const SizedBox(height: 16),
-          if (_lastAction.isNotEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(
-                'Last action: $_lastAction',
-                style: const TextStyle(
-                  color: Colors.blueGrey,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          if (_lastAction.isNotEmpty) const SizedBox(height: 16),
-          if (_loading)
-            const Expanded(child: Center(child: CircularProgressIndicator()))
-          else
-            Expanded(
-              child: Stack(
-                children: [
-                  RefreshIndicator(
-                    onRefresh: _loadUserManagementData,
-                    child: ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.only(bottom: 28),
-                      children: [
-                        _buildSummaryRow(),
-                        const SizedBox(height: 28),
-                        _buildPendingRequestsSection(),
-                        const SizedBox(height: 28),
-                        _buildActiveUsersSection(),
-                        const SizedBox(height: 28),
-                        _buildArchivedUsersSection(),
-                      ],
-                    ),
-                  ),
-                  if (_actionLoading)
-                    Container(
-                      color: Colors.white.withOpacity(0.6),
-                      child: const Center(
-                        child: CircularProgressIndicator(
-                          color: Color(0xFF7B1113),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSummaryRow() {
-    final total = _activeUsers.length + _archivedUsers.length;
-    return Column(
-      children: [
-        Row(
-          children: [
-            _buildStatCard('Total Users', total.toString(), const Color(0xFF7B1113), Icons.groups_outlined),
-            const SizedBox(width: 12),
-            _buildStatCard('Pending', _pendingRequests.length.toString(), Colors.amber.shade700, Icons.hourglass_top_outlined),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            _buildStatCard('Active', _activeUsers.length.toString(), Colors.green.shade700, Icons.check_circle_outline),
-            const SizedBox(width: 12),
-            _buildStatCard('Archived', _archivedUsers.length.toString(), Colors.grey.shade700, Icons.inventory_2_outlined),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatCard(
-    String label,
-    String value,
-    Color color,
-    IconData icon,
-  ) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            const BoxShadow(color: Color.fromRGBO(0, 0, 0, 0.04), blurRadius: 16, offset: Offset(0, 8)),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, size: 18, color: color),
-            ),
-            const SizedBox(height: 12),
-            Text(value, style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: color)),
-            const SizedBox(height: 2),
-            Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPendingRequestsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(
-              Icons.hourglass_top_outlined,
-              size: 18,
-              color: Colors.amber.shade800,
-            ),
-            const SizedBox(width: 8),
-            const Text(
-              'Pending Account Requests',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF1A1A1A),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        if (_pendingRequests.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.grey.shade200),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
-                  blurRadius: 14,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.inbox_outlined,
-                  color: Colors.grey.shade400,
-                  size: 22,
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    'No pending registration requests at the moment.',
-                    style: TextStyle(color: Colors.black54),
-                  ),
-                ),
-              ],
-            ),
-          )
-        else
-          Column(
-            children: _pendingRequests.map((request) {
-              final email =
-                  request['email']?.toString() ?? 'unknown@example.com';
-              final name =
-                  request['full_name']?.toString() ??
-                  request['name']?.toString() ??
-                  email;
-              final department = request['department']?.toString() ?? 'N/A';
-              final status = request['status']?.toString() ?? 'pending';
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.grey.shade200),
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 14, offset: const Offset(0, 6)),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 15,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.shade50,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            status.toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.orange.shade800,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      email,
-                      style: const TextStyle(
-                        color: Colors.black54,
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Department: $department',
-                      style: const TextStyle(
-                        color: Colors.black45,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: _actionLoading
-                                ? null
-                                : () => _approveRequest(email),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF7B1113),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            child: const Text('Approve'),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: _actionLoading
-                                ? null
-                                : () => _declineRequest(email),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.black87,
-                              side: BorderSide(color: Colors.grey.shade300),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            child: const Text('Decline'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildActiveUsersSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(
-              Icons.check_circle_outline,
-              size: 18,
-              color: Colors.green.shade700,
-            ),
-            const SizedBox(width: 8),
-            const Text(
-              'Active Users',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF1A1A1A),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        if (_activeUsers.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.grey.shade200),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
-                  blurRadius: 14,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.people_outline,
-                  color: Colors.grey.shade400,
-                  size: 22,
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    'No active users found.',
-                    style: TextStyle(color: Colors.black54),
-                  ),
-                ),
-              ],
-            ),
-          )
-        else
-          Column(
-            children: _activeUsers.map((user) {
-              final email = user['email']?.toString() ?? 'unknown@example.com';
-              final name = _displayName(user);
-              final department = user['department']?.toString() ?? 'N/A';
-              final status = user['status']?.toString() ?? 'Active';
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.grey.shade200),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.03),
-                      blurRadius: 14,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [Color(0xFF7B1113), Color(0xFFA31E20)],
-                            ),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            name
-                                .split(' ')
-                                .where((part) => part.isNotEmpty)
-                                .map((part) => part[0])
-                                .take(2)
-                                .join()
-                                .toUpperCase(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 15,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                email,
-                                style: const TextStyle(
-                                  color: Colors.black54,
-                                  fontSize: 13,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                'Dept: $department',
-                                style: const TextStyle(
-                                  color: Colors.black45,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.green.shade50,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.check_circle,
-                                size: 12,
-                                color: Colors.green.shade700,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                status,
-                                style: const TextStyle(
-                                  color: Colors.green,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _actionLoading
-                                ? null
-                                : () => _openManageUser(user),
-                            icon: const Icon(Icons.settings_outlined, size: 16),
-                            label: const Text('Manage'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF7B1113),
-                              side: BorderSide(color: Colors.grey.shade300),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _actionLoading
-                                ? null
-                                : () => _archiveUser(email),
-                            icon: const Icon(Icons.archive_outlined, size: 16),
-                            label: const Text('Archive'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.black87,
-                              side: BorderSide(color: Colors.grey.shade300),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildArchivedUsersSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(
-              Icons.inventory_2_outlined,
-              size: 18,
-              color: Colors.grey.shade700,
-            ),
-            const SizedBox(width: 8),
-            const Text(
-              'Archived Users',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF1A1A1A),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        if (_archivedUsers.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.grey.shade200),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
-                  blurRadius: 14,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.inventory_2_outlined,
-                  color: Colors.grey.shade400,
-                  size: 22,
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    'No archived users found.',
-                    style: TextStyle(color: Colors.black54),
-                  ),
-                ),
-              ],
-            ),
-          )
-        else
-          Column(
-            children: _archivedUsers.map((user) {
-              final email = user['email']?.toString() ?? 'unknown@example.com';
-              final name = _displayName(user);
-              final department = user['department']?.toString() ?? 'N/A';
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.grey.shade200),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.03),
-                      blurRadius: 14,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                Colors.grey.shade400,
-                                Colors.grey.shade600,
-                              ],
-                            ),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            name
-                                .split(' ')
-                                .where((part) => part.isNotEmpty)
-                                .map((part) => part[0])
-                                .take(2)
-                                .join()
-                                .toUpperCase(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 15,
-                                  color: Colors.black87,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                email,
-                                style: const TextStyle(
-                                  color: Colors.black54,
-                                  fontSize: 13,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                'Dept: $department',
-                                style: const TextStyle(
-                                  color: Colors.black45,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade100,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.inventory_2_outlined,
-                                size: 12,
-                                color: Colors.grey.shade700,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Archived',
-                                style: TextStyle(
-                                  color: Colors.grey.shade700,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: _actionLoading
-                                ? null
-                                : () => _restoreUser(email),
-                            icon: const Icon(Icons.restore_outlined, size: 17),
-                            label: const Text('Restore'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF7B1113),
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _actionLoading
-                                ? null
-                                : () => _deleteUser(email),
-                            icon: Icon(
-                              Icons.delete_outline,
-                              size: 17,
-                              color: Colors.red.shade700,
-                            ),
-                            label: Text(
-                              'Delete',
-                              style: TextStyle(color: Colors.red.shade700),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              side: BorderSide(color: Colors.red.shade200),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-          ),
+        Text(label, style: const TextStyle(color: kTextDark)),
+        Text(value, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
       ],
     );
   }

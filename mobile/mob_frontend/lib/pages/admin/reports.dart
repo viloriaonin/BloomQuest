@@ -1,185 +1,66 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import '../widgets/adminSidebar.dart';
-import 'package:mob_frontend/config/api_config.dart';
+import 'package:mob_frontend/models/activity_log.dart';
+import 'package:mob_frontend/utils/theme_constants.dart';
+import 'account.dart'; // IMPORT THE ACCOUNT BAR
 
-// ---------------------------------------------------------------------------
-// API CONFIG
-//
-// Set this based on how you're running the app:
-//
-// - `flutter run -d chrome` (Flutter Web) → use "http://localhost:8000/api"
-//   and make sure FastAPI has CORSMiddleware enabled (see below).
-//
-// - Physical phone → "localhost" means the PHONE itself, not your computer.
-//   Use your computer's actual LAN IP instead, e.g. "http://192.168.1.5:8000/api"
-//   Find it with:
-//     Mac:     ipconfig getifaddr en0
-//     Windows: ipconfig  (look for "IPv4 Address")
-//   Requirements:
-//     1. Phone and computer must be on the SAME Wi-Fi network.
-//     2. Start FastAPI with --host 0.0.0.0 (not the 127.0.0.1 default):
-//          uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-//     3. Your computer's firewall must allow incoming connections on port 8000.
-//
-// Add this to your FastAPI main.py for the Web case:
-//
-//   from fastapi.middleware.cors import CORSMiddleware
-//   app.add_middleware(
-//       CORSMiddleware,
-//       allow_origins=["*"],  # or restrict to your Flutter Web origin
-//       allow_credentials=True,
-//       allow_methods=["*"],
-//       allow_headers=["*"],
-//   )
-// ---------------------------------------------------------------------------
-final String kApiBaseUrl = ApiConfig.baseUrl;
-final String kActivityLogEndpoint = "$kApiBaseUrl/activity-logs";
-
-class ActivityLogEntry {
-  final int id;
-  final String? name;
-  final String? dept;
-  final String? role;
-  final String action;
-  final String? detail;
-  final String? type;
-  final String? status;
-  final String date;
-  final String time;
-
-  ActivityLogEntry({
-    required this.id,
-    this.name,
-    this.dept,
-    this.role,
-    required this.action,
-    this.detail,
-    this.type,
-    this.status,
-    required this.date,
-    required this.time,
-  });
-
-  factory ActivityLogEntry.fromJson(Map<String, dynamic> json) {
-    return ActivityLogEntry(
-      id: json['id'] as int,
-      name: json['name'] as String?,
-      dept: json['dept'] as String?,
-      role: json['role'] as String?,
-      action: json['action'] as String? ?? '',
-      detail: json['detail'] as String?,
-      type: json['type'] as String?,
-      status: json['status'] as String?,
-      date: json['date'] as String? ?? '',
-      time: json['time'] as String? ?? '',
-    );
-  }
-}
-
-Future<List<ActivityLogEntry>> fetchActivityLog() async {
-  final response = await http.get(Uri.parse(kActivityLogEndpoint));
-
-  if (response.statusCode != 200) {
-    throw Exception('Request failed with status ${response.statusCode}');
-  }
-
-  final decoded = jsonDecode(response.body);
-  final List<dynamic> rows = decoded is List
-      ? decoded
-      : (decoded['data'] as List<dynamic>? ?? []);
-  return rows
-      .map((row) => ActivityLogEntry.fromJson(row as Map<String, dynamic>))
-      .toList();
-}
-
-const List<String> kDepartments = [
-  'All Departments',
-  'CICS',
-  'COE',
-  'CAS',
-  'CBA',
-];
-
-const Map<String, int?> kPeriods = {
-  'Last 7 Days': 7,
-  'Last 30 Days': 30,
-  'Last 90 Days': 90,
-  'All Time': null,
-};
-
-Color _typeColor(String? type) {
-  switch (type?.toLowerCase()) {
-    case 'generate':
-      return const Color(0xFFDBEAFE); // blue-100-ish
-    case 'upload':
-      return const Color(0xFFFEF3C7); // amber-100-ish
-    case 'download':
-      return const Color(0xFFD1FAE5); // teal/green-100-ish
-    case 'classify':
-      return const Color(0xFFEDE9FE); // purple-100-ish
-    case 'login':
-      return const Color(0xFFF3F4F6); // gray-100
-    default:
-      return const Color(0xFFF3F4F6);
-  }
-}
-
-Color _typeTextColor(String? type) {
-  switch (type?.toLowerCase()) {
-    case 'generate':
-      return const Color(0xFF1D4ED8);
-    case 'upload':
-      return const Color(0xFFB45309);
-    case 'download':
-      return const Color(0xFF047857);
-    case 'classify':
-      return const Color(0xFF6D28D9);
-    case 'login':
-      return const Color(0xFF4B5563);
-    default:
-      return const Color(0xFF4B5563);
-  }
-}
-
-Color _statusColor(String? status) {
-  switch (status?.toLowerCase()) {
-    case 'success':
-      return const Color(0xFFD1FAE5); // emerald-100-ish
-    case 'error':
-      return const Color(0xFFFEE2E2); // red-100-ish
-    case 'info':
-      return const Color(0xFFF3F4F6); // gray-100
-    default:
-      return const Color(0xFFF3F4F6);
-  }
-}
-
-Color _statusTextColor(String? status) {
-  switch (status?.toLowerCase()) {
-    case 'success':
-      return const Color(0xFF047857);
-    case 'error':
-      return const Color(0xFFB91C1C);
-    case 'info':
-      return const Color(0xFF4B5563);
-    default:
-      return const Color(0xFF4B5563);
-  }
-}
+const List<String> kDepartments = ['All Departments', 'CICS', 'COE', 'CAS', 'CBA'];
+const Map<String, int?> kPeriods = {'Last 7 Days': 7, 'Last 30 Days': 30, 'Last 90 Days': 90, 'All Time': null};
+const List<String> kMonthAbbrs = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 bool withinPeriod(String dateStr, int? days) {
   if (days == null) return true;
   final entryDate = DateTime.tryParse(dateStr);
   if (entryDate == null) return true;
-  final diff = DateTime.now().difference(entryDate).inDays;
-  return diff <= days;
+  return DateTime.now().difference(entryDate).inDays <= days;
+}
+
+// --- Humanized timestamp: "Today, 4:01 PM" / "Yesterday, 3:56 PM" / "Jul 18, 3:56 PM"
+String friendlyTimestamp(String dateStr, String timeStr) {
+  final parsed = DateTime.tryParse(dateStr);
+  if (parsed == null) return '$dateStr $timeStr'.trim();
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final entryDay = DateTime(parsed.year, parsed.month, parsed.day);
+  final diff = today.difference(entryDay).inDays;
+
+  String dayLabel;
+  if (diff == 0) {
+    dayLabel = 'Today';
+  } else if (diff == 1) {
+    dayLabel = 'Yesterday';
+  } else {
+    dayLabel = '${kMonthAbbrs[parsed.month - 1]} ${parsed.day}';
+  }
+  return timeStr.isEmpty ? dayLabel : '$dayLabel, $timeStr';
+}
+
+// --- Action -> icon/color mapping, used by both the log cards and the summary row
+IconData iconForAction(String action) {
+  final a = action.toLowerCase();
+  if (a.contains('logout')) return Icons.logout_rounded;
+  if (a.contains('login')) return Icons.login_rounded;
+  if (a.contains('delete') || a.contains('remove')) return Icons.delete_outline_rounded;
+  if (a.contains('assessment') || a.contains('exam') || a.contains('quiz')) return Icons.assignment_outlined;
+  if (a.contains('question')) return Icons.help_outline_rounded;
+  if (a.contains('upload') || a.contains('add') || a.contains('create')) return Icons.upload_outlined;
+  if (a.contains('update') || a.contains('edit')) return Icons.edit_outlined;
+  return Icons.notifications_none_rounded;
+}
+
+Color colorForAction(String action) {
+  final a = action.toLowerCase();
+  if (a.contains('logout')) return Colors.blueGrey;
+  if (a.contains('login')) return const Color(0xFF2E9E5B);
+  if (a.contains('delete') || a.contains('remove')) return const Color(0xFFD64545);
+  if (a.contains('assessment') || a.contains('exam') || a.contains('quiz')) return const Color(0xFF7B5EC7);
+  if (a.contains('question')) return const Color(0xFF1E96A8);
+  if (a.contains('upload') || a.contains('add') || a.contains('create')) return const Color(0xFF3B82C4);
+  if (a.contains('update') || a.contains('edit')) return kAccentOrange;
+  return Colors.grey;
 }
 
 class AdminReportsPage extends StatefulWidget {
   const AdminReportsPage({super.key});
-
   @override
   State<AdminReportsPage> createState() => _AdminReportsPageState();
 }
@@ -188,7 +69,6 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
   String _period = 'Last 30 Days';
   String _department = 'All Departments';
   String _faculty = 'All Faculty';
-
   List<ActivityLogEntry> _activityLog = [];
   bool _isLoading = true;
   String? _error;
@@ -200,163 +80,222 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
   }
 
   Future<void> _loadData() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+    setState(() { _isLoading = true; _error = null; });
     try {
       final rows = await fetchActivityLog();
-      setState(() {
-        _activityLog = rows;
-        _isLoading = false;
-      });
+      setState(() { _activityLog = rows; _isLoading = false; });
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
+      setState(() { _error = e.toString(); _isLoading = false; });
     }
   }
 
+  // Helper method to aggressively filter out ANY admin or system log
+  bool _isAdminOrSystem(ActivityLogEntry row) {
+    final role = row.role?.toLowerCase() ?? '';
+    final name = row.name?.toLowerCase() ?? '';
+    final detail = row.detail?.toLowerCase() ?? '';
+
+    // 1. Exclude if role is explicitly set to admin
+    if (role == 'admin') return true;
+
+    // 2. Exclude system logs or accounts named admin
+    if (name == 'system' || name == 'admin' || name.contains('admin@')) return true;
+
+    // 3. Catch logs where the admin email is embedded in the action details 
+    // (e.g., "Logged in as admin@bloomquest.com")
+    if (detail.contains('admin@')) return true;
+
+    return false;
+  }
+
   List<String> get _facultyOptions {
-    final names =
-        _activityLog
-            .where(
-              (row) =>
-                  row.role?.toLowerCase() != 'admin' &&
-                  row.name?.toLowerCase() != 'system' &&
-                  (_department == 'All Departments' || row.dept == _department),
-            )
-            .map((row) => row.name)
-            .where((name) => name != null && name.isNotEmpty)
-            .cast<String>()
-            .toSet()
-            .toList()
-          ..sort();
+    final names = _activityLog
+        .where((row) {
+          // EXCLUDE admins and system, keeping everyone else
+          if (_isAdminOrSystem(row)) return false;
+          // Filter by department
+          if (_department != 'All Departments' && row.dept != _department) return false;
+          return true;
+        })
+        .map((row) => row.name)
+        .where((name) => name != null && name.isNotEmpty)
+        .cast<String>()
+        .toSet()
+        .toList()..sort();
+        
     return ['All Faculty', ...names];
   }
 
   List<ActivityLogEntry> get _filteredLog {
-    final effectiveFaculty = _facultyOptions.contains(_faculty)
-        ? _faculty
-        : 'All Faculty';
+    final effectiveFaculty = _facultyOptions.contains(_faculty) ? _faculty : 'All Faculty';
     final days = kPeriods[_period];
+    
     final filtered = _activityLog.where((row) {
-      if (row.role?.toLowerCase() == 'admin') return false;
-      if (row.name?.toLowerCase() == 'system') return false;
-      final matchesPeriod = withinPeriod(row.date, days);
-      final matchesDept =
-          _department == 'All Departments' || row.dept == _department;
-      final matchesFaculty =
-          effectiveFaculty == 'All Faculty' || row.name == effectiveFaculty;
-      return matchesPeriod && matchesDept && matchesFaculty;
+      // EXCLUDE admins and system logs from the final list
+      if (_isAdminOrSystem(row)) return false; 
+      
+      return withinPeriod(row.date, days) && 
+             (_department == 'All Departments' || row.dept == _department) && 
+             (effectiveFaculty == 'All Faculty' || row.name == effectiveFaculty);
     }).toList();
-    filtered.sort(
-      (a, b) => '${b.date} ${b.time}'.compareTo('${a.date} ${a.time}'),
-    );
+    
+    filtered.sort((a, b) => '${b.date} ${b.time}'.compareTo('${a.date} ${a.time}'));
     return filtered;
+  }
+
+  Future<void> _openFilterSheet({
+    required String title,
+    required List<String> options,
+    required String selected,
+    required ValueChanged<String> onSelected,
+  }) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(width: 40, height: 4, decoration: BoxDecoration(color: kBorderColor, borderRadius: BorderRadius.circular(2))),
+                const SizedBox(height: 16),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(title, style: const TextStyle(fontFamily: 'Georgia', fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: options.map((opt) {
+                      final isSelected = opt == selected;
+                      return ListTile(
+                        title: Text(opt, style: TextStyle(fontSize: 14, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, color: isSelected ? kAccentOrange : Colors.black87)),
+                        trailing: isSelected ? const Icon(Icons.check_rounded, color: kAccentOrange) : null,
+                        onTap: () {
+                          onSelected(opt);
+                          Navigator.pop(sheetContext);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final effectiveFaculty = _facultyOptions.contains(_faculty)
-        ? _faculty
-        : 'All Faculty';
+    final effectiveFaculty = _facultyOptions.contains(_faculty) ? _faculty : 'All Faculty';
     final entries = _filteredLog;
 
-    return Container(
-      color: kBg,
-      child: SafeArea(
+    final loginCount = entries.where((e) => e.action.toLowerCase().contains('login')).length;
+    final assessmentCount = entries.where((e) {
+      final a = e.action.toLowerCase();
+      return a.contains('assessment') || a.contains('exam') || a.contains('quiz');
+    }).length;
+
+    return Scaffold(
+      backgroundColor: kLightBgColor,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        titleSpacing: 0,
+        title: const AccountTopBar(), 
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(1),
+          child: Divider(height: 1, color: kBorderColor, thickness: 1),
+        ),
+      ),
+      body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _loadData,
+          color: kAccentOrange,
           child: ListView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 100),
             children: [
-              const Text(
-                'Reports',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Filter faculty activity, question contributions, and assessment trends.',
-                style: TextStyle(fontSize: 13, color: Colors.black54),
-              ),
-              const SizedBox(height: 16),
+              const Text('Reports', style: TextStyle(fontFamily: 'Georgia', fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87)),
+              const SizedBox(height: 8),
+              const Text('Filter faculty activity, question contributions, and assessment trends.', style: TextStyle(fontSize: 14, color: Colors.black54)),
+              const SizedBox(height: 20),
 
-              // Filters
-              _FilterDropdown(
-                label: 'Period',
-                value: _period,
-                options: kPeriods.keys.toList(),
-                onChanged: (val) => setState(() => _period = val),
-              ),
-              const SizedBox(height: 10),
-              _FilterDropdown(
-                label: 'Department',
-                value: _department,
-                options: kDepartments,
-                onChanged: (val) => setState(() {
-                  _department = val;
-                  _faculty = 'All Faculty';
-                }),
-              ),
-              const SizedBox(height: 10),
-              _FilterDropdown(
-                label: 'Faculty',
-                value: effectiveFaculty,
-                options: _facultyOptions,
-                onChanged: (val) => setState(() => _faculty = val),
+              // --- Compact horizontal filter chips (replaces the 3 stacked dropdowns) ---
+              SizedBox(
+                height: 40,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    _FilterChip(
+                      label: _period,
+                      onTap: () => _openFilterSheet(
+                        title: 'Period',
+                        options: kPeriods.keys.toList(),
+                        selected: _period,
+                        onSelected: (val) => setState(() => _period = val),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _FilterChip(
+                      label: _department,
+                      onTap: () => _openFilterSheet(
+                        title: 'Department',
+                        options: kDepartments,
+                        selected: _department,
+                        onSelected: (val) => setState(() { _department = val; _faculty = 'All Faculty'; }),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _FilterChip(
+                      label: effectiveFaculty,
+                      onTap: () => _openFilterSheet(
+                        title: 'Faculty',
+                        options: _facultyOptions,
+                        selected: effectiveFaculty,
+                        onSelected: (val) => setState(() => _faculty = val),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 20),
 
-              // Activity Log
+              // --- Summary row: quick at-a-glance counts for the selected filters ---
+              if (!_isLoading && _error == null)
+                Row(
+                  children: [
+                    Expanded(child: _SummaryCard(icon: Icons.bar_chart_rounded, iconColor: kDarkButtonColor, label: 'Total Activities', value: '${entries.length}')),
+                    const SizedBox(width: 10),
+                    Expanded(child: _SummaryCard(icon: Icons.login_rounded, iconColor: const Color(0xFF2E9E5B), label: 'Logins', value: '$loginCount')),
+                    const SizedBox(width: 10),
+                    Expanded(child: _SummaryCard(icon: Icons.assignment_outlined, iconColor: const Color(0xFF7B5EC7), label: 'Assessments', value: '$assessmentCount')),
+                  ],
+                ),
+              const SizedBox(height: 28),
+
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'User Activity Log',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
+                  const Text('User Activity Log', style: TextStyle(fontFamily: 'Georgia', fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
                   if (!_isLoading && _error == null)
-                    Text(
-                      '${entries.length} ${entries.length == 1 ? 'entry' : 'entries'}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.black54,
-                      ),
-                    ),
+                    Text('${entries.length} ${entries.length == 1 ? 'entry' : 'entries'}', style: const TextStyle(fontSize: 13, color: Colors.black54, fontWeight: FontWeight.w600)),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
 
-              if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 40),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (_error != null)
-                _ErrorCard(message: _error!, onRetry: _loadData)
-              else if (entries.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 32),
-                  child: Center(
-                    child: Text(
-                      'No activity matches these filters.\nTry widening the date range or department.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.black45, fontSize: 13),
-                    ),
-                  ),
-                )
-              else
-                ...entries.map((entry) => _ActivityCard(entry: entry)),
+              if (_isLoading) const Padding(padding: EdgeInsets.symmetric(vertical: 40), child: Center(child: CircularProgressIndicator(color: kDarkButtonColor)))
+              else if (_error != null) _ErrorCard(message: _error!, onRetry: _loadData)
+              else if (entries.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 40), child: Center(child: Text('No activity matches these filters.', style: TextStyle(color: Colors.black45, fontSize: 14))))
+              else ...entries.map((entry) => _ActivityCard(entry: entry)),
             ],
           ),
         ),
@@ -365,50 +304,54 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
   }
 }
 
-class _FilterDropdown extends StatelessWidget {
+// --- Pill-shaped filter chip, opens a bottom sheet of options when tapped ---
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _FilterChip({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: kBorderColor)),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
+            const SizedBox(width: 4),
+            const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: Colors.black54),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// --- Small stat card used in the summary row ---
+class _SummaryCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
   final String label;
   final String value;
-  final List<String> options;
-  final ValueChanged<String> onChanged;
-
-  const _FilterDropdown({
-    required this.label,
-    required this.value,
-    required this.options,
-    required this.onChanged,
-  });
+  const _SummaryCard({required this.icon, required this.iconColor, required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: kBorderColor)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: const TextStyle(fontSize: 13, color: Colors.black54),
-          ),
-          DropdownButton<String>(
-            value: options.contains(value) ? value : options.first,
-            underline: const SizedBox.shrink(),
-            items: options
-                .map(
-                  (opt) => DropdownMenuItem(
-                    value: opt,
-                    child: Text(opt, style: const TextStyle(fontSize: 13)),
-                  ),
-                )
-                .toList(),
-            onChanged: (val) {
-              if (val != null) onChanged(val);
-            },
-          ),
+          Icon(icon, size: 18, color: iconColor),
+          const SizedBox(height: 8),
+          Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
+          const SizedBox(height: 2),
+          Text(label, style: const TextStyle(fontSize: 11, color: Colors.black54), maxLines: 1, overflow: TextOverflow.ellipsis),
         ],
       ),
     );
@@ -417,102 +360,77 @@ class _FilterDropdown extends StatelessWidget {
 
 class _ActivityCard extends StatelessWidget {
   final ActivityLogEntry entry;
-
   const _ActivityCard({required this.entry});
 
   @override
   Widget build(BuildContext context) {
+    final displayName = entry.name ?? 'Faculty Member';
+    final initial = displayName.trim().isNotEmpty ? displayName.trim()[0].toUpperCase() : '?';
+    final accentColor = colorForAction(entry.action);
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: Column(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: kBorderColor)),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  entry.name ?? 'System',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
+          // Action icon badge
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(color: accentColor.withValues(alpha: 0.12), shape: BoxShape.circle),
+            child: Icon(iconForAction(entry.action), size: 18, color: accentColor),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 10,
+                            backgroundColor: kDarkButtonColor,
+                            child: Text(initial, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(displayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87), overflow: TextOverflow.ellipsis),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(friendlyTimestamp(entry.date, entry.time), style: const TextStyle(fontSize: 12, color: Colors.black45)),
+                  ],
+                ),
+                if (entry.dept != null) ...[
+                  const SizedBox(height: 2),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 28),
+                    child: Text(entry.dept!, style: const TextStyle(fontSize: 13, color: Colors.black54)),
                   ),
+                ],
+                const SizedBox(height: 10),
+                Padding(
+                  padding: const EdgeInsets.only(left: 28),
+                  child: Text(entry.action, style: const TextStyle(fontSize: 14, color: Colors.black87)),
                 ),
-              ),
-              Text(
-                '${entry.date}  ${entry.time}',
-                style: const TextStyle(fontSize: 11, color: Colors.black45),
-              ),
-            ],
-          ),
-          if (entry.dept != null) ...[
-            const SizedBox(height: 2),
-            Text(
-              entry.dept!,
-              style: const TextStyle(fontSize: 12, color: Colors.black54),
+                if (entry.detail != null && entry.detail!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 28),
+                    child: Text(entry.detail!, style: const TextStyle(fontSize: 13, color: Colors.black54)),
+                  ),
+                ],
+              ],
             ),
-          ],
-          const SizedBox(height: 8),
-          Text(
-            entry.action,
-            style: const TextStyle(fontSize: 13, color: Colors.black87),
-          ),
-          if (entry.detail != null && entry.detail!.isNotEmpty) ...[
-            const SizedBox(height: 2),
-            Text(
-              entry.detail!,
-              style: const TextStyle(fontSize: 12, color: Colors.black54),
-            ),
-          ],
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              if (entry.type != null)
-                _Badge(
-                  text: entry.type!,
-                  bg: _typeColor(entry.type),
-                  fg: _typeTextColor(entry.type),
-                ),
-              if (entry.type != null && entry.status != null)
-                const SizedBox(width: 8),
-              if (entry.status != null)
-                _Badge(
-                  text: entry.status!,
-                  bg: _statusColor(entry.status),
-                  fg: _statusTextColor(entry.status),
-                ),
-            ],
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _Badge extends StatelessWidget {
-  final String text;
-  final Color bg;
-  final Color fg;
-
-  const _Badge({required this.text, required this.bg, required this.fg});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w600),
       ),
     );
   }
@@ -521,34 +439,20 @@ class _Badge extends StatelessWidget {
 class _ErrorCard extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
-
   const _ErrorCard({required this.message, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFEF2F2),
-        borderRadius: BorderRadius.circular(16),
-      ),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.red.shade200)),
       child: Column(
         children: [
-          const Text(
-            "Couldn't load activity data",
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: Color(0xFFB91C1C),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            message,
-            style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626)),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton(onPressed: onRetry, child: const Text('Try Again')),
+          const Text("Couldn't load activity data", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
+          const SizedBox(height: 8),
+          Text(message, style: const TextStyle(fontSize: 13, color: Colors.redAccent), textAlign: TextAlign.center),
+          const SizedBox(height: 16),
+          OutlinedButton(onPressed: onRetry, style: OutlinedButton.styleFrom(side: BorderSide(color: Colors.red.shade200)), child: const Text('Try Again', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
