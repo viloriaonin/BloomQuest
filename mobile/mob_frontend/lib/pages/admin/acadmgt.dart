@@ -82,10 +82,10 @@ class _AdminAcadMgtPageState extends State<AdminAcadMgtPage>
         ApiService.fetchDepartments(),
         ApiService.fetchSubjects(),
       ]);
-      final departments = (results[0] as List)
+      final departments = results[0]
           .map((e) => Department.fromJson(e as Map<String, dynamic>))
           .toList();
-      final subjects = (results[1] as List)
+      final subjects = results[1]
           .map((e) => Subject.fromJson(e as Map<String, dynamic>))
           .toList();
       if (!mounted) return;
@@ -410,7 +410,7 @@ class _AdminAcadMgtPageState extends State<AdminAcadMgtPage>
               const SizedBox(height: 20),
               if (_departments.isNotEmpty)
                 DropdownButtonFormField<String>(
-                  value: selectedDeptId,
+                  initialValue: selectedDeptId,
                   decoration: InputDecoration(
                     labelText: 'Assign to Department',
                     labelStyle: const TextStyle(color: kTextMuted),
@@ -800,7 +800,7 @@ class _AcademicCard extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
-                          color: kPrimarySlate.withOpacity(0.1),
+                          color: kPrimarySlate.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
