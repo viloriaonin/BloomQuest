@@ -8,6 +8,26 @@ const _kPrimary = Color(0xFF7B1113);
 const _kAccentRed = Color(0xFFB01C1C);
 const _kGold = Color(0xFFD4AF37);
 
+// Serif display font for brand/headline text (mirrors the elegant
+// serif titles in the reference mockup). Uses the generic 'serif'
+// family so it renders without adding a font-package dependency; if
+// the app already ships google_fonts, swap this for something like
+// GoogleFonts.playfairDisplay(...) for an even closer match.
+TextStyle _headlineFont({
+  required double fontSize,
+  required Color color,
+  FontWeight fontWeight = FontWeight.w700,
+  double letterSpacing = 0.4,
+}) {
+  return TextStyle(
+    fontFamily: 'serif',
+    fontSize: fontSize,
+    color: color,
+    fontWeight: fontWeight,
+    letterSpacing: letterSpacing,
+  );
+}
+
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -270,14 +290,9 @@ class _LoginPageState extends State<LoginPage> {
                   height: 110,
                 ),
                 const SizedBox(height: 10),
-                const Text(
+                Text(
                   'BloomQuest',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.2,
-                  ),
+                  style: _headlineFont(fontSize: 24, color: Colors.white),
                 ),
                 const SizedBox(height: 4),
                 Container(width: 40, height: 2, color: _kGold),
@@ -349,14 +364,9 @@ class _LoginPageState extends State<LoginPage> {
                   height: 200,
                 ),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   'BloomQuest',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 36,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
-                  ),
+                  style: _headlineFont(fontSize: 36, color: Colors.white),
                 ),
                 const SizedBox(height: 8),
                 Container(width: 60, height: 3, color: _kGold),
@@ -404,13 +414,9 @@ class _LoginPageState extends State<LoginPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text(
+        Text(
           'Welcome back',
-          style: TextStyle(
-            fontSize: 26,
-            fontWeight: FontWeight.bold,
-            color: _kPrimary,
-          ),
+          style: _headlineFont(fontSize: 26, color: _kPrimary),
         ),
         const SizedBox(height: 4),
         const Text(
@@ -538,22 +544,47 @@ class _LoginPageState extends State<LoginPage> {
         ),
         const SizedBox(height: 8),
 
-        Align(
-          alignment: Alignment.centerRight,
-          child: TextButton(
-            onPressed: _openForgotPasswordDialog,
-            style: TextButton.styleFrom(
-              padding: EdgeInsets.zero,
-              minimumSize: const Size(0, 0),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        Row(
+          children: [
+            TextButton(
+              onPressed: _openForgotPasswordDialog,
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(0, 0),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(
+                'Forgot Password?',
+                style: TextStyle(color: _kAccentRed, fontSize: 12),
+              ),
             ),
-            child: const Text(
-              'Forgot Password?',
-              style: TextStyle(color: _kAccentRed, fontSize: 12),
+            const Spacer(),
+            TextButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ContactAdminPage(),
+                  ),
+                );
+              },
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(0, 0),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(
+                'Contact Admin',
+                style: TextStyle(
+                  color: _kPrimary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
-          ),
+          ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 20),
 
         ElevatedButton(
           onPressed: (loading || _isLockedOut) ? null : handleLogin,
@@ -562,9 +593,7 @@ class _LoginPageState extends State<LoginPage> {
             foregroundColor: Colors.white, // Contrast Fixed
             disabledBackgroundColor: _kAccentRed.withOpacity(0.6),
             padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
+            shape: const StadiumBorder(),
           ),
           child: loading
               ? const SizedBox(
@@ -578,7 +607,7 @@ class _LoginPageState extends State<LoginPage> {
               : Text(
                   _isLockedOut
                       ? 'Locked (${_formatRemaining(_remainingLockoutSeconds)})'
-                      : 'Login',
+                      : 'Sign in',
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
@@ -586,60 +615,13 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
         ),
-        const SizedBox(height: 24),
-
-        Row(
-          children: [
-            const Expanded(child: Divider()),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text(
-                'OR',
-                style: TextStyle(color: Colors.grey[400], fontSize: 12),
-              ),
-            ),
-            const Expanded(child: Divider()),
-          ],
-        ),
         const SizedBox(height: 16),
 
-        Center(
-          child: Text(
-            "Don't have an account? Contact your administrator",
-            style: TextStyle(color: Colors.grey[500], fontSize: 12),
-            textAlign: TextAlign.center,
-          ),
-        ),
-        const SizedBox(height: 4),
         Center(
           child: Text(
             'Need help signing in? Contact the registrar\'s office.',
             style: TextStyle(color: Colors.grey[400], fontSize: 11),
             textAlign: TextAlign.center,
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        OutlinedButton(
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const ContactAdminPage(),
-              ),
-            );
-          },
-          style: OutlinedButton.styleFrom(
-            foregroundColor: _kPrimary,
-            side: const BorderSide(color: _kPrimary, width: 1.3),
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-          child: const Text(
-            'Contact Admin',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
           ),
         ),
       ],
@@ -872,11 +854,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                 Text(
                   title,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.bold,
-                    color: _kPrimary,
-                  ),
+                  style: _headlineFont(fontSize: 19, color: _kPrimary),
                 ),
                 const SizedBox(height: 10),
                 _buildStepDots(),
@@ -1106,9 +1084,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                           foregroundColor: _kPrimary,
                           side: const BorderSide(color: _kPrimary, width: 1.2),
                           padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                          shape: const StadiumBorder(),
                         ),
                         child: const Text(
                           'Cancel',
@@ -1128,9 +1104,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                           foregroundColor: Colors.white, // Contrast Fixed
                           disabledBackgroundColor: _kAccentRed.withOpacity(0.6),
                           padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                          shape: const StadiumBorder(),
                           elevation: 0,
                         ),
                         onPressed: loading ? null : onPrimaryPressed,

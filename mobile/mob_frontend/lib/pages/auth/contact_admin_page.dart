@@ -5,6 +5,22 @@ const _kPrimary = Color(0xFF7B1113);
 const _kAccentRed = Color(0xFFB01C1C);
 const _kGold = Color(0xFFD4AF37);
 
+// Serif display font for headline text (mirrors login_page.dart).
+TextStyle _headlineFont({
+  required double fontSize,
+  required Color color,
+  FontWeight fontWeight = FontWeight.w700,
+  double letterSpacing = 0.4,
+}) {
+  return TextStyle(
+    fontFamily: 'serif',
+    fontSize: fontSize,
+    color: color,
+    fontWeight: fontWeight,
+    letterSpacing: letterSpacing,
+  );
+}
+
 class ContactAdminPage extends StatefulWidget {
   const ContactAdminPage({super.key});
 
@@ -12,18 +28,30 @@ class ContactAdminPage extends StatefulWidget {
   State<ContactAdminPage> createState() => _ContactAdminPageState();
 }
 
+class _DeptOption {
+  final String id;
+  final String name;
+  final String code;
+
+  _DeptOption({required this.id, required this.name, required this.code});
+
+  factory _DeptOption.fromJson(Map<String, dynamic> json) {
+    return _DeptOption(
+      id: (json['id'] ?? json['_id']).toString(),
+      name: json['name'] ?? '',
+      code: json['code'] ?? '',
+    );
+  }
+}
+
 class _ContactAdminPageState extends State<ContactAdminPage> {
   final _fullNameController = TextEditingController();
   final _emailController = TextEditingController();
   final _emailFocusNode = FocusNode();
 
-  static const List<String> _departments = [
-    'CICS', // College of Information and Computing Sciences
-    'CBA',  // College of Business Administration
-    'COE',  // College of Engineering
-    'CAS',  // College of Arts and Sciences
-    'CTE',  // College of Teacher Education
-  ];
+  List<_DeptOption> _departments = [];
+  bool _deptLoading = true;
+  String _deptError = '';
   String? _selectedDepartment;
 
   bool _loading = false;
@@ -40,6 +68,30 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
         _handleEmailBlur();
       }
     });
+    _loadDepartments();
+  }
+
+  Future<void> _loadDepartments() async {
+    setState(() {
+      _deptLoading = true;
+      _deptError = '';
+    });
+    try {
+      final data = await ApiService.fetchDepartments();
+      if (!mounted) return;
+      setState(() {
+        _departments = data
+            .map((e) => _DeptOption.fromJson(e as Map<String, dynamic>))
+            .toList();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _deptError = 'Could not load departments.';
+      });
+    } finally {
+      if (mounted) setState(() => _deptLoading = false);
+    }
   }
 
   @override
@@ -102,7 +154,10 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
 
   Future<void> _submitRequest() async {
     final fullName = _fullNameController.text.trim();
-    final department = _selectedDepartment ?? '';
+    final selectedDept = _departments.where(
+      (d) => d.id == _selectedDepartment,
+    );
+    final department = selectedDept.isNotEmpty ? selectedDept.first.name : '';
     final email = _emailController.text.trim();
 
     setState(() {
@@ -248,7 +303,7 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
               // ── Brand header (matches Login page) ──
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                padding: const EdgeInsets.fromLTRB(8, 8, 20, 28),
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
@@ -256,60 +311,22 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
                     colors: [Color(0xFF9c1c1f), Color(0xFF5c0d0f)],
                   ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        IconButton(
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.arrow_back, color: Colors.white),
-                          splashRadius: 20,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Center(
-                      child: Column(
-                        children: [
-                          Container(
-                            width: 56,
-                            height: 56,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.12),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: _kGold.withOpacity(0.6),
-                              ),
-                            ),
-                            child: const Icon(
-                              Icons.mail_outline_rounded,
-                              color: _kGold,
-                              size: 26,
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          const Text(
-                            'Contact Admin',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(width: 36, height: 2, color: _kGold),
-                          const SizedBox(height: 10),
-                          const Text(
-                            'Request access to BloomQuest',
-                            style: TextStyle(color: Color(0xFFe8c97a), fontSize: 12),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
+                child: SafeArea(
+                  bottom: false,
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        splashRadius: 20,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 4),
+                      Text(
+                        'Contact Admin',
+                        style: _headlineFont(fontSize: 22, color: Colors.white),
+                      ),
+                    ],
+                  ),
                 ),
               ),
 
@@ -395,9 +412,7 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
                             foregroundColor: Colors.white, // Contrast Fixed
                             disabledBackgroundColor: _kAccentRed.withOpacity(0.6),
                             padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                            shape: const StadiumBorder(),
                           ),
                           child: _loading
                               ? const SizedBox(
@@ -454,50 +469,82 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Department',
-          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+        Row(
+          children: [
+            const Text(
+              'Department',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+            if (_deptLoading) ...[
+              const SizedBox(width: 8),
+              const SizedBox(
+                height: 12,
+                width: 12,
+                child: CircularProgressIndicator(strokeWidth: 1.5),
+              ),
+            ],
+          ],
         ),
         const SizedBox(height: 6),
-        DropdownButtonFormField<String>(
-          value: _selectedDepartment,
-          isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded),
-          style: const TextStyle(fontSize: 13, color: Colors.black87),
-          decoration: InputDecoration(
-            hintText: 'Select your department',
-            hintStyle: const TextStyle(fontSize: 13),
-            filled: true,
-            fillColor: const Color(0xFFF9FAFB),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: _kPrimary, width: 1.4),
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 14,
-            ),
-          ),
-          items: _departments
-              .map(
-                (dept) => DropdownMenuItem<String>(
-                  value: dept,
-                  child: Text(dept),
+        if (_deptError.isNotEmpty)
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _deptError,
+                  style: const TextStyle(fontSize: 12, color: Colors.red),
                 ),
-              )
-              .toList(),
-          onChanged: (value) {
-            setState(() => _selectedDepartment = value);
-          },
-        ),
+              ),
+              TextButton(
+                onPressed: _loadDepartments,
+                child: const Text('Retry', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+          )
+        else
+          DropdownButtonFormField<String>(
+            value: _selectedDepartment,
+            isExpanded: true,
+            icon: const Icon(Icons.keyboard_arrow_down_rounded),
+            style: const TextStyle(fontSize: 13, color: Colors.black87),
+            decoration: InputDecoration(
+              hintText: _deptLoading
+                  ? 'Loading departments…'
+                  : 'Select your department',
+              hintStyle: const TextStyle(fontSize: 13),
+              filled: true,
+              fillColor: const Color(0xFFF9FAFB),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: _kPrimary, width: 1.4),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
+            ),
+            items: _departments
+                .map(
+                  (dept) => DropdownMenuItem<String>(
+                    value: dept.id,
+                    child: Text('${dept.name} (${dept.code})'),
+                  ),
+                )
+                .toList(),
+            onChanged: _deptLoading
+                ? null
+                : (value) {
+                    setState(() => _selectedDepartment = value);
+                  },
+          ),
       ],
     );
   }
