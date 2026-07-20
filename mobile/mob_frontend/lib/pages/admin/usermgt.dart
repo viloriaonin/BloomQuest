@@ -68,8 +68,11 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> with SingleTickerPr
         for (final item in usersResponse) {
           final user = Map<String, dynamic>.from(item as Map);
           if (!isFaculty(user)) continue;
-          if (user['archived'] == true || user['is_active'] == false) archivedUsers.add(user);
-          else activeUsers.add(user);
+          if (user['archived'] == true || user['is_active'] == false) {
+            archivedUsers.add(user);
+          } else {
+            activeUsers.add(user);
+          }
         }
       }
 
@@ -232,9 +235,9 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> with SingleTickerPr
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.08),
+          color: color.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.15)),
+          border: Border.all(color: color.withValues(alpha: 0.15)),
         ),
         child: Column(
           children: [
@@ -419,7 +422,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> with SingleTickerPr
           // Action Loading Overlay
           if (_actionLoading)
             Container(
-              color: Colors.white.withOpacity(0.7), 
+              color: Colors.white.withValues(alpha: 0.7),
               child: const Center(child: CircularProgressIndicator(color: kPrimarySlate))
             ),
         ],
@@ -538,7 +541,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> with SingleTickerPr
                     label: Text(button1Label, style: TextStyle(color: button1Color, fontSize: 13, fontWeight: FontWeight.w500)),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      side: BorderSide(color: button1Color == kTextDark ? kBorderOutline : button1Color.withOpacity(0.5)),
+                      side: BorderSide(color: button1Color == kTextDark ? kBorderOutline : button1Color.withValues(alpha: 0.5)),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       backgroundColor: Colors.white,
                     ),
@@ -553,7 +556,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> with SingleTickerPr
                       label: Text(button2Label, style: TextStyle(color: button2Color, fontSize: 13, fontWeight: FontWeight.w500)),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 12),
-                        side: BorderSide(color: button2Color == kTextDark ? kBorderOutline : button2Color.withOpacity(0.5)),
+                        side: BorderSide(color: button2Color == kTextDark ? kBorderOutline : button2Color.withValues(alpha: 0.5)),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         backgroundColor: Colors.white,
                       ),
@@ -573,7 +576,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage> with SingleTickerPr
 class ManageUserBottomSheet extends StatefulWidget {
   final Map<String, dynamic> user;
 
-  const ManageUserBottomSheet({Key? key, required this.user}) : super(key: key);
+  const ManageUserBottomSheet({super.key, required this.user});
 
   @override
   State<ManageUserBottomSheet> createState() => _ManageUserBottomSheetState();

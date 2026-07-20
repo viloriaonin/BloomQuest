@@ -46,7 +46,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
   String? _moduleFileName;
   Uint8List? _syllabusFileBytes;
   String? _syllabusFileName;
-  Set<int> _selectedQuestionIds = {};
+  final Set<int> _selectedQuestionIds = {};
 
   final TextEditingController _newQuestionController = TextEditingController();
   final TextEditingController _newAnswerController = TextEditingController();
@@ -184,9 +184,13 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
 
       if (result == null || result.files.isEmpty) return;
 
+      if (!mounted) return;
+
       final file = result.files.first;
       final bytes = file.bytes;
       if (bytes == null) {
+        if (!mounted) return;
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not read the selected file. Please try again.')));
         return;
       }
@@ -201,17 +205,20 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
         }
       });
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error picking file: $e')));
     }
   }
 
   Future<void> _applyImportedBank() async {
     if (_selectedSubjectId == null || _selectedSubjectId!.isEmpty) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a subject before importing the bank files.')));
       return;
     }
 
     if (_moduleFileBytes == null || _syllabusFileBytes == null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select both module and syllabus files.')));
       return;
     }
@@ -227,6 +234,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
 
       final streamed = await request.send();
       final res = await http.Response.fromStream(streamed);
+      if (!mounted) return;
       if (res.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bank files uploaded successfully')));
         setState(() {
@@ -243,6 +251,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
       }
     } catch (e) {
       debugPrint('Import bank error: $e');
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Import failed: $e')));
     } finally {
       if (mounted) setState(() => _importingBank = false);
@@ -272,7 +281,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
                 const Text('Bloom\'s Taxonomy Level', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: selectedBloomLevel,
+                  initialValue: selectedBloomLevel,
                   items: bloomsLevels.map((level) => DropdownMenuItem<String>(value: level['name'] as String, child: Text(level['name'] as String))).toList(),
                   onChanged: (val) {
                     if (val != null) setDialogState(() => selectedBloomLevel = val);
@@ -341,6 +350,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
 
     try {
       final res = await http.delete(Uri.parse('${ApiConfig.baseUrl}/questions/$id'));
+      if (!mounted) return;
       if (res.statusCode == 200) {
         setState(() {
           _questions.removeWhere((q) => q['id'] == id);
@@ -352,6 +362,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
       }
     } catch (e) {
       debugPrint('Delete error: $e');
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Network error')));
     }
   }
@@ -383,7 +394,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: _newQuestionType,
+                initialValue: _newQuestionType,
                 items: ['MCQ', 'Short Answer', 'Essay'].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
                 onChanged: (v) => _newQuestionType = v ?? 'MCQ',
                 decoration: InputDecoration(labelText: 'Question Type', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
@@ -418,6 +429,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'question': qText, 'question_type': type, 'subject_id': int.parse(_selectedSubjectId!)}),
       );
+      if (!mounted) return;
       if (res.statusCode == 201 || res.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Question added')));
         if (_selectedSubjectId != null) _fetchQuestions(_selectedSubjectId!);
@@ -425,6 +437,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Add failed (${res.statusCode})')));
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Network error')));
     }
   }
@@ -450,6 +463,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
       request.fields['export_format'] = 'pdf';
 
       final streamed = await request.send();
+      if (!mounted) return;
       if (streamed.statusCode != 200) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export failed (${streamed.statusCode})')));
         return;
@@ -462,9 +476,11 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
 
       if (kIsWeb) {
         web_downloader.downloadFileWeb(bytes, filename, 'application/pdf');
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Assessment downloaded')));
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Export failed')));
     } finally {
       if (mounted) setState(() => _isGeneratingAssessment = false);
@@ -481,6 +497,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
         body: payload,
       );
 
+      if (!mounted) return;
       if (res.statusCode == 200) {
         setState(() {
           final index = _questions.indexWhere((q) => q['id'] == id);
@@ -946,7 +963,7 @@ class _QuestionCard extends StatelessWidget {
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(color: levelColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                    decoration: BoxDecoration(color: levelColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
                     child: Text(question['bloom_level']?.toString() ?? 'Unknown', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: levelColor)),
                   ),
                 ],
