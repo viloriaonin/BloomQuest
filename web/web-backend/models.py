@@ -13,13 +13,22 @@ class User(Base):
     name = Column(String, nullable=True)         # <-- new
     department = Column(String, nullable=True)   # <-- new, only set for role == "faculty"
 
+class Department(Base):
+    __tablename__ = "departments"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), unique=True, nullable=False, index=True)
+    code = Column(String(255), unique=True, nullable=True, index=True)
+    created_at = Column(DateTime, server_default=func.now())
+
 class Subject(Base):
     __tablename__ = "subjects"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True)
     code = Column(String, nullable=True)
     description = Column(Text, nullable=True)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+    department = relationship("Department")
 
 class UploadedFile(Base):
     __tablename__ = "uploaded_files"

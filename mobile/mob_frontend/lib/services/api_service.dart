@@ -90,6 +90,35 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> verifyOtp(
+    String email,
+    String otp,
+  ) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/contact-admin/verify-otp'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({'email': email.trim(), 'otp': otp.trim()}),
+      );
+
+      print('Status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        final error = jsonDecode(response.body);
+        throw Exception(error['detail'] ?? 'Invalid or expired verification code.');
+      }
+    } catch (e) {
+      print('API Error: $e');
+      rethrow;
+    }
+  }
+
   static Future<Map<String, dynamic>> resetPassword(
     String email,
     String otp,
@@ -117,6 +146,40 @@ class ApiService {
       } else {
         final error = jsonDecode(response.body);
         throw Exception(error['detail'] ?? 'Failed to reset password.');
+      }
+    } catch (e) {
+      print('API Error: $e');
+      rethrow;
+    }
+  }
+
+  static Future<Map<String, dynamic>> requestContactAdminOtp(
+    String fullName,
+    String department,
+    String email,
+  ) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/contact-admin/send-otp'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'full_name': fullName,
+          'department': department,
+          'email': email,
+        }),
+      );
+
+      print('Status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        final error = jsonDecode(response.body);
+        throw Exception(error['detail'] ?? 'Failed to send OTP request.');
       }
     } catch (e) {
       print('API Error: $e');
@@ -377,6 +440,230 @@ class ApiService {
       if (response.statusCode != 200) {
         final error = jsonDecode(response.body);
         throw Exception(error['detail'] ?? 'Failed to update password.');
+      }
+    } catch (e) {
+      print('API Error: $e');
+      rethrow;
+    }
+  }
+
+  // ── Departments ──
+
+  static Future<List<dynamic>> fetchDepartments() async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/departments'),
+        headers: {'Accept': 'application/json'},
+      );
+
+      print('Status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as List<dynamic>;
+      } else {
+        final error = jsonDecode(response.body);
+        throw Exception(error['detail'] ?? 'Failed to load departments.');
+      }
+    } catch (e) {
+      print('API Error: $e');
+      rethrow;
+    }
+  }
+
+  static Future<Map<String, dynamic>> createDepartment(
+    String name,
+    String code,
+  ) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/departments'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({'name': name, 'code': code}),
+      );
+
+      print('Status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      } else {
+        final error = jsonDecode(response.body);
+        throw Exception(error['detail'] ?? 'Failed to create department.');
+      }
+    } catch (e) {
+      print('API Error: $e');
+      rethrow;
+    }
+  }
+
+  static Future<Map<String, dynamic>> updateDepartment(
+    String id,
+    String name,
+    String code,
+  ) async {
+    try {
+      final response = await http.put(
+        Uri.parse('${ApiConfig.baseUrl}/departments/${Uri.encodeComponent(id)}'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({'name': name, 'code': code}),
+      );
+
+      print('Status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      } else {
+        final error = jsonDecode(response.body);
+        throw Exception(error['detail'] ?? 'Failed to update department.');
+      }
+    } catch (e) {
+      print('API Error: $e');
+      rethrow;
+    }
+  }
+
+  static Future<void> deleteDepartment(String id) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('${ApiConfig.baseUrl}/departments/${Uri.encodeComponent(id)}'),
+        headers: {'Accept': 'application/json'},
+      );
+
+      print('Status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode != 200 && response.statusCode != 204) {
+        try {
+          final error = jsonDecode(response.body);
+          throw Exception(error['detail'] ?? 'Failed to delete department.');
+        } catch (_) {
+          throw Exception('Failed to delete department.');
+        }
+      }
+    } catch (e) {
+      print('API Error: $e');
+      rethrow;
+    }
+  }
+
+  // ── Subjects ──
+
+  static Future<List<dynamic>> fetchSubjects() async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/subjects'),
+        headers: {'Accept': 'application/json'},
+      );
+
+      print('Status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as List<dynamic>;
+      } else {
+        final error = jsonDecode(response.body);
+        throw Exception(error['detail'] ?? 'Failed to load subjects.');
+      }
+    } catch (e) {
+      print('API Error: $e');
+      rethrow;
+    }
+  }
+
+  static Future<Map<String, dynamic>> createSubject(
+    String name,
+    String code,
+    String departmentId,
+  ) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/subjects'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'name': name,
+          'code': code,
+          'department_id': departmentId,
+        }),
+      );
+
+      print('Status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      } else {
+        final error = jsonDecode(response.body);
+        throw Exception(error['detail'] ?? 'Failed to create subject.');
+      }
+    } catch (e) {
+      print('API Error: $e');
+      rethrow;
+    }
+  }
+
+  static Future<Map<String, dynamic>> updateSubject(
+    String id,
+    String name,
+    String code,
+    String departmentId,
+  ) async {
+    try {
+      final response = await http.put(
+        Uri.parse('${ApiConfig.baseUrl}/subjects/${Uri.encodeComponent(id)}'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'name': name,
+          'code': code,
+          'department_id': departmentId,
+        }),
+      );
+
+      print('Status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      } else {
+        final error = jsonDecode(response.body);
+        throw Exception(error['detail'] ?? 'Failed to update subject.');
+      }
+    } catch (e) {
+      print('API Error: $e');
+      rethrow;
+    }
+  }
+
+  static Future<void> deleteSubject(String id) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('${ApiConfig.baseUrl}/subjects/${Uri.encodeComponent(id)}'),
+        headers: {'Accept': 'application/json'},
+      );
+
+      print('Status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode != 200 && response.statusCode != 204) {
+        try {
+          final error = jsonDecode(response.body);
+          throw Exception(error['detail'] ?? 'Failed to delete subject.');
+        } catch (_) {
+          throw Exception('Failed to delete subject.');
+        }
       }
     } catch (e) {
       print('API Error: $e');

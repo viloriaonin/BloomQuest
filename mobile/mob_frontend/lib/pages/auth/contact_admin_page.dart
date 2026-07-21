@@ -5,6 +5,21 @@ const _kPrimary = Color(0xFF7B1113);
 const _kAccentRed = Color(0xFFB01C1C);
 const _kGold = Color(0xFFD4AF37);
 
+TextStyle _headlineFont({
+  required double fontSize,
+  required Color color,
+  FontWeight fontWeight = FontWeight.w700,
+  double letterSpacing = 0.4,
+}) {
+  return TextStyle(
+    fontFamily: 'serif',
+    fontSize: fontSize,
+    color: color,
+    fontWeight: fontWeight,
+    letterSpacing: letterSpacing,
+  );
+}
+
 class ContactAdminPage extends StatefulWidget {
   const ContactAdminPage({super.key});
 
@@ -12,25 +27,38 @@ class ContactAdminPage extends StatefulWidget {
   State<ContactAdminPage> createState() => _ContactAdminPageState();
 }
 
+class _DeptOption {
+  final String id;
+  final String name;
+  final String code;
+
+  _DeptOption({required this.id, required this.name, required this.code});
+
+  factory _DeptOption.fromJson(Map<String, dynamic> json) {
+    return _DeptOption(
+      id: (json['id'] ?? json['_id']).toString(),
+      name: json['name'] ?? '',
+      code: json['code'] ?? '',
+    );
+  }
+}
+
 class _ContactAdminPageState extends State<ContactAdminPage> {
   final _fullNameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _otpController = TextEditingController();
   final _emailFocusNode = FocusNode();
 
-  static const List<String> _departments = [
-    'CICS', // College of Information and Computing Sciences
-    'CBA',  // College of Business Administration
-    'COE',  // College of Engineering
-    'CAS',  // College of Arts and Sciences
-    'CTE',  // College of Teacher Education
-  ];
+  List<_DeptOption> _departments = [];
+  bool _deptLoading = true;
+  String _deptError = '';
   String? _selectedDepartment;
 
   bool _loading = false;
   String _error = '';
   String _success = '';
-  // null | 'pending' | 'approved' | 'declined' | 'existing'
-  String? _existingRequestStatus;
+  
+  bool _isOtpMode = false; 
 
   @override
   void initState() {
@@ -40,12 +68,33 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
         _handleEmailBlur();
       }
     });
+    _loadDepartments();
+  }
+
+  Future<void> _loadDepartments() async {
+    setState(() {
+      _deptLoading = true;
+      _deptError = '';
+    });
+    try {
+      final data = await ApiService.fetchDepartments();
+      if (!mounted) return;
+      setState(() {
+        _departments = data.map((e) => _DeptOption.fromJson(e as Map<String, dynamic>)).toList();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _deptError = 'Could not load departments.');
+    } finally {
+      if (mounted) setState(() => _deptLoading = false);
+    }
   }
 
   @override
   void dispose() {
     _fullNameController.dispose();
     _emailController.dispose();
+    _otpController.dispose();
     _emailFocusNode.dispose();
     super.dispose();
   }
@@ -68,7 +117,8 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
     return v;
   }
 
-  Future<void> _handleEmailBlur() async {
+  // SECURITY: Removed the backend enumeration check. Now it only formats typos locally.
+  void _handleEmailBlur() {
     final email = _emailController.text;
     if (email.trim().isEmpty) return;
 
@@ -82,27 +132,12 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
         if (mounted) setState(() => _error = '');
       });
     }
-
-    if (!_isValidEmail(sanitized)) return;
-
-    try {
-      final data = await ApiService.checkContactAdminStatus(sanitized);
-      if (data['exists'] == true) {
-        setState(() {
-          _existingRequestStatus = data['status'] ?? 'existing';
-          _error = 'This email is already in use or has an existing request.';
-        });
-      } else {
-        setState(() => _existingRequestStatus = null);
-      }
-    } catch (e) {
-      debugPrint('Backend status check failed: $e');
-    }
   }
 
   Future<void> _submitRequest() async {
     final fullName = _fullNameController.text.trim();
-    final department = _selectedDepartment ?? '';
+    final selectedDept = _departments.where((d) => d.id == _selectedDepartment);
+    final department = selectedDept.isNotEmpty ? selectedDept.first.name : '';
     final email = _emailController.text.trim();
 
     setState(() {
@@ -120,119 +155,71 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
       return;
     }
 
-    if (_existingRequestStatus != null) {
-      setState(
-        () => _error =
-            'Cannot submit. This email is already in use or requested.',
-      );
-      return;
-    }
-
     setState(() => _loading = true);
 
     try {
       final payloadEmail = _sanitizeEmail(email);
       _emailController.text = payloadEmail;
 
-      await ApiService.submitAccountRequest(fullName, department, payloadEmail);
+      // Ensure the backend throws an exception here if the email is already registered/pending
+      // SECURITY: No demo OTPs exposed to the client
+      await ApiService.requestContactAdminOtp(fullName, department, payloadEmail);
+
       if (!mounted) return;
+
       setState(() {
-        _success = 'Request submitted. Please wait for admin approval.';
-        _existingRequestStatus = 'pending';
-        _fullNameController.clear();
-        _selectedDepartment = null;
+        _success = 'An OTP has been sent to your email. Please verify.';
+        _isOtpMode = true;
       });
     } catch (e) {
-      setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
-      });
+      setState(() => _error = e.toString().replaceAll('Exception: ', ''));
     } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-      }
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  Widget _statusBanner() {
-    if (_existingRequestStatus == null) return const SizedBox.shrink();
+  Future<void> _verifyOtp() async {
+    final otp = _otpController.text.trim();
+    final email = _emailController.text.trim();
 
-    final config = {
-      'pending': (
-        const Color(0xFFFFF7E6),
-        const Color(0xFFE8C97A),
-        const Color(0xFF8A6516),
-        Icons.hourglass_top_rounded,
-        'PENDING REVIEW',
-      ),
-      'approved': (
-        const Color(0xFFE6F4EA),
-        const Color(0xFFA9D8B7),
-        const Color(0xFF166534),
-        Icons.check_circle_outline_rounded,
-        'APPROVED',
-      ),
-      'declined': (
-        const Color(0xFFF3F4F6),
-        const Color(0xFFD1D5DB),
-        const Color(0xFF374151),
-        Icons.cancel_outlined,
-        'DECLINED',
-      ),
-      'existing': (
-        const Color(0xFFF3F4F6),
-        const Color(0xFFD1D5DB),
-        const Color(0xFF374151),
-        Icons.info_outline_rounded,
-        'EXISTING REQUEST',
-      ),
-    };
+    setState(() {
+      _error = '';
+      _success = '';
+    });
 
-    final (bg, border, text, icon, label) =
-        config[_existingRequestStatus] ?? config['existing']!;
+    if (otp.isEmpty) {
+      setState(() => _error = 'Please enter the OTP.');
+      return;
+    }
 
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: bg,
-        border: Border.all(color: border),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: text),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Existing request status: $label',
-              style: TextStyle(
-                color: text,
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    setState(() => _loading = true);
+
+    try {
+      await ApiService.verifyOtp(email, otp);
+      
+      if (!mounted) return;
+      
+      setState(() {
+        _success = 'Email verified! Request submitted. Please wait for admin approval.';
+        _isOtpMode = false;
+        _fullNameController.clear();
+        _emailController.clear();
+        _otpController.clear();
+        _selectedDepartment = null;
+      });
+    } catch (e) {
+      setState(() => _error = e.toString().replaceAll('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
-  Widget _messageBanner({
-    required String text,
-    required Color bg,
-    required Color border,
-    required Color fg,
-  }) {
+  Widget _messageBanner({required String text, required Color bg, required Color border, required Color fg}) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: bg,
-        border: Border.all(color: border),
-        borderRadius: BorderRadius.circular(8),
-      ),
+      decoration: BoxDecoration(color: bg, border: Border.all(color: border), borderRadius: BorderRadius.circular(8)),
       child: Text(text, style: TextStyle(color: fg, fontSize: 13)),
     );
   }
@@ -245,75 +232,24 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
         child: SingleChildScrollView(
           child: Column(
             children: [
-              // ── Brand header (matches Login page) ──
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                padding: const EdgeInsets.fromLTRB(8, 8, 20, 28),
                 decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xFF9c1c1f), Color(0xFF5c0d0f)],
-                  ),
+                  gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFF9c1c1f), Color(0xFF5c0d0f)]),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        IconButton(
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.arrow_back, color: Colors.white),
-                          splashRadius: 20,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Center(
-                      child: Column(
-                        children: [
-                          Container(
-                            width: 56,
-                            height: 56,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.12),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: _kGold.withOpacity(0.6),
-                              ),
-                            ),
-                            child: const Icon(
-                              Icons.mail_outline_rounded,
-                              color: _kGold,
-                              size: 26,
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          const Text(
-                            'Contact Admin',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(width: 36, height: 2, color: _kGold),
-                          const SizedBox(height: 10),
-                          const Text(
-                            'Request access to BloomQuest',
-                            style: TextStyle(color: Color(0xFFe8c97a), fontSize: 12),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                child: SafeArea(
+                  bottom: false,
+                  child: Row(
+                    children: [
+                      IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.arrow_back, color: Colors.white), splashRadius: 20),
+                      const SizedBox(width: 4),
+                      Text('Contact Admin', style: _headlineFont(fontSize: 22, color: Colors.white)),
+                    ],
+                  ),
                 ),
               ),
 
-              // ── Form card (overlaps the header slightly) ──
               Transform.translate(
                 offset: const Offset(0, -20),
                 child: Padding(
@@ -324,124 +260,84 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(18),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.06),
-                          blurRadius: 16,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 16, offset: const Offset(0, 6))],
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Text(
-                          'Submit a request to the administrator to get '
-                          'access to BloomQuest. You\u2019ll be notified once '
-                          'it\u2019s reviewed.',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.black54,
-                            height: 1.4,
-                          ),
+                        Text(
+                          _isOtpMode 
+                              ? 'Enter the One-Time Password sent to your email to verify your request.'
+                              : 'Submit a request to the administrator to get access to BloomQuest. You\u2019ll be notified once it\u2019s reviewed.',
+                          style: const TextStyle(fontSize: 13, color: Colors.black54, height: 1.4),
                         ),
                         const SizedBox(height: 20),
 
                         if (_error.isNotEmpty)
-                          _messageBanner(
-                            text: _error,
-                            bg: const Color(0xFFfef2f2),
-                            border: const Color(0xFFfecaca),
-                            fg: const Color(0xFF991B1B),
-                          ),
+                          _messageBanner(text: _error, bg: const Color(0xFFfef2f2), border: const Color(0xFFfecaca), fg: const Color(0xFF991B1B)),
                         if (_success.isNotEmpty)
-                          _messageBanner(
-                            text: _success,
-                            bg: const Color(0xFFE6F4EA),
-                            border: const Color(0xFFA9D8B7),
-                            fg: const Color(0xFF166534),
-                          ),
-                        _statusBanner(),
+                          _messageBanner(text: _success, bg: const Color(0xFFE6F4EA), border: const Color(0xFFA9D8B7), fg: const Color(0xFF166534)),
 
-                        _buildLabeledField(
-                          label: 'Full Name',
-                          hint: 'Enter your full name',
-                          controller: _fullNameController,
-                        ),
-                        const SizedBox(height: 16),
-                        _buildDepartmentDropdown(),
-                        const SizedBox(height: 16),
-                        _buildLabeledField(
-                          label: 'Email Address',
-                          hint: 'Enter your email',
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          focusNode: _emailFocusNode,
-                          onChanged: (_) {
-                            setState(() {
-                              _existingRequestStatus = null;
-                              _error = '';
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 24),
+                        if (_isOtpMode) ...[
+                          _buildLabeledField(label: 'One-Time Password', hint: 'Enter 6-digit OTP', controller: _otpController, keyboardType: TextInputType.number),
+                          const SizedBox(height: 24),
+                          ElevatedButton(
+                            onPressed: _loading ? null : _verifyOtp,
+                            style: ElevatedButton.styleFrom(backgroundColor: _kAccentRed, foregroundColor: Colors.white, disabledBackgroundColor: _kAccentRed.withOpacity(0.6), padding: const EdgeInsets.symmetric(vertical: 16), shape: const StadiumBorder()),
+                            child: _loading
+                                ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                : const Text('Verify OTP', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                _isOtpMode = false;
+                                _error = '';
+                                _success = '';
+                              });
+                            },
+                            child: const Text('Cancel verification', style: TextStyle(color: Colors.black54, fontSize: 13)),
+                          ),
+                        ] else ...[
+                          _buildLabeledField(label: 'Full Name', hint: 'Enter your full name', controller: _fullNameController),
+                          const SizedBox(height: 16),
+                          _buildDepartmentDropdown(),
+                          const SizedBox(height: 16),
+                          _buildLabeledField(
+                            label: 'Email Address',
+                            hint: 'Enter your email',
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            focusNode: _emailFocusNode,
+                            onChanged: (_) => setState(() => _error = ''),
+                          ),
+                          const SizedBox(height: 24),
 
-                        ElevatedButton(
-                          onPressed: (_loading || _existingRequestStatus != null)
-                              ? null
-                              : _submitRequest,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _kAccentRed,
-                            foregroundColor: Colors.white, // Contrast Fixed
-                            disabledBackgroundColor: _kAccentRed.withOpacity(0.6),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                          ElevatedButton(
+                            onPressed: _loading ? null : _submitRequest,
+                            style: ElevatedButton.styleFrom(backgroundColor: _kAccentRed, foregroundColor: Colors.white, disabledBackgroundColor: _kAccentRed.withOpacity(0.6), padding: const EdgeInsets.symmetric(vertical: 16), shape: const StadiumBorder()),
+                            child: _loading
+                                ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                : const Text('Send Request', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
                           ),
-                          child: _loading
-                              ? const SizedBox(
-                                  height: 18,
-                                  width: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Text(
-                                  'Send Request',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text(
-                            'Back to login',
-                            style: TextStyle(color: _kAccentRed, fontSize: 13),
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Back to login', style: TextStyle(color: _kAccentRed, fontSize: 13)),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
                 ),
               ),
-
-              // ── Footer ──
               Container(
                 width: double.infinity,
                 margin: const EdgeInsets.only(top: 4),
                 color: const Color(0xFF5c0d0f),
                 padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-                child: const Text(
-                  '\u00a9 2026 BloomQuest. All rights reserved.',
-                  style: TextStyle(color: _kGold, fontSize: 11),
-                  textAlign: TextAlign.center,
-                ),
+                child: const Text('© 2026 BloomQuest. All rights reserved.', style: TextStyle(color: _kGold, fontSize: 11), textAlign: TextAlign.center),
               ),
             ],
           ),
@@ -454,69 +350,51 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Department',
-          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+        Row(
+          children: [
+            const Text('Department', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+            if (_deptLoading) ...[
+              const SizedBox(width: 8),
+              const SizedBox(height: 12, width: 12, child: CircularProgressIndicator(strokeWidth: 1.5)),
+            ],
+          ],
         ),
         const SizedBox(height: 6),
-        DropdownButtonFormField<String>(
-          value: _selectedDepartment,
-          isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded),
-          style: const TextStyle(fontSize: 13, color: Colors.black87),
-          decoration: InputDecoration(
-            hintText: 'Select your department',
-            hintStyle: const TextStyle(fontSize: 13),
-            filled: true,
-            fillColor: const Color(0xFFF9FAFB),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.grey.shade300),
+        if (_deptError.isNotEmpty)
+          Row(
+            children: [
+              Expanded(child: Text(_deptError, style: const TextStyle(fontSize: 12, color: Colors.red))),
+              TextButton(onPressed: _loadDepartments, child: const Text('Retry', style: TextStyle(fontSize: 12))),
+            ],
+          )
+        else
+          DropdownButtonFormField<String>(
+            value: _selectedDepartment,
+            isExpanded: true,
+            icon: const Icon(Icons.keyboard_arrow_down_rounded),
+            style: const TextStyle(fontSize: 13, color: Colors.black87),
+            decoration: InputDecoration(
+              hintText: _deptLoading ? 'Loading departments…' : 'Select your department',
+              hintStyle: const TextStyle(fontSize: 13),
+              filled: true,
+              fillColor: const Color(0xFFF9FAFB),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _kPrimary, width: 1.4)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: _kPrimary, width: 1.4),
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 14,
-            ),
+            items: _departments.map((dept) => DropdownMenuItem<String>(value: dept.id, child: Text('${dept.name} (${dept.code})'))).toList(),
+            onChanged: _deptLoading ? null : (value) => setState(() => _selectedDepartment = value),
           ),
-          items: _departments
-              .map(
-                (dept) => DropdownMenuItem<String>(
-                  value: dept,
-                  child: Text(dept),
-                ),
-              )
-              .toList(),
-          onChanged: (value) {
-            setState(() => _selectedDepartment = value);
-          },
-        ),
       ],
     );
   }
 
-  Widget _buildLabeledField({
-    required String label,
-    required String hint,
-    required TextEditingController controller,
-    TextInputType keyboardType = TextInputType.text,
-    FocusNode? focusNode,
-    ValueChanged<String>? onChanged,
-  }) {
+  Widget _buildLabeledField({required String label, required String hint, required TextEditingController controller, TextInputType keyboardType = TextInputType.text, FocusNode? focusNode, ValueChanged<String>? onChanged}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-        ),
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
         const SizedBox(height: 6),
         TextField(
           controller: controller,
@@ -528,22 +406,10 @@ class _ContactAdminPageState extends State<ContactAdminPage> {
             hintStyle: const TextStyle(fontSize: 13),
             filled: true,
             fillColor: const Color(0xFFF9FAFB),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: _kPrimary, width: 1.4),
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 14,
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _kPrimary, width: 1.4)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           ),
         ),
       ],

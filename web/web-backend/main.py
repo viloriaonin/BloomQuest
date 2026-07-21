@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -5,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text
 from dotenv import load_dotenv
-from database import engine, get_db
+from database import engine, get_db, SessionLocal
 from file_extractor import extract_text
 # from ai_service import detect_subject, detect_topics, compute_tos, generate_questions_from_tos
 from classifier import classify_question
@@ -81,10 +82,27 @@ with engine.begin() as conn:
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"))
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR"))
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR"))
+    conn.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS department_id INTEGER"))
+
+# Seed the default academic departments so the mobile dropdown has visible choices.
+with SessionLocal() as db:
+    existing_departments = db.query(models.Department).count()
+    if existing_departments == 0:
+        default_departments = [
+            ("College of Informatics and Computing Sciences", "CICS"),
+            ("College of Engineering", "COE"),
+            ("College of Arts and Sciences", "CAS"),
+            ("College of Business Administration", "CBA"),
+        ]
+        for name, code in default_departments:
+            db.add(models.Department(name=name, code=code))
+        db.commit()
 
 app = FastAPI()
 
 otp_store = {}
+contact_admin_otp_store = {}
+contact_admin_pending_requests = {}
 
 # Allow React frontend to talk to this backend
 app.add_middleware(
@@ -114,6 +132,11 @@ class ResetPasswordRequest(BaseModel):
 
 # Pydantic schema for account request submissions
 class AccountRequestPayload(BaseModel):
+    full_name: str
+    department: str
+    email: str
+
+class ContactAdminOtpRequest(BaseModel):
     full_name: str
     department: str
     email: str
@@ -268,6 +291,46 @@ def send_request_submission_email(recipient_email: str, full_name: str = None, d
         logger.info("[Email] Request submission email sent successfully to %s", recipient_email)
     except Exception as exc:
         logger.error("Failed to deliver account request submission email: %s", exc, exc_info=True)
+
+
+def send_contact_admin_otp_email(recipient_email: str, otp_code: str) -> bool:
+    if not SENDER_EMAIL or not SENDER_PASSWORD:
+        logger.warning("[Email] SMTP credentials are not configured; skipping contact-admin OTP email for %s", recipient_email)
+        return False
+
+    subject = "Your BloomQuest account request verification code"
+    html_body = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; color: #111; line-height: 1.6;">
+        <div style="max-width: 600px; margin: 0 auto; padding: 24px;">
+          <h2 style="color: #7B1113;">BloomQuest Account Request Verification</h2>
+          <p>We received your request to join BloomQuest.</p>
+          <div style="margin: 24px 0; padding: 16px; border-radius: 12px; background: #F9FAFB; border: 1px solid #E5E7EB; font-size: 1.1rem; letter-spacing: 0.18em; text-align: center;">
+            <strong style="color: #B01C1C;">{otp_code}</strong>
+          </div>
+          <p>Enter this 6-digit code in the app to verify your email and complete your request.</p>
+          <p style="font-size: 0.95rem; color: #555;">If you did not request an account, you can safely ignore this email.</p>
+        </div>
+      </body>
+    </html>
+    """
+
+    msg = MIMEMultipart()
+    msg["From"] = SENDER_EMAIL
+    msg["To"] = recipient_email
+    msg["Subject"] = subject
+    msg.attach(MIMEText(html_body, "html"))
+
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            server.send_message(msg)
+        logger.info("[Email] Contact-admin OTP email sent to %s", recipient_email)
+        return True
+    except Exception as exc:
+        logger.error("[Email] Contact-admin OTP delivery failed for %s: %s", recipient_email, exc, exc_info=True)
+        return False
 
 
 def send_password_reset_email(recipient_email: str, otp_code: str) -> bool:
@@ -619,8 +682,8 @@ def decline_account_request(payload: AccountActionRequest, db: Session = Depends
 
     return {"message": "Account request declined successfully.", "status": request_entry.status}
 
-@app.post("/api/contact-admin")
-def submit_account_request(payload: AccountRequestPayload, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+@app.post("/api/contact-admin/send-otp")
+def request_contact_admin_otp(payload: ContactAdminOtpRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     normalized_email = normalize_email(payload.email)
 
     existing = (
@@ -634,9 +697,60 @@ def submit_account_request(payload: AccountRequestPayload, background_tasks: Bac
             detail="An account request already exists for this email address.",
         )
 
+    code = f"{random.randint(0, 999999):06d}"
+    contact_admin_pending_requests[normalized_email] = {
+        "full_name": payload.full_name,
+        "department": payload.department,
+        "email": normalized_email,
+    }
+    contact_admin_otp_store[normalized_email] = {
+        "otp": code,
+        "expires_at": datetime.utcnow() + timedelta(minutes=10),
+    }
+    logger.info("[OTP] Generated contact-admin verification code for %s", normalized_email)
+
+    sent = send_contact_admin_otp_email(normalized_email, code)
+
+    response = {"message": "OTP sent successfully. Please verify the code to continue.", "status": "otp-sent"}
+    if not sent:
+        response["demo_code"] = code
+    return response
+
+
+@app.post("/api/contact-admin/verify-otp")
+def verify_contact_admin_otp(data: VerifyOtpRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    normalized_email = normalize_email(data.email)
+    record = contact_admin_otp_store.get(normalized_email)
+
+    if record and record["expires_at"] < datetime.utcnow():
+        contact_admin_otp_store.pop(normalized_email, None)
+        contact_admin_pending_requests.pop(normalized_email, None)
+        raise HTTPException(status_code=400, detail="OTP expired. Please request a new one.")
+
+    if not record or record["otp"] != data.otp:
+        raise HTTPException(status_code=400, detail="Incorrect or expired verification code.")
+
+    pending_payload = contact_admin_pending_requests.get(normalized_email)
+    if not pending_payload:
+        contact_admin_otp_store.pop(normalized_email, None)
+        raise HTTPException(status_code=400, detail="Request session expired. Please request a new OTP.")
+
+    existing = (
+        db.query(models.AccountRequest)
+        .filter(func.lower(models.AccountRequest.email) == normalized_email)
+        .first()
+    )
+    if existing:
+        contact_admin_otp_store.pop(normalized_email, None)
+        contact_admin_pending_requests.pop(normalized_email, None)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account request already exists for this email address.",
+        )
+
     new_request = models.AccountRequest(
-        full_name=payload.full_name,
-        department=payload.department,
+        full_name=pending_payload["full_name"],
+        department=pending_payload["department"],
         email=normalized_email,
         status="pending"
     )
@@ -644,18 +758,30 @@ def submit_account_request(payload: AccountRequestPayload, background_tasks: Bac
     db.commit()
     db.refresh(new_request)
 
-    # Send requester a confirmation email that the request has been received.
+    contact_admin_otp_store.pop(normalized_email, None)
+    contact_admin_pending_requests.pop(normalized_email, None)
+
     try:
         background_tasks.add_task(
             send_request_submission_email,
             normalized_email,
-            payload.full_name,
-            payload.department,
+            pending_payload["full_name"],
+            pending_payload["department"],
         )
     except Exception as exc:
         print(f"Failed to queue submission confirmation email: {exc}")
 
-    return {"message": "Ticket created successfully", "status": "pending"}
+    return {"message": "Email verified. Request submitted successfully.", "status": "pending"}
+
+
+@app.post("/api/contact-admin")
+def submit_account_request(payload: AccountRequestPayload, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    normalized_email = normalize_email(payload.email)
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Please request and verify an OTP before submitting the account request.",
+    )
 
 
 @app.get("/api/debug/users")
@@ -677,6 +803,7 @@ def debug_list_users(db: Session = Depends(get_db)):
 async def upload_files(
     module_file: UploadFile = File(...),
     syllabus_file: UploadFile = File(...),
+    subject_id: Optional[int] = Form(None),
     db: Session = Depends(get_db)
 ):
     try:
@@ -685,19 +812,32 @@ async def upload_files(
         module_text = extract_text(module_bytes, module_file.filename)
         syllabus_text = extract_text(syllabus_bytes, syllabus_file.filename)
 
-        subject_info = detect_subject(syllabus_text)
-        subject = db.query(models.Subject).filter(
-            models.Subject.name == subject_info["name"]
-        ).first()
-        if not subject:
-            subject = models.Subject(
-                name=subject_info["name"],
-                code=subject_info.get("code"),
-                description=subject_info.get("description")
-            )
-            db.add(subject)
-            db.commit()
-            db.refresh(subject)
+        subject = None
+        subject_info = None
+
+        if subject_id is not None:
+            subject = db.query(models.Subject).filter(models.Subject.id == subject_id).first()
+            if not subject:
+                raise HTTPException(status_code=404, detail=f"Subject with id {subject_id} was not found")
+            subject_info = {
+                "name": subject.name,
+                "code": subject.code,
+                "description": subject.description,
+            }
+        else:
+            subject_info = detect_subject(syllabus_text)
+            subject = db.query(models.Subject).filter(
+                models.Subject.name == subject_info["name"]
+            ).first()
+            if not subject:
+                subject = models.Subject(
+                    name=subject_info["name"],
+                    code=subject_info.get("code"),
+                    description=subject_info.get("description")
+                )
+                db.add(subject)
+                db.commit()
+                db.refresh(subject)
 
         topics_data = detect_topics(syllabus_text, module_text)
 
@@ -804,11 +944,114 @@ async def generate_questions(
 class SubjectCreateRequest(BaseModel):
     name: str
     code: str = None
+    department_id: int | None = None
+
+class DepartmentCreateRequest(BaseModel):
+    name: str
+    code: str | None = None
+
+class DepartmentUpdateRequest(BaseModel):
+    name: str
+    code: str | None = None
 
 class ManualQuestionRequest(BaseModel):
     question: str
     question_type: str
     subject_id: int
+
+@app.get("/api/departments")
+def get_departments(db: Session = Depends(get_db)):
+    departments = db.query(models.Department).order_by(models.Department.name.asc()).all()
+    return [
+        {
+            "id": department.id,
+            "name": department.name,
+            "code": department.code,
+        }
+        for department in departments
+    ]
+
+
+@app.post("/api/departments", status_code=201)
+def create_department(payload: DepartmentCreateRequest, db: Session = Depends(get_db)):
+    normalized_name = payload.name.strip()
+    normalized_code = payload.code.strip() if payload.code else None
+
+    existing = db.query(models.Department).filter(
+        func.lower(models.Department.name) == normalized_name.lower()
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="A department with this name already exists.")
+
+    if normalized_code:
+        code_match = db.query(models.Department).filter(
+            func.lower(models.Department.code) == normalized_code.lower()
+        ).first()
+        if code_match:
+            raise HTTPException(status_code=400, detail="A department with this code already exists.")
+
+    new_department = models.Department(
+        name=normalized_name,
+        code=normalized_code,
+    )
+    db.add(new_department)
+    db.commit()
+    db.refresh(new_department)
+
+    return {
+        "id": new_department.id,
+        "name": new_department.name,
+        "code": new_department.code,
+    }
+
+
+@app.put("/api/departments/{department_id}")
+def update_department(department_id: int, payload: DepartmentUpdateRequest, db: Session = Depends(get_db)):
+    department = db.query(models.Department).filter(models.Department.id == department_id).first()
+    if not department:
+        raise HTTPException(status_code=404, detail="Department not found.")
+
+    normalized_name = payload.name.strip()
+    normalized_code = payload.code.strip() if payload.code else None
+
+    duplicate_name = db.query(models.Department).filter(
+        func.lower(models.Department.name) == normalized_name.lower(),
+        models.Department.id != department_id,
+    ).first()
+    if duplicate_name:
+        raise HTTPException(status_code=400, detail="A department with this name already exists.")
+
+    if normalized_code:
+        duplicate_code = db.query(models.Department).filter(
+            func.lower(models.Department.code) == normalized_code.lower(),
+            models.Department.id != department_id,
+        ).first()
+        if duplicate_code:
+            raise HTTPException(status_code=400, detail="A department with this code already exists.")
+
+    department.name = normalized_name
+    department.code = normalized_code
+    db.commit()
+    db.refresh(department)
+
+    return {
+        "id": department.id,
+        "name": department.name,
+        "code": department.code,
+    }
+
+
+@app.delete("/api/departments/{department_id}")
+def delete_department(department_id: int, db: Session = Depends(get_db)):
+    department = db.query(models.Department).filter(models.Department.id == department_id).first()
+    if not department:
+        raise HTTPException(status_code=404, detail="Department not found.")
+
+    db.query(models.Subject).filter(models.Subject.department_id == department_id).update({"department_id": None})
+    db.delete(department)
+    db.commit()
+    return {"message": "Department deleted successfully."}
+
 
 # --- NEW ROUTE: MANUAL SUBJECT CREATION ---
 @app.post("/api/subjects", status_code=201)
@@ -819,11 +1062,20 @@ def create_subject_manually(payload: SubjectCreateRequest, db: Session = Depends
     
     if existing_subject:
         raise HTTPException(status_code=400, detail="A subject with this name already exists.")
+
+    if payload.department_id is not None:
+        department = db.query(models.Department).filter(models.Department.id == payload.department_id).first()
+        if not department:
+            raise HTTPException(status_code=404, detail="Department not found.")
+        department_id = department.id
+    else:
+        department_id = None
         
     new_subject = models.Subject(
         name=payload.name.strip(),
         code=payload.code.strip() if payload.code else None,
-        description="Manually added subject area."
+        description="Manually added subject area.",
+        department_id=department_id,
     )
     db.add(new_subject)
     db.commit()
@@ -833,6 +1085,7 @@ def create_subject_manually(payload: SubjectCreateRequest, db: Session = Depends
         "id": new_subject.id,
         "name": new_subject.name,
         "code": new_subject.code,
+        "department_id": new_subject.department_id,
         "message": "Subject registered successfully!"
     }
 
