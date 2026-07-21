@@ -411,7 +411,7 @@ class _AdminAcadMgtPageState extends State<AdminAcadMgtPage>
                 const SizedBox(height: 20),
                 if (_departments.isNotEmpty)
                   DropdownButtonFormField<String>(
-                    initialValue: selectedDeptId,
+                    value: selectedDeptId,
                     decoration: InputDecoration(
                       labelText: 'Assign to Department',
                       labelStyle: const TextStyle(color: kTextMuted),

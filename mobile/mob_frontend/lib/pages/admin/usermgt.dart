@@ -66,29 +66,26 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage>
       if (usersResponse is Map<String, dynamic>) {
         final active = usersResponse['active'];
         final archived = usersResponse['archived'];
-        if (active is List) {
+        if (active is List)
           activeUsers.addAll(
             active
                 .map((item) => Map<String, dynamic>.from(item))
                 .where(isFaculty),
           );
-        }
-        if (archived is List) {
+        if (archived is List)
           archivedUsers.addAll(
             archived
                 .map((item) => Map<String, dynamic>.from(item))
                 .where(isFaculty),
           );
-        }
       } else if (usersResponse is List) {
         for (final item in usersResponse) {
           final user = Map<String, dynamic>.from(item as Map);
           if (!isFaculty(user)) continue;
-          if (user['archived'] == true || user['is_active'] == false) {
+          if (user['archived'] == true || user['is_active'] == false)
             archivedUsers.add(user);
-          } else {
+          else
             activeUsers.add(user);
-          }
         }
       }
 
@@ -317,9 +314,9 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage>
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
+          color: color.withOpacity(0.08),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.15)),
+          border: Border.all(color: color.withOpacity(0.15)),
         ),
         child: Column(
           children: [
@@ -609,7 +606,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage>
           // Action Loading Overlay
           if (_actionLoading)
             Container(
-              color: Colors.white.withValues(alpha: 0.7),
+              color: Colors.white.withOpacity(0.7),
               child: const Center(
                 child: CircularProgressIndicator(color: kPrimarySlate),
               ),
@@ -773,7 +770,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage>
                       side: BorderSide(
                         color: button1Color == kTextDark
                             ? kBorderOutline
-                            : button1Color.withValues(alpha: 0.5),
+                            : button1Color.withOpacity(0.5),
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -801,7 +798,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage>
                         side: BorderSide(
                           color: button2Color == kTextDark
                               ? kBorderOutline
-                              : button2Color.withValues(alpha: 0.5),
+                              : button2Color.withOpacity(0.5),
                         ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -824,7 +821,7 @@ class _AdminUserMgtPageState extends State<AdminUserMgtPage>
 class ManageUserBottomSheet extends StatefulWidget {
   final Map<String, dynamic> user;
 
-  const ManageUserBottomSheet({super.key, required this.user});
+  const ManageUserBottomSheet({Key? key, required this.user}) : super(key: key);
 
   @override
   State<ManageUserBottomSheet> createState() => _ManageUserBottomSheetState();
@@ -862,9 +859,8 @@ class _ManageUserBottomSheetState extends State<ManageUserBottomSheet> {
       final prefs = await SharedPreferences.getInstance();
       final adminEmail =
           prefs.getString('user_email') ?? prefs.getString('email') ?? '';
-      if (adminEmail.isEmpty) {
+      if (adminEmail.isEmpty)
         throw Exception('Admin email missing. Please log in again.');
-      }
 
       final verified = await ApiService.verifyAdminPassword(
         adminEmail,
