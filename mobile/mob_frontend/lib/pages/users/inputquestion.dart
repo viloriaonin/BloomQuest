@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 import 'dart:typed_data';
+import 'package:flutter/services.dart';
 import 'package:BloomQuest/config/api_config.dart';
 
 class InputPage extends StatefulWidget {
@@ -48,6 +49,8 @@ class _InputPageState extends State<InputPage>
   bool _generating = false;
   Map<String, dynamic>? _uploadResult;
   Map<String, dynamic>? _generationResult;
+  List<bool> _topicSelected = [];
+  List<TextEditingController> _topicHoursControllers = [];
   final TextEditingController _totalItemsController = TextEditingController();
 
   final List<String> _selectedQuestionTypes = [];
@@ -56,7 +59,7 @@ class _InputPageState extends State<InputPage>
 
   final List<Map<String, String>> _questionTypeOptions = [
     {"label": "Multiple Choice", "value": "MCQ"},
-    {"label": "True or False", "value": "True/False"},
+    {"label": "True or False", "value": "True or False"},
     {"label": "Identification", "value": "Identification"},
     {"label": "Matching Type", "value": "Matching Type"},
     {"label": "Enumeration", "value": "Enumeration"},
@@ -81,6 +84,9 @@ class _InputPageState extends State<InputPage>
     _newSubjectNameController.dispose();
     _newSubjectCodeController.dispose();
     _totalItemsController.dispose();
+    for (final c in _topicHoursControllers) {
+      c.dispose();
+    }
     _debounceTimer?.cancel();
     super.dispose();
   }
@@ -202,8 +208,9 @@ class _InputPageState extends State<InputPage>
     final questionText = _questionController.text.trim();
     if (_selectedSubjectId == null ||
         questionText.isEmpty ||
-        _duplicateWarning.isNotEmpty)
+        _duplicateWarning.isNotEmpty) {
       return;
+    }
 
     setState(() {
       _error = '';
@@ -304,7 +311,9 @@ class _InputPageState extends State<InputPage>
   // ─── Upload Files ────────────────────────────────────────────────────────────
   Future<void> _handleUpload() async {
     if (_selectedSubjectId == null || _selectedSubjectId!.isEmpty) {
-      setState(() => _error = 'Please select a subject before uploading the files.');
+      setState(
+        () => _error = 'Please select a subject before uploading the files.',
+      );
       return;
     }
 
@@ -323,9 +332,8 @@ class _InputPageState extends State<InputPage>
     try {
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse('${ApiConfig.baseUrl}/upload'),
+        Uri.parse('${ApiConfig.baseUrl}/questions/upload'),
       );
-      request.fields['subject_id'] = _selectedSubjectId!;
       request.files.add(
         http.MultipartFile.fromBytes(
           'module_file',
@@ -346,7 +354,15 @@ class _InputPageState extends State<InputPage>
       final data = jsonDecode(body);
 
       if (response.statusCode == 200) {
-        setState(() => _uploadResult = data);
+        setState(() {
+          _uploadResult = data;
+          final topics = (data['topics'] as List<dynamic>?) ?? [];
+          _topicSelected = List<bool>.filled(topics.length, true);
+          _topicHoursControllers = List.generate(
+            topics.length,
+            (_) => TextEditingController(text: '1'),
+          );
+        });
       } else {
         setState(() => _error = data['detail'] ?? 'Upload failed');
       }
@@ -371,6 +387,14 @@ class _InputPageState extends State<InputPage>
       setState(() => _error = 'Please select at least one question type.');
       return;
     }
+    if (_uploadResult == null) {
+      setState(() => _error = 'Please upload files first.');
+      return;
+    }
+    if (_topicSelected.where((v) => v).isEmpty) {
+      setState(() => _error = 'Please select at least one topic.');
+      return;
+    }
 
     setState(() {
       _error = '';
@@ -379,19 +403,37 @@ class _InputPageState extends State<InputPage>
     });
 
     try {
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('${ApiConfig.baseUrl}/generate'),
+      final totalItems = int.parse(_totalItemsController.text);
+      final selectedIndices = <int>[];
+      for (var i = 0; i < _topicSelected.length; i++) {
+        if (_topicSelected[i]) selectedIndices.add(i);
+      }
+
+      final hoursMap = <String, String>{};
+      for (var i = 0; i < _topicHoursControllers.length; i++) {
+        hoursMap[i.toString()] = _topicHoursControllers[i].text.isNotEmpty
+            ? _topicHoursControllers[i].text
+            : '1';
+      }
+
+      final payload = {
+        'upload_id': _uploadResult!['upload_id'].toString(),
+        'total_items': totalItems,
+        'whole_total_points': totalItems,
+        'question_types': _selectedQuestionTypes,
+        'selected_topic_indices': selectedIndices,
+        'subcolumn_a_hours': hoursMap,
+      };
+
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/questions/generate-with-tos'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(payload),
       );
-      request.fields['upload_id'] = _uploadResult!['upload_id'].toString();
-      request.fields['total_items'] = _totalItemsController.text;
-      request.fields['question_types'] = _selectedQuestionTypes.join(',');
 
-      final response = await request.send();
-      final body = await response.stream.bytesToString();
-      final data = jsonDecode(body);
+      final data = jsonDecode(response.body);
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         setState(() => _generationResult = data);
       } else {
         setState(() => _error = data['detail'] ?? 'Generation failed');
@@ -475,7 +517,7 @@ class _InputPageState extends State<InputPage>
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
+                    color: Colors.black.withValues(alpha: 0.06),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -546,7 +588,7 @@ class _InputPageState extends State<InputPage>
                     _loadingSubjects
                         ? const LinearProgressIndicator(color: primaryColor)
                         : DropdownButtonFormField<String>(
-                            value: _selectedSubjectId,
+                            initialValue: _selectedSubjectId,
                             hint: const Text(
                               '— Select Subject —',
                               style: TextStyle(
@@ -576,7 +618,7 @@ class _InputPageState extends State<InputPage>
                                     style: const TextStyle(fontSize: 13),
                                   ),
                                 );
-                              }).toList(),
+                              }),
                               const DropdownMenuItem<String>(
                                 value: 'add_new',
                                 child: Text(
@@ -620,7 +662,7 @@ class _InputPageState extends State<InputPage>
                     ),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<String>(
-                      value: _manualQuestionType,
+                      initialValue: _manualQuestionType,
                       decoration: InputDecoration(
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 10,
@@ -752,7 +794,7 @@ class _InputPageState extends State<InputPage>
                     : Colors.grey.shade300,
               ),
               color: _duplicateWarning.isNotEmpty
-                  ? Colors.orange.withOpacity(0.02)
+                  ? Colors.orange.withValues(alpha: 0.02)
                   : Colors.white,
               borderRadius: BorderRadius.circular(8),
             ),
@@ -976,21 +1018,36 @@ class _InputPageState extends State<InputPage>
               ),
             ),
             const SizedBox(height: 8),
-            ...(_uploadResult!['topics'] as List).map(
-              (topic) => Container(
+            ...((_uploadResult!['topics'] as List).asMap().entries.map((entry) {
+              final index = entry.key;
+              final topic = entry.value;
+              return Container(
                 margin: const EdgeInsets.only(bottom: 6),
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,
                   vertical: 10,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
+                  color: _topicSelected.length > index && _topicSelected[index]
+                      ? const Color(0xFFF0FDF4)
+                      : Colors.grey.shade50,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.grey.shade200),
                 ),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
+                    Checkbox(
+                      value: _topicSelected.length > index
+                          ? _topicSelected[index]
+                          : false,
+                      activeColor: primaryColor,
+                      onChanged: (v) {
+                        setState(() {
+                          if (_topicSelected.length > index)
+                            _topicSelected[index] = v ?? false;
+                        });
+                      },
+                    ),
                     Expanded(
                       child: Text(
                         topic['name'],
@@ -1000,6 +1057,33 @@ class _InputPageState extends State<InputPage>
                         ),
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 70,
+                      child: TextField(
+                        controller: _topicHoursControllers.length > index
+                            ? _topicHoursControllers[index]
+                            : TextEditingController(text: '1'),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          signed: false,
+                          decimal: false,
+                        ),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: InputDecoration(
+                          hintText: 'hrs',
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     Text(
                       '${((topic['weight'] as num) * 100).round()}%',
                       style: const TextStyle(
@@ -1010,8 +1094,8 @@ class _InputPageState extends State<InputPage>
                     ),
                   ],
                 ),
-              ),
-            ),
+              );
+            })),
 
             const SizedBox(height: 24),
             _buildStepHeader(3, 'Question Types Selection'),
@@ -1091,7 +1175,11 @@ class _InputPageState extends State<InputPage>
             const SizedBox(height: 12),
             TextField(
               controller: _totalItemsController,
-              keyboardType: TextInputType.number,
+              keyboardType: const TextInputType.numberWithOptions(
+                signed: false,
+                decimal: false,
+              ),
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               decoration: InputDecoration(
                 hintText: 'Enter total number of questions (e.g. 50)',
                 hintStyle: const TextStyle(fontSize: 13, color: Colors.grey),
@@ -1105,15 +1193,23 @@ class _InputPageState extends State<InputPage>
                 ),
               ),
               onChanged: (_) => setState(() {}),
+              autofocus: _tabController.index == 1,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
+            const Text(
+              'Tap the button below once you have selected topics, question types, and total item count to generate the TOS matrix.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
                 onPressed:
                     (_generating ||
                         _totalItemsController.text.isEmpty ||
-                        _selectedQuestionTypes.isEmpty)
+                        _selectedQuestionTypes.isEmpty ||
+                        _uploadResult == null ||
+                        _topicSelected.where((v) => v).isEmpty)
                     ? null
                     : _handleGenerate,
                 style: ElevatedButton.styleFrom(
@@ -1139,13 +1235,13 @@ class _InputPageState extends State<InputPage>
                           ),
                           SizedBox(width: 10),
                           Text(
-                            'Generating questions...',
+                            'Generating TOS and questions...',
                             style: TextStyle(color: Colors.white),
                           ),
                         ],
                       )
                     : const Text(
-                        'Generate Questions',
+                        'Generate TOS & Questions',
                         style: TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w600,
@@ -1365,7 +1461,7 @@ class _InputPageState extends State<InputPage>
           ),
           const SizedBox(height: 4),
           Text(
-            file != null ? file : subtitle,
+            file ?? subtitle,
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 11,

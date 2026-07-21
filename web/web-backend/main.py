@@ -8,7 +8,8 @@ from sqlalchemy import func, text
 from dotenv import load_dotenv
 from database import engine, get_db, SessionLocal
 from file_extractor import extract_text
-# from ai_service import detect_subject, detect_topics, compute_tos, generate_questions_from_tos
+from ai_service import generate_questions_from_tos, build_preview, prepare_database_rows, statistics, parse_syllabus_text_with_ai
+from routers.tos_utils import compute_tos
 from classifier import classify_question
 import models
 from datetime import datetime, timedelta
@@ -46,6 +47,16 @@ def log_activity(db: Session, action: str, details: str, type: str, status: str 
     )
     db.add(entry)
     db.commit()
+
+
+def detect_subject(syllabus_text: str):
+    course_title, course_code, topics = parse_syllabus_text_with_ai(syllabus_text)
+    return {"name": course_title, "code": course_code, "description": ""}
+
+
+def detect_topics(syllabus_text: str, module_text: str):
+    course_title, course_code, topics = parse_syllabus_text_with_ai(syllabus_text)
+    return {"course_title": course_title, "course_code": course_code, "topics": topics}
 
 
 def build_assessment_document(questions, subject_name, export_format):
@@ -882,7 +893,21 @@ async def generate_questions(
 
         topics_data = detect_topics(upload.syllabus_text, upload.module_text)
         selected_question_types = [value.strip() for value in question_types.split(",") if value.strip()] if question_types else None
-        tos = compute_tos(total_items, topics_data["topics"], selected_question_types=selected_question_types)
+
+        # Default: select all detected topics and assume equal hours if caller
+        # didn't provide a detailed selection. This mirrors the two-step
+        # /api/questions flow which collects per-topic hour weights first.
+        all_topics = topics_data.get("topics", [])
+        selected_indices = list(range(len(all_topics)))
+        hours_dict = {str(i): 1 for i in selected_indices}
+
+        tos = compute_tos(
+            topics=all_topics,
+            selected_topic_indices=selected_indices,
+            hours_dict=hours_dict,
+            total_items=total_items,
+            question_types=selected_question_types or ["MCQ"],
+        )
 
         tos_record = models.TableOfSpecification(
             upload_id=upload.id,
@@ -898,11 +923,9 @@ async def generate_questions(
         ).first()
 
         questions = generate_questions_from_tos(
-            upload.module_text,
-            upload.syllabus_text,
-            tos,
-            subject.name,
-            selected_question_types=selected_question_types
+            subject={"name": subject.name, "code": subject.code},
+            module_text=upload.module_text,
+            tos_data=tos,
         )
 
         bloom_distribution = {}
@@ -1005,6 +1028,27 @@ def create_department(payload: DepartmentCreateRequest, db: Session = Depends(ge
     }
 
 
+# Backwards-compatible endpoints without the '/api' prefix (some clients call these paths)
+@app.get("/departments")
+def get_departments_noapi(db: Session = Depends(get_db)):
+    return get_departments(db)
+
+
+@app.post("/departments", status_code=201)
+def create_department_noapi(payload: DepartmentCreateRequest, db: Session = Depends(get_db)):
+    return create_department(payload, db)
+
+
+@app.put("/departments/{department_id}")
+def update_department_noapi(department_id: int, payload: DepartmentUpdateRequest, db: Session = Depends(get_db)):
+    return update_department(department_id, payload, db)
+
+
+@app.delete("/departments/{department_id}")
+def delete_department_noapi(department_id: int, db: Session = Depends(get_db)):
+    return delete_department(department_id, db)
+
+
 @app.put("/api/departments/{department_id}")
 def update_department(department_id: int, payload: DepartmentUpdateRequest, db: Session = Depends(get_db)):
     department = db.query(models.Department).filter(models.Department.id == department_id).first()
@@ -1089,6 +1133,56 @@ def create_subject_manually(payload: SubjectCreateRequest, db: Session = Depends
         "message": "Subject registered successfully!"
     }
 
+
+@app.put("/api/subjects/{subject_id}")
+def update_subject(subject_id: int, payload: SubjectCreateRequest, db: Session = Depends(get_db)):
+    subject = db.query(models.Subject).filter(models.Subject.id == subject_id).first()
+    if not subject:
+        raise HTTPException(status_code=404, detail="Subject not found.")
+
+    normalized_name = payload.name.strip()
+    normalized_code = payload.code.strip() if payload.code else None
+
+    duplicate = db.query(models.Subject).filter(
+        func.lower(models.Subject.name) == normalized_name.lower(),
+        models.Subject.id != subject_id,
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=400, detail="A subject with this name already exists.")
+
+    if payload.department_id is not None:
+        dept = db.query(models.Department).filter(models.Department.id == payload.department_id).first()
+        if not dept:
+            raise HTTPException(status_code=404, detail="Department not found.")
+        subject.department_id = dept.id
+    else:
+        subject.department_id = None
+
+    subject.name = normalized_name
+    subject.code = normalized_code
+    db.commit()
+    db.refresh(subject)
+
+    return {
+        "id": subject.id,
+        "name": subject.name,
+        "code": subject.code,
+        "department_id": subject.department_id,
+    }
+
+
+@app.delete("/api/subjects/{subject_id}")
+def delete_subject(subject_id: int, db: Session = Depends(get_db)):
+    subject = db.query(models.Subject).filter(models.Subject.id == subject_id).first()
+    if not subject:
+        raise HTTPException(status_code=404, detail="Subject not found.")
+    # Nullify references in dependent tables to avoid foreign key constraint errors
+    db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.subject_id == subject_id).update({"subject_id": None})
+    db.query(models.UploadedFile).filter(models.UploadedFile.subject_id == subject_id).update({"subject_id": None})
+    db.delete(subject)
+    db.commit()
+    return {"message": "Subject deleted successfully."}
+
 # --- NEW ROUTE: SINGLE QUESTION MANUAL CLASSIFICATION ---
 @app.post("/api/questions/manual", status_code=201)
 def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Session = Depends(get_db)):
@@ -1133,6 +1227,27 @@ def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Sessio
 @app.get("/api/subjects")
 def get_subjects(db: Session = Depends(get_db)):
     return db.query(models.Subject).all()
+
+
+# Backwards-compatible subject endpoints without the '/api' prefix
+@app.get("/subjects")
+def get_subjects_noapi(db: Session = Depends(get_db)):
+    return get_subjects(db)
+
+
+@app.post("/subjects", status_code=201)
+def create_subject_noapi(payload: SubjectCreateRequest, db: Session = Depends(get_db)):
+    return create_subject_manually(payload, db)
+
+
+@app.put("/subjects/{subject_id}")
+def update_subject_noapi(subject_id: int, payload: SubjectCreateRequest, db: Session = Depends(get_db)):
+    return update_subject(subject_id, payload, db)
+
+
+@app.delete("/subjects/{subject_id}")
+def delete_subject_noapi(subject_id: int, db: Session = Depends(get_db)):
+    return delete_subject(subject_id, db)
 
 
 @app.get("/api/questions")

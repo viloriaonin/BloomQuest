@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:mob_frontend/utils/theme_constants.dart';
+import 'package:BloomQuest/utils/theme_constants.dart';
 import 'account.dart'; // IMPORT THE ACCOUNT BAR
 import '../../services/api_service.dart';
 
@@ -275,7 +275,8 @@ class _AdminAcadMgtPageState extends State<AdminAcadMgtPage>
   void _showSubjectSheet({Subject? subject}) {
     final nameController = TextEditingController(text: subject?.name ?? '');
     final codeController = TextEditingController(text: subject?.code ?? '');
-    String? selectedDeptId = subject?.departmentId ??
+    String? selectedDeptId =
+        subject?.departmentId ??
         (_departments.isNotEmpty ? _departments.first.id : null);
 
     showModalBottomSheet(
@@ -332,87 +333,54 @@ class _AdminAcadMgtPageState extends State<AdminAcadMgtPage>
           }
 
           return Container(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-            left: 24,
-            right: 24,
-            top: 32,
-          ),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                subject == null ? 'Add Subject' : 'Edit Subject',
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: kTextDark,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Assign the subject to an existing department.',
-                style: TextStyle(fontSize: 14, color: kTextMuted),
-              ),
-              const SizedBox(height: 32),
-              if (sheetError.isNotEmpty) ...[
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.shade100),
-                  ),
-                  child: Text(
-                    sheetError,
-                    style: TextStyle(color: Colors.red.shade700),
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+              left: 24,
+              right: 24,
+              top: 32,
+            ),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  subject == null ? 'Add Subject' : 'Edit Subject',
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: kTextDark,
                   ),
                 ),
-                const SizedBox(height: 16),
-              ],
-              TextField(
-                controller: nameController,
-                decoration: InputDecoration(
-                  labelText: 'Subject Name',
-                  labelStyle: const TextStyle(color: kTextMuted),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: kBorderOutline),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: kPrimarySlate),
-                  ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Assign the subject to an existing department.',
+                  style: TextStyle(fontSize: 14, color: kTextMuted),
                 ),
-              ),
-              const SizedBox(height: 20),
-              TextField(
-                controller: codeController,
-                decoration: InputDecoration(
-                  labelText: 'Subject Code (e.g. CS201)',
-                  labelStyle: const TextStyle(color: kTextMuted),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: kBorderOutline),
+                const SizedBox(height: 32),
+                if (sheetError.isNotEmpty) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.shade100),
+                    ),
+                    child: Text(
+                      sheetError,
+                      style: TextStyle(color: Colors.red.shade700),
+                    ),
                   ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: kPrimarySlate),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              if (_departments.isNotEmpty)
-                DropdownButtonFormField<String>(
-                  initialValue: selectedDeptId,
+                  const SizedBox(height: 16),
+                ],
+                TextField(
+                  controller: nameController,
                   decoration: InputDecoration(
-                    labelText: 'Assign to Department',
+                    labelText: 'Subject Name',
                     labelStyle: const TextStyle(color: kTextMuted),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -423,69 +391,102 @@ class _AdminAcadMgtPageState extends State<AdminAcadMgtPage>
                       borderSide: const BorderSide(color: kPrimarySlate),
                     ),
                   ),
-                  items: _departments
-                      .map(
-                        (dept) => DropdownMenuItem<String>(
-                          value: dept.id,
-                          child: Text('${dept.name} (${dept.code})'),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) =>
-                      setSheetState(() => selectedDeptId = value),
-                )
-              else
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.shade100),
-                  ),
-                  child: const Text(
-                    'Please create a department first!',
-                    style: TextStyle(color: Colors.red),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: codeController,
+                  decoration: InputDecoration(
+                    labelText: 'Subject Code (e.g. CS201)',
+                    labelStyle: const TextStyle(color: kTextMuted),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: kBorderOutline),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: kPrimarySlate),
+                    ),
                   ),
                 ),
-              const SizedBox(height: 40),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: kPrimarySlate,
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                const SizedBox(height: 20),
+                if (_departments.isNotEmpty)
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedDeptId,
+                    decoration: InputDecoration(
+                      labelText: 'Assign to Department',
+                      labelStyle: const TextStyle(color: kTextMuted),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: kBorderOutline),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: kPrimarySlate),
+                      ),
                     ),
-                    elevation: 0,
-                  ),
-                  onPressed: (selectedDeptId == null || submitting)
-                      ? null
-                      : handleSubmit,
-                  child: submitting
-                      ? const SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+                    items: _departments
+                        .map(
+                          (dept) => DropdownMenuItem<String>(
+                            value: dept.id,
+                            child: Text('${dept.name} (${dept.code})'),
                           ),
                         )
-                      : Text(
-                          subject == null ? 'Proceed' : 'Save Changes',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
+                        .toList(),
+                    onChanged: (value) =>
+                        setSheetState(() => selectedDeptId = value),
+                  )
+                else
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.shade100),
+                    ),
+                    child: const Text(
+                      'Please create a department first!',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                  ),
+                const SizedBox(height: 40),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kPrimarySlate,
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      elevation: 0,
+                    ),
+                    onPressed: (selectedDeptId == null || submitting)
+                        ? null
+                        : handleSubmit,
+                    child: submitting
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(
+                            subject == null ? 'Proceed' : 'Save Changes',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
-            ],
-          ),
-        );
+                const SizedBox(height: 20),
+              ],
+            ),
+          );
         },
       ),
     );
@@ -493,8 +494,9 @@ class _AdminAcadMgtPageState extends State<AdminAcadMgtPage>
 
   Future<void> _deleteDepartment(String id) async {
     final removedDept = _departments.firstWhere((dept) => dept.id == id);
-    final removedSubjects =
-        _subjects.where((subject) => subject.departmentId == id).toList();
+    final removedSubjects = _subjects
+        .where((subject) => subject.departmentId == id)
+        .toList();
     setState(() {
       _departments.removeWhere((dept) => dept.id == id);
       _subjects.removeWhere((subject) => subject.departmentId == id);
@@ -555,7 +557,10 @@ class _AdminAcadMgtPageState extends State<AdminAcadMgtPage>
             children: [
               const Divider(height: 1, color: kBorderOutline, thickness: 1),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 8,
+                ),
                 color: Colors.white,
                 child: TabBar(
                   controller: _tabController,
@@ -582,45 +587,45 @@ class _AdminAcadMgtPageState extends State<AdminAcadMgtPage>
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _loadError.isNotEmpty
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24.0),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _loadError,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: kTextMuted),
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: kPrimarySlate,
-                            ),
-                            onPressed: _loadData,
-                            child: const Text(
-                              'Retry',
-                              style: TextStyle(color: Colors.white),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                : Column(
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Expanded(
-                        child: TabBarView(
-                          controller: _tabController,
-                          children: [
-                            _buildList(isDepartment: true),
-                            _buildList(isDepartment: false),
-                          ],
+                      Text(
+                        _loadError,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: kTextMuted),
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: kPrimarySlate,
+                        ),
+                        onPressed: _loadData,
+                        child: const Text(
+                          'Retry',
+                          style: TextStyle(color: Colors.white),
                         ),
                       ),
                     ],
                   ),
+                ),
+              )
+            : Column(
+                children: [
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildList(isDepartment: true),
+                        _buildList(isDepartment: false),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
@@ -642,9 +647,7 @@ class _AdminAcadMgtPageState extends State<AdminAcadMgtPage>
               }
             },
             child: Text(
-              _tabController.index == 0
-                  ? '+ Add Department'
-                  : '+ Add Subject',
+              _tabController.index == 0 ? '+ Add Department' : '+ Add Subject',
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 15,
@@ -798,7 +801,10 @@ class _AcademicCard extends StatelessWidget {
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: kPrimarySlate.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(4),
@@ -815,10 +821,7 @@ class _AcademicCard extends StatelessWidget {
                       const SizedBox(width: 8),
                       Text(
                         subtitle,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: kTextMuted,
-                        ),
+                        style: const TextStyle(fontSize: 13, color: kTextMuted),
                       ),
                     ],
                   ),
@@ -829,12 +832,20 @@ class _AcademicCard extends StatelessWidget {
             Row(
               children: [
                 IconButton(
-                  icon: const Icon(Icons.edit_outlined, color: kTextMuted, size: 20),
+                  icon: const Icon(
+                    Icons.edit_outlined,
+                    color: kTextMuted,
+                    size: 20,
+                  ),
                   onPressed: onEdit,
                   splashRadius: 20,
                 ),
                 IconButton(
-                  icon: const Icon(Icons.delete_outline, color: Color(0xFFDC3545), size: 20),
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    color: Color(0xFFDC3545),
+                    size: 20,
+                  ),
                   onPressed: onDelete,
                   splashRadius: 20,
                 ),

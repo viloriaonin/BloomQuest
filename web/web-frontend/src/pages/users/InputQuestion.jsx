@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { UploadCloud, FileText, FileSpreadsheet, Presentation, X, CheckCircle2, AlertCircle } from 'lucide-react';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = '/api';
 const BLOOMS_LEVELS = ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'];
 const QUESTION_TYPE_OPTIONS = [
   { label: 'Multiple Choice', value: 'MCQ' },
-  { label: 'True or False', value: 'True/False' },
+  { label: 'True or False', value: 'True or False' },
   { label: 'Identification', value: 'Identification' },
   { label: 'Matching Type', value: 'Matching Type' },
   { label: 'Enumeration', value: 'Enumeration' },
@@ -32,13 +32,14 @@ const FILE_POLICIES = {
   syllabus: {
     label: 'Course Information Sheet',
     instruction: 'Upload the CIS containing your syllabus topics',
-    formats: ['XLSX', 'PDF'],
-    extensions: ['.xlsx', '.pdf'],
+    formats: ['XLSX', 'PDF', 'DOCX'],
+    extensions: ['.xlsx', '.pdf', '.docx'],
     mimeTypes: [
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     ],
-    accept: '.xlsx,.pdf',
+    accept: '.xlsx,.pdf,.docx',
   },
 };
 
@@ -218,7 +219,7 @@ const InputQuestion = () => {
 
   const fetchSubjects = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/subjects`);
+      const response = await fetch(`${API_URL}/subjects`);
       if (!response.ok) throw new Error('Failed to synchronize subject matrix context data records.');
       const data = await response.json();
       setSubjects(data);
@@ -236,7 +237,7 @@ const InputQuestion = () => {
 
     const delayDebounceCheck = setTimeout(async () => {
       try {
-        const response = await fetch(`${API_URL}/api/questions?subject_id=${selectedSubject}`);
+        const response = await fetch(`${API_URL}/questions?subject_id=${selectedSubject}`);
         if (response.ok) {
           const matchingQuestionBankItems = await response.json();
           const targetInputText = manualQuestion.trim().toLowerCase();
@@ -278,7 +279,7 @@ const InputQuestion = () => {
     setError('');
     setSuccessMessage('');
     try {
-      const response = await fetch(`${API_URL}/api/subjects`, {
+      const response = await fetch(`${API_URL}/subjects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -320,7 +321,7 @@ const InputQuestion = () => {
     setClassifying(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/questions/manual`, {
+      const response = await fetch(`${API_URL}/questions/manual`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -375,7 +376,7 @@ const InputQuestion = () => {
       formData.append('module_file', moduleFile);
       formData.append('syllabus_file', syllabusFile);
 
-      const response = await fetch(`${API_URL}/api/questions/upload`, {
+      const response = await fetch(`${API_URL}/questions/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -416,6 +417,10 @@ const InputQuestion = () => {
       setError('Please select at least one Main Topic to include in the TOS layout matrix.');
       return;
     }
+    if (selectedQuestionTypes.length === 0) {
+      setError('Please select at least one question type to include in the generated assessment.');
+      return;
+    }
 
     setError('');
     setSuccessMessage('');
@@ -431,7 +436,7 @@ const InputQuestion = () => {
         subcolumn_a_hours: subcolumnAValues,
       };
 
-      const response = await fetch(`${API_URL}/api/questions/generate-with-tos`, {
+      const response = await fetch(`${API_URL}/questions/generate-with-tos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -459,7 +464,7 @@ const InputQuestion = () => {
 
   const downloadFile = async (endpoint, filename) => {
     try {
-      const response = await fetch(`${API_URL}/api/questions/export/${endpoint}?upload_id=${uploadResult.upload_id}`, {
+      const response = await fetch(`${API_URL}/questions/export/${endpoint}?upload_id=${uploadResult.upload_id}`, {
         method: 'GET',
       });
       if (!response.ok) throw new Error('Failed to retrieve file asset binary records.');
@@ -698,6 +703,46 @@ const InputQuestion = () => {
                     <button onClick={() => downloadFile('assessment/pdf', 'Exam_Paper_With_Keys.pdf')} className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.pdf)</button>
                   </div>
                 </div>
+
+                {/* TOS Summary Section */}
+                {generationResult.tos && generationResult.tos.length > 0 && (
+                  <div className="border border-gray-200 rounded-lg p-5 bg-white shadow-sm space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-bold text-gray-800">Table of Specifications Summary</h4>
+                        <p className="text-xs text-gray-500">This summary reflects the topic distribution, Bloom&apos;s taxonomy weights, and item counts used to generate the assessment.</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-500">Total Generated Questions</p>
+                        <p className="text-lg font-semibold text-green-700">{generationResult.total_questions}</p>
+                      </div>
+                    </div>
+                    <div className="grid gap-3">
+                      {generationResult.tos.map((topic, idx) => (
+                        <div key={idx} className="rounded-xl border border-gray-100 p-4 bg-gray-50">
+                          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-semibold text-gray-800">{topic.topic}</p>
+                              <p className="text-xs text-gray-500 mt-1">{topic.ilo || 'No ILO provided'}</p>
+                            </div>
+                            <div className="text-xs text-gray-500 space-y-1">
+                              <p><span className="font-semibold text-gray-700">Items:</span> {topic.total_items}</p>
+                              <p><span className="font-semibold text-gray-700">Weight:</span> {topic.weight}%</p>
+                            </div>
+                          </div>
+                          <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-gray-600">
+                            {Object.entries(topic.bloom_breakdown || {}).map(([bloom, row]) => (
+                              <div key={bloom} className="rounded-md border border-gray-200 bg-white px-2 py-1">
+                                <p className="font-semibold text-gray-800">{bloom}</p>
+                                <p>{row.total} item{row.total === 1 ? '' : 's'}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Cognitive Taxonomy Group Preview Tabs */}
                 <div>

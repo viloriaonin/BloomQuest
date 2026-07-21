@@ -521,7 +521,7 @@ class _QuestionBankPageState extends State<QuestionBankPage>
                         child: LinearProgressIndicator(color: primaryColor),
                       )
                     : DropdownButtonFormField<String>(
-                        value: _selectedSubjectId,
+                        initialValue: _selectedSubjectId,
                         hint: const Text(
                           '— Select a subject —',
                           style: TextStyle(fontSize: 13, color: Colors.grey),
@@ -1003,7 +1003,7 @@ class _Tag extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(

@@ -286,10 +286,13 @@ async def upload_and_analyze_syllabus(
             course_title, course_code, detected_topics = parse_syllabus_pdf(contents)
         elif filename.endswith('.xlsx') or filename.endswith('.xls'):
             course_title, course_code, detected_topics = parse_syllabus_excel(contents)
+        elif filename.endswith('.docx'):
+            syllabus_text = extract_text(contents, syllabus_file.filename)
+            course_title, course_code, detected_topics = parse_syllabus_text_with_ai(syllabus_text)
         else:
             raise HTTPException(
                 status_code=400,
-                detail="Unsupported syllabus file format. Please upload a .pdf or .xlsx file."
+                detail="Unsupported syllabus file format. Please upload a .pdf, .docx, .xlsx, or .xls file."
             )
 
         detected_subject = {
@@ -414,10 +417,30 @@ async def generate_with_tos(
     preview = build_preview(generated_questions)
     stats = statistics(generated_questions)
 
+    def _build_tos_response_rows(tos_data):
+        tos_rows = []
+        for topic in tos_data:
+            bloom_breakdown = {
+                bloom: {"total": count}
+                for bloom, count in topic.get("bloom_counts", {}).items()
+            }
+            tos_rows.append({
+                "topic": topic.get("topic_name", ""),
+                "weight": topic.get("weight", 0),
+                "total_items": topic.get("items", 0),
+                "bloom_breakdown": bloom_breakdown,
+                "question_distribution": topic.get("question_distribution", {}),
+                "ilo": topic.get("ilo", ""),
+                "ilo_description": topic.get("ilo_description", ""),
+            })
+        return tos_rows
+
     return {
         "message": "Assessment generated successfully.",
+        "tos": _build_tos_response_rows(selected_topics_data),
         "questions_preview": preview,
         "statistics": stats,
+        "total_questions": len(generated_questions),
     }
 
 

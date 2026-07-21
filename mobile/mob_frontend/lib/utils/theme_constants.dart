@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 extension ColorValues on Color {
-  Color withValues({double? alpha}) => withOpacity(alpha ?? 1.0);
+  Color withValues({double? alpha}) => withValues(alpha: alpha ?? 1.0);
 }
 
 // Core color tokens used across the app

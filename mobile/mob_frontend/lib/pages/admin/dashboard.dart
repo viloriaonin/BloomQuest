@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:mob_frontend/models/activity_log.dart';
-import 'package:mob_frontend/utils/theme_constants.dart';
-import 'package:mob_frontend/widgets/shimmer_box.dart';
+import 'package:BloomQuest/models/activity_log.dart';
+import 'package:BloomQuest/utils/theme_constants.dart';
+import 'package:BloomQuest/widgets/shimmer_box.dart';
 import 'acadmgt.dart';
 import 'questionbank.dart';
 import 'reports.dart';
@@ -76,7 +76,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       final successRate = visibleRows.isEmpty
           ? 0
           : ((visibleRows
-                            .where((row) => row.status?.toLowerCase() == 'success')
+                            .where(
+                              (row) => row.status?.toLowerCase() == 'success',
+                            )
                             .length /
                         visibleRows.length) *
                     100)
@@ -114,11 +116,21 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         final key = level.isEmpty ? 'Unclassified' : level;
         bloomsCounts[key] = (bloomsCounts[key] ?? 0) + 1;
       }
-      const bloomsOrder = ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create', 'Unclassified'];
+      const bloomsOrder = [
+        'Remember',
+        'Understand',
+        'Apply',
+        'Analyze',
+        'Evaluate',
+        'Create',
+        'Unclassified',
+      ];
       final bloomsChartData = <ChartPoint>[];
       for (final level in bloomsOrder) {
         if (bloomsCounts.containsKey(level)) {
-          bloomsChartData.add(ChartPoint(level, bloomsCounts[level]!.toDouble()));
+          bloomsChartData.add(
+            ChartPoint(level, bloomsCounts[level]!.toDouble()),
+          );
         }
       }
       // Catch any label spellings not in the known Bloom's order.
@@ -129,20 +141,32 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       }
 
       // --- Activity by department (descriptive) ---
-      final deptChartData = deptCounts.entries.map((e) => ChartPoint(e.key, e.value.toDouble())).toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
+      final deptChartData =
+          deptCounts.entries
+              .map((e) => ChartPoint(e.key, e.value.toDouble()))
+              .toList()
+            ..sort((a, b) => b.value.compareTo(a.value));
 
       // --- 7-day activity trend (descriptive / feeds the predictive projection) ---
       final now = DateTime.now();
       const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
       final dailyTrendChartData = <ChartPoint>[];
       for (int i = 6; i >= 0; i--) {
-        final day = DateTime(now.year, now.month, now.day).subtract(Duration(days: i));
+        final day = DateTime(
+          now.year,
+          now.month,
+          now.day,
+        ).subtract(Duration(days: i));
         final count = visibleRows.where((row) {
           final d = DateTime.tryParse(row.date);
-          return d != null && d.year == day.year && d.month == day.month && d.day == day.day;
+          return d != null &&
+              d.year == day.year &&
+              d.month == day.month &&
+              d.day == day.day;
         }).length;
-        dailyTrendChartData.add(ChartPoint(weekdayLabels[day.weekday - 1], count.toDouble()));
+        dailyTrendChartData.add(
+          ChartPoint(weekdayLabels[day.weekday - 1], count.toDouble()),
+        );
       }
 
       // --- Question bank growth: generated vs. downloaded, last 4 weeks ---
@@ -150,9 +174,20 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       final weeklyGenerated = <double>[];
       final weeklyDownloaded = <double>[];
       for (int w = 3; w >= 0; w--) {
-        final weekEndDay = DateTime(now.year, now.month, now.day).subtract(Duration(days: w * 7));
+        final weekEndDay = DateTime(
+          now.year,
+          now.month,
+          now.day,
+        ).subtract(Duration(days: w * 7));
         final weekStartDay = weekEndDay.subtract(const Duration(days: 6));
-        final weekEndBound = DateTime(weekEndDay.year, weekEndDay.month, weekEndDay.day, 23, 59, 59);
+        final weekEndBound = DateTime(
+          weekEndDay.year,
+          weekEndDay.month,
+          weekEndDay.day,
+          23,
+          59,
+          59,
+        );
         final gen = visibleRows.where((row) {
           final d = DateTime.tryParse(row.date);
           return d != null &&
@@ -206,7 +241,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   Future<void> _exportDashboardAnalytics() async {
     try {
       // Create a CSV-formatted string representing the dashboard data
-      final String csvContent = '''
+      final String csvContent =
+          '''
 Dashboard Analytics Report
 Generated on: ${DateTime.now()}
 
@@ -221,20 +257,22 @@ Avg Assessments / Week, ${_avgAssessmentsPerWeek.toStringAsFixed(1)}
 Most Active Department, $_mostActiveDept
 
 --- PREDICTIVE ANALYTICS ---
-Projected Questions (Next Mo), ${( _totalQuestions * 1.1 ).round()}
+Projected Questions (Next Mo), ${(_totalQuestions * 1.1).round()}
 Platform Success Rate, $_successRate%
-Expected Assessments, ${( _avgAssessmentsPerWeek * 4 ).round()}
+Expected Assessments, ${(_avgAssessmentsPerWeek * 4).round()}
 ''';
 
-      // NOTE: In a complete app, you would save this using `path_provider` (mobile/desktop) 
-      // or trigger a download via `dart:html` (web). 
+      // NOTE: In a complete app, you would save this using `path_provider` (mobile/desktop)
+      // or trigger a download via `dart:html` (web).
       // For demonstration, we print it to the debug console.
       debugPrint(csvContent);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Report exported successfully! Check console for output.'),
+          content: Text(
+            'Report exported successfully! Check console for output.',
+          ),
           backgroundColor: Colors.green,
           behavior: SnackBarBehavior.floating,
         ),
@@ -270,7 +308,8 @@ Expected Assessments, ${( _avgAssessmentsPerWeek * 4 ).round()}
       case 0:
       default:
         return _DashboardHome(
-          onExportPressed: _exportDashboardAnalytics, // Hooked up the new export function
+          onExportPressed:
+              _exportDashboardAnalytics, // Hooked up the new export function
           analyticsLoading: _analyticsLoading,
           shimmerController: _shimmerController,
           totalQuestions: _totalQuestions,
@@ -406,23 +445,47 @@ class _DashboardHome extends StatelessWidget {
                   child: Row(
                     children: analyticsLoading
                         ? [
-                            _ShimmerStatCard(shimmerController: shimmerController, width: 150),
+                            _ShimmerStatCard(
+                              shimmerController: shimmerController,
+                              width: 150,
+                            ),
                             const SizedBox(width: 16),
-                            _ShimmerStatCard(shimmerController: shimmerController, width: 150),
+                            _ShimmerStatCard(
+                              shimmerController: shimmerController,
+                              width: 150,
+                            ),
                             const SizedBox(width: 16),
-                            _ShimmerStatCard(shimmerController: shimmerController, width: 150),
+                            _ShimmerStatCard(
+                              shimmerController: shimmerController,
+                              width: 150,
+                            ),
                           ]
                         : [
-                            _StatCard(icon: Icons.quiz_rounded, color: kAccentOrange, value: '$totalQuestions', label: 'Generated Questions'),
+                            _StatCard(
+                              icon: Icons.quiz_rounded,
+                              color: kAccentOrange,
+                              value: '$totalQuestions',
+                              label: 'Generated Questions',
+                            ),
                             const SizedBox(width: 16),
-                            _StatCard(icon: Icons.assignment_rounded, color: Colors.blueAccent, value: '$totalAssessments', label: 'Downloaded Exams'),
+                            _StatCard(
+                              icon: Icons.assignment_rounded,
+                              color: Colors.blueAccent,
+                              value: '$totalAssessments',
+                              label: 'Downloaded Exams',
+                            ),
                             const SizedBox(width: 16),
-                            _StatCard(icon: Icons.groups_rounded, color: Colors.green, value: '$activeFaculty', label: 'Active Faculty'),
+                            _StatCard(
+                              icon: Icons.groups_rounded,
+                              color: Colors.green,
+                              value: '$activeFaculty',
+                              label: 'Active Faculty',
+                            ),
                           ],
                   ),
                 ),
                 // Removed the _AvgScoreCard and reduced padding here
-                const SizedBox(height: 32), 
+                const SizedBox(height: 32),
                 const _SectionHeader(title: 'Analytics'),
                 const SizedBox(height: 16),
                 _AnalyticsInfoCard(
@@ -432,7 +495,10 @@ class _DashboardHome extends StatelessWidget {
                   shimmerController: shimmerController,
                   rows: [
                     ('Avg Questions / Faculty', '$avgQuestionsPerFaculty'),
-                    ('Avg Assessments / Week', avgAssessmentsPerWeek.toStringAsFixed(1)),
+                    (
+                      'Avg Assessments / Week',
+                      avgAssessmentsPerWeek.toStringAsFixed(1),
+                    ),
                     ('Most Active Department', mostActiveDept),
                   ],
                 ),
@@ -443,9 +509,15 @@ class _DashboardHome extends StatelessWidget {
                   isLoading: analyticsLoading,
                   shimmerController: shimmerController,
                   rows: [
-                    ('Projected Questions (Next Mo)', '${(totalQuestions * 1.1).round()}'),
+                    (
+                      'Projected Questions (Next Mo)',
+                      '${(totalQuestions * 1.1).round()}',
+                    ),
                     ('Platform Success Rate', '$successRate%'),
-                    ('Expected Assessments', '${(avgAssessmentsPerWeek * 4).round()}'),
+                    (
+                      'Expected Assessments',
+                      '${(avgAssessmentsPerWeek * 4).round()}',
+                    ),
                   ],
                 ),
                 const SizedBox(height: 32),
@@ -476,14 +548,23 @@ class _DashboardHome extends StatelessWidget {
                     children: [
                       Text(
                         'Prescriptive Recommendations',
-                        style: TextStyle(fontFamily: 'Georgia', fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)),
+                        style: TextStyle(
+                          fontFamily: 'Georgia',
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1A1A1A),
+                        ),
                       ),
                       SizedBox(height: 16),
                       _BulletLine('Create level is underrepresented (4.8%).'),
                       SizedBox(height: 12),
-                      _BulletLine('Encourage faculty to submit higher-order questions.'),
+                      _BulletLine(
+                        'Encourage faculty to submit higher-order questions.',
+                      ),
                       SizedBox(height: 12),
-                      _BulletLine('CBA department shows low activity; consider training.'),
+                      _BulletLine(
+                        'CBA department shows low activity; consider training.',
+                      ),
                     ],
                   ),
                 ),
@@ -498,7 +579,12 @@ class _DashboardHome extends StatelessWidget {
                     children: [
                       const Text(
                         'Model Performance',
-                        style: TextStyle(fontFamily: 'Georgia', fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)),
+                        style: TextStyle(
+                          fontFamily: 'Georgia',
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1A1A1A),
+                        ),
                       ),
                       const SizedBox(height: 8),
                       const Text(
@@ -506,11 +592,17 @@ class _DashboardHome extends StatelessWidget {
                         style: TextStyle(fontSize: 13, color: Colors.black54),
                       ),
                       const SizedBox(height: 24),
-                      const _ModelScoreRow(name: 'Support Vector Machine (SVM)', score: '92.5%'),
+                      const _ModelScoreRow(
+                        name: 'Support Vector Machine (SVM)',
+                        score: '92.5%',
+                      ),
                       const SizedBox(height: 16),
                       const _ModelScoreRow(name: 'Naïve Bayes', score: '88.7%'),
                       const SizedBox(height: 16),
-                      const _ModelScoreRow(name: 'Logistic Regression', score: '89.3%'),
+                      const _ModelScoreRow(
+                        name: 'Logistic Regression',
+                        score: '89.3%',
+                      ),
                       const SizedBox(height: 32),
                       SizedBox(
                         width: double.infinity,
@@ -526,7 +618,11 @@ class _DashboardHome extends StatelessWidget {
                           ),
                           child: const Text(
                             'Export Report',
-                            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ),
@@ -555,7 +651,12 @@ class _StatCard extends StatelessWidget {
   final String value;
   final String label;
 
-  const _StatCard({required this.icon, required this.color, required this.value, required this.label});
+  const _StatCard({
+    required this.icon,
+    required this.color,
+    required this.value,
+    required this.label,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -568,9 +669,19 @@ class _StatCard extends StatelessWidget {
         children: [
           Icon(icon, color: color, size: 28),
           const SizedBox(height: 24),
-          Text(value, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 6),
-          Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54, height: 1.2)),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.black54,
+              height: 1.2,
+            ),
+          ),
         ],
       ),
     );
@@ -584,7 +695,13 @@ class _AnalyticsInfoCard extends StatelessWidget {
   final AnimationController shimmerController;
   final List<(String, String)> rows;
 
-  const _AnalyticsInfoCard({required this.title, required this.icon, required this.isLoading, required this.shimmerController, required this.rows});
+  const _AnalyticsInfoCard({
+    required this.title,
+    required this.icon,
+    required this.isLoading,
+    required this.shimmerController,
+    required this.rows,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -600,13 +717,21 @@ class _AnalyticsInfoCard extends StatelessWidget {
               const SizedBox(width: 12),
               Text(
                 title,
-                style: const TextStyle(fontFamily: 'Georgia', fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)),
+                style: const TextStyle(
+                  fontFamily: 'Georgia',
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1A1A1A),
+                ),
               ),
             ],
           ),
           const Divider(height: 32, color: kBorderColor),
           if (isLoading)
-            ...List.generate(3, (_) => _ShimmerRow(shimmerController: shimmerController))
+            ...List.generate(
+              3,
+              (_) => _ShimmerRow(shimmerController: shimmerController),
+            )
           else
             ...rows.map(
               (r) => Padding(
@@ -617,7 +742,10 @@ class _AnalyticsInfoCard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         r.$1,
-                        style: const TextStyle(fontSize: 14, color: Colors.black54),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.black54,
+                        ),
                         overflow: TextOverflow.ellipsis,
                         maxLines: 1,
                       ),
@@ -627,7 +755,11 @@ class _AnalyticsInfoCard extends StatelessWidget {
                       child: Text(
                         r.$2,
                         textAlign: TextAlign.end,
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black87),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
                         overflow: TextOverflow.ellipsis,
                         maxLines: 1,
                       ),
@@ -647,7 +779,15 @@ class _SectionHeader extends StatelessWidget {
   const _SectionHeader({required this.title});
   @override
   Widget build(BuildContext context) {
-    return Text(title, style: const TextStyle(fontFamily: 'Georgia', fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87));
+    return Text(
+      title,
+      style: const TextStyle(
+        fontFamily: 'Georgia',
+        fontSize: 20,
+        fontWeight: FontWeight.bold,
+        color: Colors.black87,
+      ),
+    );
   }
 }
 
@@ -659,8 +799,16 @@ class _BulletLine extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('•  ', style: TextStyle(color: kAccentOrange, fontWeight: FontWeight.bold)),
-        Expanded(child: Text(text, style: const TextStyle(fontSize: 14, color: Colors.black54))),
+        const Text(
+          '•  ',
+          style: TextStyle(color: kAccentOrange, fontWeight: FontWeight.bold),
+        ),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(fontSize: 14, color: Colors.black54),
+          ),
+        ),
       ],
     );
   }
@@ -675,13 +823,27 @@ class _ModelScoreRow extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: const Color(0xFFF9F9F9), borderRadius: BorderRadius.circular(12), border: Border.all(color: kBorderColor)),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9F9F9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kBorderColor),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(name, style: const TextStyle(fontSize: 13, color: Colors.black54)),
+          Text(
+            name,
+            style: const TextStyle(fontSize: 13, color: Colors.black54),
+          ),
           const SizedBox(height: 8),
-          Text(score, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+          Text(
+            score,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF1A1A1A),
+            ),
+          ),
         ],
       ),
     );
@@ -716,7 +878,10 @@ class _ShimmerRow extends StatelessWidget {
 class _ShimmerStatCard extends StatelessWidget {
   final AnimationController shimmerController;
   final double width;
-  const _ShimmerStatCard({required this.shimmerController, required this.width});
+  const _ShimmerStatCard({
+    required this.shimmerController,
+    required this.width,
+  });
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -784,11 +949,20 @@ class _VisualAnalyticsSection extends StatelessWidget {
         clipBehavior: Clip.none,
         children: isLoading
             ? [
-                _ShimmerStatCard(shimmerController: shimmerController, width: 280),
+                _ShimmerStatCard(
+                  shimmerController: shimmerController,
+                  width: 280,
+                ),
                 const SizedBox(width: 16),
-                _ShimmerStatCard(shimmerController: shimmerController, width: 280),
+                _ShimmerStatCard(
+                  shimmerController: shimmerController,
+                  width: 280,
+                ),
                 const SizedBox(width: 16),
-                _ShimmerStatCard(shimmerController: shimmerController, width: 280),
+                _ShimmerStatCard(
+                  shimmerController: shimmerController,
+                  width: 280,
+                ),
               ]
             : [
                 _ChartCard(
@@ -800,13 +974,19 @@ class _VisualAnalyticsSection extends StatelessWidget {
                 _ChartCard(
                   title: 'Activity by Department',
                   subtitle: 'All logged actions',
-                  chart: SimpleBarChart(data: deptData, color: Colors.blueAccent),
+                  chart: SimpleBarChart(
+                    data: deptData,
+                    color: Colors.blueAccent,
+                  ),
                 ),
                 const SizedBox(width: 16),
                 _ChartCard(
                   title: '7-Day Activity Trend',
                   subtitle: 'Logged actions per day',
-                  chart: SimpleLineChart(data: dailyTrendData, color: Colors.green),
+                  chart: SimpleLineChart(
+                    data: dailyTrendData,
+                    color: Colors.green,
+                  ),
                 ),
                 const SizedBox(width: 16),
                 _ChartCard(
@@ -817,10 +997,12 @@ class _VisualAnalyticsSection extends StatelessWidget {
                     seriesA: weeklyGenerated,
                     seriesB: weeklyDownloaded,
                   ),
-                  legend: const _ChartLegend(items: [
-                    ('Generated', kAccentOrange),
-                    ('Downloaded', Colors.blueAccent),
-                  ]),
+                  legend: const _ChartLegend(
+                    items: [
+                      ('Generated', kAccentOrange),
+                      ('Downloaded', Colors.blueAccent),
+                    ],
+                  ),
                 ),
               ],
       ),
@@ -833,7 +1015,12 @@ class _ChartCard extends StatelessWidget {
   final String subtitle;
   final Widget chart;
   final Widget? legend;
-  const _ChartCard({required this.title, required this.subtitle, required this.chart, this.legend});
+  const _ChartCard({
+    required this.title,
+    required this.subtitle,
+    required this.chart,
+    this.legend,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -844,15 +1031,23 @@ class _ChartCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontFamily: 'Georgia', fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A))),
+          Text(
+            title,
+            style: const TextStyle(
+              fontFamily: 'Georgia',
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF1A1A1A),
+            ),
+          ),
           const SizedBox(height: 2),
-          Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          Text(
+            subtitle,
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
+          ),
           const SizedBox(height: 16),
           SizedBox(height: 230, child: chart),
-          if (legend != null) ...[
-            const SizedBox(height: 8),
-            legend!,
-          ],
+          if (legend != null) ...[const SizedBox(height: 8), legend!],
         ],
       ),
     );
@@ -872,9 +1067,16 @@ class _ChartLegend extends StatelessWidget {
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(width: 8, height: 8, decoration: BoxDecoration(color: item.$2, shape: BoxShape.circle)),
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: item.$2, shape: BoxShape.circle),
+            ),
             const SizedBox(width: 6),
-            Text(item.$1, style: const TextStyle(fontSize: 11, color: Colors.black54)),
+            Text(
+              item.$1,
+              style: const TextStyle(fontSize: 11, color: Colors.black54),
+            ),
           ],
         );
       }).toList(),
@@ -888,14 +1090,26 @@ class SimpleBarChart extends StatelessWidget {
   final List<ChartPoint> data;
   final Color color;
   final double barWidth;
-  const SimpleBarChart({super.key, required this.data, this.color = kAccentOrange, this.barWidth = 44});
+  const SimpleBarChart({
+    super.key,
+    required this.data,
+    this.color = kAccentOrange,
+    this.barWidth = 44,
+  });
 
   @override
   Widget build(BuildContext context) {
     if (data.isEmpty) {
-      return const Center(child: Text('No data yet', style: TextStyle(color: Colors.black45, fontSize: 13)));
+      return const Center(
+        child: Text(
+          'No data yet',
+          style: TextStyle(color: Colors.black45, fontSize: 13),
+        ),
+      );
     }
-    final maxValue = data.map((d) => d.value).fold<double>(0, (a, b) => b > a ? b : a);
+    final maxValue = data
+        .map((d) => d.value)
+        .fold<double>(0, (a, b) => b > a ? b : a);
     final safeMax = maxValue <= 0 ? 1.0 : maxValue;
 
     return SingleChildScrollView(
@@ -923,10 +1137,14 @@ class SimpleBarChart extends StatelessWidget {
                   child: Align(
                     alignment: Alignment.bottomCenter,
                     child: Container(
-                      height: ((point.value / safeMax) * 140).clamp(4.0, 140.0).toDouble(),
+                      height: ((point.value / safeMax) * 140)
+                          .clamp(4.0, 140.0)
+                          .toDouble(),
                       decoration: BoxDecoration(
                         color: color,
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(6),
+                        ),
                       ),
                     ),
                   ),
@@ -970,9 +1188,17 @@ class GroupedBarChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (labels.isEmpty) {
-      return const Center(child: Text('No data yet', style: TextStyle(color: Colors.black45, fontSize: 13)));
+      return const Center(
+        child: Text(
+          'No data yet',
+          style: TextStyle(color: Colors.black45, fontSize: 13),
+        ),
+      );
     }
-    final maxValue = [...seriesA, ...seriesB].fold<double>(0, (a, b) => b > a ? b : a);
+    final maxValue = [
+      ...seriesA,
+      ...seriesB,
+    ].fold<double>(0, (a, b) => b > a ? b : a);
     final safeMax = maxValue <= 0 ? 1.0 : maxValue;
 
     return SingleChildScrollView(
@@ -981,8 +1207,12 @@ class GroupedBarChart extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: List.generate(labels.length, (i) {
-          final aHeight = ((seriesA[i] / safeMax) * 140).clamp(4.0, 140.0).toDouble();
-          final bHeight = ((seriesB[i] / safeMax) * 140).clamp(4.0, 140.0).toDouble();
+          final aHeight = ((seriesA[i] / safeMax) * 140)
+              .clamp(4.0, 140.0)
+              .toDouble();
+          final bHeight = ((seriesB[i] / safeMax) * 140)
+              .clamp(4.0, 140.0)
+              .toDouble();
           return Container(
             width: 64,
             margin: const EdgeInsets.symmetric(horizontal: 6),
@@ -995,14 +1225,39 @@ class GroupedBarChart extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Container(width: 16, height: aHeight, decoration: BoxDecoration(color: colorA, borderRadius: const BorderRadius.vertical(top: Radius.circular(4)))),
+                      Container(
+                        width: 16,
+                        height: aHeight,
+                        decoration: BoxDecoration(
+                          color: colorA,
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(4),
+                          ),
+                        ),
+                      ),
                       const SizedBox(width: 4),
-                      Container(width: 16, height: bHeight, decoration: BoxDecoration(color: colorB, borderRadius: const BorderRadius.vertical(top: Radius.circular(4)))),
+                      Container(
+                        width: 16,
+                        height: bHeight,
+                        decoration: BoxDecoration(
+                          color: colorB,
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(4),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 8),
-                SizedBox(width: 64, child: Text(labels[i], textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, color: Colors.black54))),
+                SizedBox(
+                  width: 64,
+                  child: Text(
+                    labels[i],
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 10, color: Colors.black54),
+                  ),
+                ),
               ],
             ),
           );
@@ -1018,31 +1273,51 @@ class SimpleLineChart extends StatelessWidget {
   final List<ChartPoint> data;
   final Color color;
   final double pointSpacing;
-  const SimpleLineChart({super.key, required this.data, this.color = kAccentOrange, this.pointSpacing = 56});
+  const SimpleLineChart({
+    super.key,
+    required this.data,
+    this.color = kAccentOrange,
+    this.pointSpacing = 56,
+  });
 
   @override
   Widget build(BuildContext context) {
     if (data.isEmpty) {
-      return const Center(child: Text('No data yet', style: TextStyle(color: Colors.black45, fontSize: 13)));
-    }
-    final maxValue = data.map((d) => d.value).fold<double>(0, (a, b) => b > a ? b : a);
-    final safeMax = maxValue <= 0 ? 1.0 : maxValue;
-
-    return LayoutBuilder(builder: (context, constraints) {
-      final neededWidth = pointSpacing * data.length;
-      final width = neededWidth < constraints.maxWidth ? constraints.maxWidth : neededWidth;
-      return SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        child: SizedBox(
-          width: width,
-          height: 170,
-          child: CustomPaint(
-            painter: _LineChartPainter(data: data, maxValue: safeMax, color: color),
-          ),
+      return const Center(
+        child: Text(
+          'No data yet',
+          style: TextStyle(color: Colors.black45, fontSize: 13),
         ),
       );
-    });
+    }
+    final maxValue = data
+        .map((d) => d.value)
+        .fold<double>(0, (a, b) => b > a ? b : a);
+    final safeMax = maxValue <= 0 ? 1.0 : maxValue;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final neededWidth = pointSpacing * data.length;
+        final width = neededWidth < constraints.maxWidth
+            ? constraints.maxWidth
+            : neededWidth;
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: SizedBox(
+            width: width,
+            height: 170,
+            child: CustomPaint(
+              painter: _LineChartPainter(
+                data: data,
+                maxValue: safeMax,
+                color: color,
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -1050,7 +1325,11 @@ class _LineChartPainter extends CustomPainter {
   final List<ChartPoint> data;
   final double maxValue;
   final Color color;
-  _LineChartPainter({required this.data, required this.maxValue, required this.color});
+  _LineChartPainter({
+    required this.data,
+    required this.maxValue,
+    required this.color,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1094,5 +1373,7 @@ class _LineChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _LineChartPainter oldDelegate) =>
-      oldDelegate.data != data || oldDelegate.maxValue != maxValue || oldDelegate.color != color;
+      oldDelegate.data != data ||
+      oldDelegate.maxValue != maxValue ||
+      oldDelegate.color != color;
 }

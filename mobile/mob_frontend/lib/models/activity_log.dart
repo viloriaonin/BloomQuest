@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:mob_frontend/config/api_config.dart';
+import 'package:BloomQuest/config/api_config.dart';
 
 final String kApiBaseUrl = ApiConfig.baseUrl;
 final String kActivityLogEndpoint = '$kApiBaseUrl/activity-logs';
@@ -44,7 +44,10 @@ class ActivityLogEntry {
       status: json['status'] as String?,
       date: json['date'] as String? ?? '',
       time: json['time'] as String? ?? '',
-      bloomsLevel: json['bloomsLevel'] as String? ?? json['blooms_level'] as String? ?? json['level'] as String?,
+      bloomsLevel:
+          json['bloomsLevel'] as String? ??
+          json['blooms_level'] as String? ??
+          json['level'] as String?,
     );
   }
 }
@@ -56,6 +59,10 @@ Future<List<ActivityLogEntry>> fetchActivityLog() async {
   }
 
   final decoded = jsonDecode(response.body);
-  final List<dynamic> rows = decoded is List ? decoded : (decoded['data'] as List<dynamic>? ?? []);
-  return rows.map((row) => ActivityLogEntry.fromJson(row as Map<String, dynamic>)).toList();
+  final List<dynamic> rows = decoded is List
+      ? decoded
+      : (decoded['data'] as List<dynamic>? ?? []);
+  return rows
+      .map((row) => ActivityLogEntry.fromJson(row as Map<String, dynamic>))
+      .toList();
 }

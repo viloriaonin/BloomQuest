@@ -35,7 +35,9 @@ class _AccountTopBarState extends State<AccountTopBar> {
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => const AccountSettingsPage()),
+            MaterialPageRoute(
+              builder: (context) => const AccountSettingsPage(),
+            ),
           );
         },
         borderRadius: BorderRadius.circular(20),
@@ -102,12 +104,10 @@ class AccountSettingsPage extends StatefulWidget {
 class _AccountSettingsPageState extends State<AccountSettingsPage> {
   String name = 'Admin';
   String email = 'admin@bloomquest.edu';
-  
-  // Notification States matching the provided image mockup
+
+  // Notification States
   bool _globalNotifications = true;
   bool _accountRequestsAlerts = true;
-  bool _securityAlerts = false;
-  bool _platformUpdates = false;
 
   @override
   void initState() {
@@ -131,7 +131,10 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Change Password', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Change Password',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -168,7 +171,10 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: Colors.black54)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.black54),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -192,18 +198,28 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (ctx) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(32.0),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.logout_rounded, size: 48, color: Color(0xFF2D2D2D)),
+              const Icon(
+                Icons.logout_rounded,
+                size: 48,
+                color: Color(0xFF2D2D2D),
+              ),
               const SizedBox(height: 16),
               const Text(
                 'Confirm Logout',
-                style: TextStyle(fontFamily: 'Georgia', fontSize: 22, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  fontFamily: 'Georgia',
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 8),
               const Text(
@@ -220,9 +236,14 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         side: const BorderSide(color: Color(0xFFEAEAEA)),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
-                      child: const Text('Cancel', style: TextStyle(color: Colors.black87)),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(color: Colors.black87),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -234,7 +255,9 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                       child: const Text('Logout'),
                     ),
@@ -270,7 +293,10 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Account Settings', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Account Settings',
+          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+        ),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(color: const Color(0xFFEAEAEA), height: 1),
@@ -334,7 +360,14 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             // ── 2. SECURITY CARD ──
             const Padding(
               padding: EdgeInsets.only(left: 4, bottom: 8),
-              child: Text('Security', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black54)),
+              child: Text(
+                'Security',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: Colors.black54,
+                ),
+              ),
             ),
             Container(
               decoration: BoxDecoration(
@@ -346,19 +379,33 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                 color: const Color(0xFFF7F7F7),
                 borderRadius: BorderRadius.circular(16),
                 child: Theme(
-                  data: Theme.of(context).copyWith(
-                    splashColor: const Color(0xFFE7E7E7),
-                  ),
+                  data: Theme.of(
+                    context,
+                  ).copyWith(splashColor: const Color(0xFFE7E7E7)),
                   child: ListTile(
                     tileColor: const Color(0xFFF7F7F7),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                    leading: const Icon(Icons.lock_outline, color: Color(0xFF2D2D2D)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 2,
+                    ),
+                    leading: const Icon(
+                      Icons.lock_outline,
+                      color: Color(0xFF2D2D2D),
+                    ),
                     title: const Text(
                       'Change Password',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
                     ),
-                    trailing: const Icon(Icons.chevron_right, color: Colors.black45),
+                    trailing: const Icon(
+                      Icons.chevron_right,
+                      color: Colors.black45,
+                    ),
                     onTap: _showChangePasswordDialog,
                   ),
                 ),
@@ -366,10 +413,17 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
             ),
             const SizedBox(height: 24),
 
-            // ── 3. SYSTEM NOTIFICATIONS CARD (Matches Mockup) ──
+            // ── 3. SYSTEM NOTIFICATIONS CARD ──
             const Padding(
               padding: EdgeInsets.only(left: 4, bottom: 8),
-              child: Text('System Notifications', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.black54)),
+              child: Text(
+                'System Notifications',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: Colors.black54,
+                ),
+              ),
             ),
             Container(
               decoration: BoxDecoration(
@@ -378,20 +432,30 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                 border: Border.all(color: const Color(0xFFEAEAEA)),
               ),
               child: Theme(
-                data: Theme.of(context).copyWith(
-                  splashColor: const Color(0xFFE7E7E7),
-                ),
+                data: Theme.of(
+                  context,
+                ).copyWith(splashColor: const Color(0xFFE7E7E7)),
                 child: Column(
                   children: [
                     Material(
                       color: const Color(0xFFF7F7F7),
                       child: SwitchListTile(
                         tileColor: const Color(0xFFF7F7F7),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        secondary: const Icon(Icons.notifications_none_outlined, color: Color(0xFF2D2D2D)),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 4,
+                        ),
+                        secondary: const Icon(
+                          Icons.notifications_none_outlined,
+                          color: Color(0xFF2D2D2D),
+                        ),
                         title: const Text(
                           'Enable All Notifications',
-                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            color: Colors.black87,
+                          ),
                         ),
                         value: _globalNotifications,
                         activeThumbColor: const Color(0xFF2D2D2D),
@@ -403,8 +467,6 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                             _globalNotifications = value;
                             if (!value) {
                               _accountRequestsAlerts = false;
-                              _securityAlerts = false;
-                              _platformUpdates = false;
                             }
                           });
                         },
@@ -415,11 +477,21 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                       color: const Color(0xFFF7F7F7),
                       child: SwitchListTile(
                         tileColor: const Color(0xFFF7F7F7),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        secondary: const Icon(Icons.person_add_outlined, color: Color(0xFF2D2D2D)),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 4,
+                        ),
+                        secondary: const Icon(
+                          Icons.person_add_outlined,
+                          color: Color(0xFF2D2D2D),
+                        ),
                         title: const Text(
                           'Account Requests',
-                          style: TextStyle(fontWeight: FontWeight.w400, fontSize: 14, color: Colors.black87),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w400,
+                            fontSize: 14,
+                            color: Colors.black87,
+                          ),
                         ),
                         subtitle: const Text(
                           'Alerts when a new user requests access',
@@ -437,60 +509,6 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                             : null,
                       ),
                     ),
-                    const Divider(height: 1, color: Color(0xFFEAEAEA)),
-                    Material(
-                      color: const Color(0xFFF7F7F7),
-                      child: SwitchListTile(
-                        tileColor: const Color(0xFFF7F7F7),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        secondary: const Icon(Icons.shield_outlined, color: Color(0xFF2D2D2D)),
-                        title: const Text(
-                          'Security Alerts',
-                          style: TextStyle(fontWeight: FontWeight.w400, fontSize: 14, color: Colors.black87),
-                        ),
-                        subtitle: const Text(
-                          'Alerts for failed logins or system errors',
-                          style: TextStyle(fontSize: 12, color: Colors.black45),
-                        ),
-                        value: _securityAlerts,
-                        activeThumbColor: const Color(0xFF2D2D2D),
-                        activeTrackColor: Colors.grey.shade300,
-                        inactiveThumbColor: const Color(0xFFBCAAA4),
-                        inactiveTrackColor: const Color(0xFFF3EBEB),
-                        onChanged: _globalNotifications
-                            ? (bool value) {
-                                setState(() => _securityAlerts = value);
-                              }
-                            : null,
-                      ),
-                    ),
-                    const Divider(height: 1, color: Color(0xFFEAEAEA)),
-                    Material(
-                      color: const Color(0xFFF7F7F7),
-                      child: SwitchListTile(
-                        tileColor: const Color(0xFFF7F7F7),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        secondary: const Icon(Icons.system_update_alt_outlined, color: Color(0xFF2D2D2D)),
-                        title: const Text(
-                          'Platform Updates',
-                          style: TextStyle(fontWeight: FontWeight.w400, fontSize: 14, color: Colors.black87),
-                        ),
-                        subtitle: const Text(
-                          'News and changelogs regarding BloomQuest',
-                          style: TextStyle(fontSize: 12, color: Colors.black45),
-                        ),
-                        value: _platformUpdates,
-                        activeThumbColor: const Color(0xFF2D2D2D),
-                        activeTrackColor: Colors.grey.shade300,
-                        inactiveThumbColor: const Color(0xFFBCAAA4),
-                        inactiveTrackColor: const Color(0xFFF3EBEB),
-                        onChanged: _globalNotifications
-                            ? (bool value) {
-                                setState(() => _platformUpdates = value);
-                              }
-                            : null,
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -503,12 +521,17 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
               child: ElevatedButton.icon(
                 onPressed: () => _logout(context),
                 icon: const Icon(Icons.logout),
-                label: const Text('Logout', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                label: const Text(
+                  'Logout',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF2D2D2D),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   elevation: 0,
                 ),
               ),

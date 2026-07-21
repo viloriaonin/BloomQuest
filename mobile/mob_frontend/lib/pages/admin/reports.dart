@@ -66,13 +66,16 @@ IconData iconForAction(String action) {
   final a = action.toLowerCase();
   if (a.contains('logout')) return Icons.logout_rounded;
   if (a.contains('login')) return Icons.login_rounded;
-  if (a.contains('delete') || a.contains('remove'))
+  if (a.contains('delete') || a.contains('remove')) {
     return Icons.delete_outline_rounded;
-  if (a.contains('assessment') || a.contains('exam') || a.contains('quiz'))
+  }
+  if (a.contains('assessment') || a.contains('exam') || a.contains('quiz')) {
     return Icons.assignment_outlined;
+  }
   if (a.contains('question')) return Icons.help_outline_rounded;
-  if (a.contains('upload') || a.contains('add') || a.contains('create'))
+  if (a.contains('upload') || a.contains('add') || a.contains('create')) {
     return Icons.upload_outlined;
+  }
   if (a.contains('update') || a.contains('edit')) return Icons.edit_outlined;
   return Icons.notifications_none_rounded;
 }
@@ -81,13 +84,16 @@ Color colorForAction(String action) {
   final a = action.toLowerCase();
   if (a.contains('logout')) return Colors.blueGrey;
   if (a.contains('login')) return const Color(0xFF2E9E5B);
-  if (a.contains('delete') || a.contains('remove'))
+  if (a.contains('delete') || a.contains('remove')) {
     return const Color(0xFFD64545);
-  if (a.contains('assessment') || a.contains('exam') || a.contains('quiz'))
+  }
+  if (a.contains('assessment') || a.contains('exam') || a.contains('quiz')) {
     return const Color(0xFF7B5EC7);
+  }
   if (a.contains('question')) return const Color(0xFF1E96A8);
-  if (a.contains('upload') || a.contains('add') || a.contains('create'))
+  if (a.contains('upload') || a.contains('add') || a.contains('create')) {
     return const Color(0xFF3B82C4);
+  }
   if (a.contains('update') || a.contains('edit')) return kAccentOrange;
   return Colors.grey;
 }
@@ -141,8 +147,9 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
     if (role == 'admin') return true;
 
     // 2. Exclude system logs or accounts named admin
-    if (name == 'system' || name == 'admin' || name.contains('admin@'))
+    if (name == 'system' || name == 'admin' || name.contains('admin@')) {
       return true;
+    }
 
     // 3. Catch logs where the admin email is embedded in the action details
     // (e.g., "Logged in as admin@bloomquest.com")
@@ -158,8 +165,9 @@ class _AdminReportsPageState extends State<AdminReportsPage> {
               // EXCLUDE admins and system, keeping everyone else
               if (_isAdminOrSystem(row)) return false;
               // Filter by department
-              if (_department != 'All Departments' && row.dept != _department)
+              if (_department != 'All Departments' && row.dept != _department) {
                 return false;
+              }
               return true;
             })
             .map((row) => row.name)
