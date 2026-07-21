@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:mob_frontend/config/api_config.dart';
+import 'package:BloomQuest/config/api_config.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});

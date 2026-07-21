@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 import 'dart:typed_data';
-import 'package:mob_frontend/config/api_config.dart';
+import 'package:BloomQuest/config/api_config.dart';
 
 class InputPage extends StatefulWidget {
   const InputPage({super.key});
@@ -247,7 +247,7 @@ class _InputPageState extends State<InputPage>
   // ─── Pick Files ──────────────────────────────────────────────────────────────
   Future<void> _pickModuleFile() async {
     try {
-      final result = await FilePicker.pickFiles(
+      final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'pptx', 'ppt', 'docx'],
         withData: true,
@@ -275,7 +275,7 @@ class _InputPageState extends State<InputPage>
 
   Future<void> _pickSyllabusFile() async {
     try {
-      final result = await FilePicker.pickFiles(
+      final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'docx', 'xlsx', 'xls'],
         withData: true,
@@ -701,10 +701,25 @@ class _InputPageState extends State<InputPage>
                           backgroundColor: primaryColor,
                           foregroundColor: Colors.white,
                         ),
-                        onPressed: _savingSubject ? null : _handleCreateCustomSubject,
-                        child: _savingSubject 
-                            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
-                            : const Text('Save Subject', style: TextStyle(color: Colors.white, fontSize: 12)),
+                        onPressed: _savingSubject
+                            ? null
+                            : _handleCreateCustomSubject,
+                        child: _savingSubject
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text(
+                                'Save Subject',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                ),
+                              ),
                       ),
                     ],
                   ),

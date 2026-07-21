@@ -7,7 +7,7 @@ from sqlalchemy import func, text
 from dotenv import load_dotenv
 from database import engine, get_db
 from file_extractor import extract_text
-from ai_service import detect_subject, detect_topics, compute_tos, generate_questions_from_tos
+# from ai_service import detect_subject, detect_topics, compute_tos, generate_questions_from_tos
 from classifier import classify_question
 import models
 from datetime import datetime, timedelta

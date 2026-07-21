@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 
 class ApiConfig {
   // 👇 This is the ONLY line you change when your network/IP changes
-  static const String _lanIp = '192.168.194.158';
+  static const String _lanIp = '192.168.0.127';
   static const int _port = 8000;
 
   static String get baseUrl {

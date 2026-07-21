@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-import 'package:mob_frontend/config/api_config.dart';
+import 'package:BloomQuest/config/api_config.dart';
 
 class ApiService {
   static Future<Map<String, dynamic>> login(
@@ -388,9 +388,7 @@ class ApiService {
     try {
       final response = await http.delete(
         Uri.parse('${ApiConfig.baseUrl}/users/${Uri.encodeComponent(email)}'),
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers: {'Accept': 'application/json'},
       );
 
       print('Status code: ${response.statusCode}');

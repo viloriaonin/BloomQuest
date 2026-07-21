@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:typed_data';
-import 'package:mob_frontend/config/api_config.dart'; // adjust path/package name
+import 'package:BloomQuest/config/api_config.dart'; // adjust path/package name
 import '../../utils/web_downloader_stub.dart'
     if (dart.library.html) '../../utils/web_downloader_html.dart'
     as web_downloader;
@@ -380,7 +380,7 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
 
   Future<void> _importBank() async {
     try {
-      final result = await FilePicker.pickFiles(allowMultiple: true);
+      final result = await FilePicker.platform.pickFiles(allowMultiple: true);
       if (result == null || result.files.length < 2) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

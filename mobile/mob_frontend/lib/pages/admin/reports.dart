@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../widgets/adminSidebar.dart';
-import 'package:mob_frontend/config/api_config.dart';
+import 'package:BloomQuest/config/api_config.dart';
 
 // ---------------------------------------------------------------------------
 // API CONFIG

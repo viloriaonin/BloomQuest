@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:mob_frontend/config/api_config.dart';
+import 'package:BloomQuest/config/api_config.dart';
 
 // TODO: Update this to match your backend's actual reachable address.
 // - Flutter web (Chrome): localhost works, since it's a real browser

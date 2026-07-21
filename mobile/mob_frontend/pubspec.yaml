@@ -1,4 +1,4 @@
-name: mob_frontend
+name: BloomQuest
 description: "A new Flutter project."
 publish_to: 'none'
 
@@ -14,10 +14,10 @@ dependencies:
   http: ^1.2.0
   shared_preferences: ^2.2.2
   provider: ^6.1.1
-  file_picker: ^11.0.2
+  file_picker: 10.3.10
   path_provider: ^2.1.1
   open_filex: ^4.4.0
-  fl_chart: ^0.70.0
+  fl_chart: ^1.2.0
 
 dev_dependencies:
   flutter_test:

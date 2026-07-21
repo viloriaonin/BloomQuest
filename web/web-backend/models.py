@@ -52,6 +52,7 @@ class GeneratedQuestion(Base):
     options = Column(JSON, nullable=True)
     correct_answer = Column(Text)
     explanation = Column(Text)
+    topic_name = Column(String, nullable=True)  # 🌟 Added column to record topic origin metadata
     created_at = Column(DateTime, server_default=func.now())
 
 class AccountRequest(Base):

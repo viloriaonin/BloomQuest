@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import logo from "../../assets/images/bloomquest-logo.png";
 import LoadingSpinner from "../../components/LoadingSpinner";
-
+import LegalModal from "../../components/LegalModal";
 const API_URL = "http://localhost:8000/api/login";
 
 const Login = () => {
@@ -13,6 +13,7 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [legalModal, setLegalModal] = useState(null); // "privacy" | "terms" | null
 
   const isValidEmail = (value) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -221,11 +222,24 @@ const Login = () => {
           © 2026 BloomQuest. All rights reserved.
         </p>
         <div className="flex gap-4 text-base" style={{ color: "#D4AF37" }}>
-          <a href="#" className="hover:text-white transition">Privacy Policy</a>
-          <a href="#" className="hover:text-white transition">Terms of Service</a>
-          <a href="#" className="hover:text-white transition">Help Center</a>
+          <button
+            type="button"
+            onClick={() => setLegalModal("privacy")}
+            className="hover:text-white transition"
+          >
+            Privacy Policy
+          </button>
+          <button
+            type="button"
+            onClick={() => setLegalModal("terms")}
+            className="hover:text-white transition"
+          >
+            Terms of Service
+          </button>
         </div>
       </footer>
+
+      <LegalModal type={legalModal} onClose={() => setLegalModal(null)} />
     </div>
   );
 };

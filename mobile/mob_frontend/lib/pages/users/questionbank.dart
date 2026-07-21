@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:mob_frontend/config/api_config.dart';
+import 'package:BloomQuest/config/api_config.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:typed_data';
@@ -428,30 +428,35 @@ class _QuestionBankPageState extends State<QuestionBankPage>
                 backgroundColor: Colors.red.shade600,
                 foregroundColor: Colors.white,
               ),
-              onPressed: deleting ? null : () async {
-                setDialogState(() => deleting = true);
-                final success = await _deleteQuestion(question['id']);
-                if (dialogContext.mounted) {
-                  Navigator.pop(dialogContext);
-                }
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        success
-                            ? 'Question deleted.'
-                            : 'Failed to delete question.',
-                      ),
-                    ),
-                  );
-                }
-              },
-              child: deleting 
+              onPressed: deleting
+                  ? null
+                  : () async {
+                      setDialogState(() => deleting = true);
+                      final success = await _deleteQuestion(question['id']);
+                      if (dialogContext.mounted) {
+                        Navigator.pop(dialogContext);
+                      }
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              success
+                                  ? 'Question deleted.'
+                                  : 'Failed to delete question.',
+                            ),
+                          ),
+                        );
+                      }
+                    },
+              child: deleting
                   ? const SizedBox(
-                      width: 16, 
-                      height: 16, 
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
-                    ) 
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
                   : const Text('Delete'),
             ),
           ],
