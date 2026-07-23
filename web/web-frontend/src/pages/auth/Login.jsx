@@ -2,7 +2,11 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import logo from "../../assets/images/bloomquest-logo.png";
 import LoadingSpinner from "../../components/LoadingSpinner";
+<<<<<<< HEAD
 import LegalModal from "../../components/LegalModal";
+=======
+
+>>>>>>> bf6f81e2c462bcdce888dcb27596bea9ff218843
 const API_URL = "http://localhost:8000/api/login";
 
 const Login = () => {
@@ -222,6 +226,7 @@ const Login = () => {
           © 2026 BloomQuest. All rights reserved.
         </p>
         <div className="flex gap-4 text-base" style={{ color: "#D4AF37" }}>
+<<<<<<< HEAD
           <button
             type="button"
             onClick={() => setLegalModal("privacy")}
@@ -236,6 +241,11 @@ const Login = () => {
           >
             Terms of Service
           </button>
+=======
+          <a href="#" className="hover:text-white transition">Privacy Policy</a>
+          <a href="#" className="hover:text-white transition">Terms of Service</a>
+          <a href="#" className="hover:text-white transition">Help Center</a>
+>>>>>>> bf6f81e2c462bcdce888dcb27596bea9ff218843
         </div>
       </footer>
 

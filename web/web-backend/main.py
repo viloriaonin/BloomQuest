@@ -1133,7 +1133,6 @@ def create_subject_manually(payload: SubjectCreateRequest, db: Session = Depends
         "message": "Subject registered successfully!"
     }
 
-
 @app.put("/api/subjects/{subject_id}")
 def update_subject(subject_id: int, payload: SubjectCreateRequest, db: Session = Depends(get_db)):
     subject = db.query(models.Subject).filter(models.Subject.id == subject_id).first()
@@ -1227,7 +1226,6 @@ def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Sessio
 @app.get("/api/subjects")
 def get_subjects(db: Session = Depends(get_db)):
     return db.query(models.Subject).all()
-
 
 # Backwards-compatible subject endpoints without the '/api' prefix
 @app.get("/subjects")
