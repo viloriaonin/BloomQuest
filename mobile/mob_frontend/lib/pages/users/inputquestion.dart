@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:BloomQuest/config/api_config.dart';
 
 class InputPage extends StatefulWidget {
@@ -51,9 +52,23 @@ class _InputPageState extends State<InputPage>
   Map<String, dynamic>? _generationResult;
   List<bool> _topicSelected = [];
   List<TextEditingController> _topicHoursControllers = [];
-  final TextEditingController _totalItemsController = TextEditingController();
 
+  final TextEditingController _totalPointsController = TextEditingController(
+    text: '50',
+  );
+  final TextEditingController _totalItemsController = TextEditingController();
   final List<String> _selectedQuestionTypes = [];
+
+  // Preview State
+  String _previewBloomTab = 'Remember';
+  final List<String> _bloomsLevels = [
+    'Remember',
+    'Understand',
+    'Apply',
+    'Analyze',
+    'Evaluate',
+    'Create',
+  ];
 
   static const primaryColor = Color(0xFF7B1113);
 
@@ -84,6 +99,7 @@ class _InputPageState extends State<InputPage>
     _newSubjectNameController.dispose();
     _newSubjectCodeController.dispose();
     _totalItemsController.dispose();
+    _totalPointsController.dispose();
     for (final c in _topicHoursControllers) {
       c.dispose();
     }
@@ -360,7 +376,7 @@ class _InputPageState extends State<InputPage>
           _topicSelected = List<bool>.filled(topics.length, true);
           _topicHoursControllers = List.generate(
             topics.length,
-            (_) => TextEditingController(text: '1'),
+            (_) => TextEditingController(text: '3.0'),
           );
         });
       } else {
@@ -404,6 +420,8 @@ class _InputPageState extends State<InputPage>
 
     try {
       final totalItems = int.parse(_totalItemsController.text);
+      final totalPoints =
+          int.tryParse(_totalPointsController.text) ?? totalItems;
       final selectedIndices = <int>[];
       for (var i = 0; i < _topicSelected.length; i++) {
         if (_topicSelected[i]) selectedIndices.add(i);
@@ -413,13 +431,13 @@ class _InputPageState extends State<InputPage>
       for (var i = 0; i < _topicHoursControllers.length; i++) {
         hoursMap[i.toString()] = _topicHoursControllers[i].text.isNotEmpty
             ? _topicHoursControllers[i].text
-            : '1';
+            : '3.0';
       }
 
       final payload = {
         'upload_id': _uploadResult!['upload_id'].toString(),
         'total_items': totalItems,
-        'whole_total_points': totalItems,
+        'whole_total_points': totalPoints,
         'question_types': _selectedQuestionTypes,
         'selected_topic_indices': selectedIndices,
         'subcolumn_a_hours': hoursMap,
@@ -448,11 +466,38 @@ class _InputPageState extends State<InputPage>
     }
   }
 
+  // ─── Download Generated Files ──────────────────────────────────────────────────
+  Future<void> _downloadFile(String endpoint) async {
+    if (_uploadResult == null) return;
+
+    final uploadId = _uploadResult!['upload_id'];
+    final url = Uri.parse(
+      '${ApiConfig.baseUrl}/questions/export/$endpoint?upload_id=$uploadId',
+    );
+
+    try {
+      // Bypassing canLaunchUrl as it often returns false negatives on Android 11+
+      final launched = await launchUrl(
+        url,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!launched) {
+        setState(
+          () => _error = 'Could not open the browser to download the file.',
+        );
+      }
+    } catch (e) {
+      setState(() => _error = 'Download failed: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       body: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -517,14 +562,14 @@ class _InputPageState extends State<InputPage>
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
+                    color: Colors.black.withOpacity(0.06),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
                 ],
               ),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   TabBar(
                     controller: _tabController,
@@ -541,19 +586,9 @@ class _InputPageState extends State<InputPage>
                       Tab(text: 'Upload File'),
                     ],
                   ),
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    height: _tabController.index == 0
-                        ? (_isAddingNewSubject ? 490 : 390)
-                        : (_generationResult != null
-                              ? 1100
-                              : (_uploadResult != null ? 1000 : 450)),
-                    child: TabBarView(
-                      controller: _tabController,
-                      physics: const NeverScrollableScrollPhysics(),
-                      children: [_buildManualTab(), _buildUploadTab()],
-                    ),
-                  ),
+                  _tabController.index == 0
+                      ? _buildManualTab()
+                      : _buildUploadTab(),
                 ],
               ),
             ),
@@ -794,7 +829,7 @@ class _InputPageState extends State<InputPage>
                     : Colors.grey.shade300,
               ),
               color: _duplicateWarning.isNotEmpty
-                  ? Colors.orange.withValues(alpha: 0.02)
+                  ? Colors.orange.withOpacity(0.02)
                   : Colors.white,
               borderRadius: BorderRadius.circular(8),
             ),
@@ -887,7 +922,7 @@ class _InputPageState extends State<InputPage>
 
   // ─── Upload Tab Implementation ───────────────────────────────────────────────
   Widget _buildUploadTab() {
-    return SingleChildScrollView(
+    return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -968,7 +1003,163 @@ class _InputPageState extends State<InputPage>
 
           if (_uploadResult != null) ...[
             const SizedBox(height: 24),
-            _buildStepHeader(2, 'Detected Subject & Topics'),
+            _buildStepHeader(2, 'Question Types Selection'),
+            const SizedBox(height: 8),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                childAspectRatio: 3.2,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
+              itemCount: _questionTypeOptions.length,
+              itemBuilder: (context, index) {
+                final typeOption = _questionTypeOptions[index];
+                final String typeValue = typeOption["value"]!;
+                final bool isSelected = _selectedQuestionTypes.contains(
+                  typeValue,
+                );
+
+                return InkWell(
+                  onTap: () {
+                    setState(() {
+                      if (isSelected) {
+                        _selectedQuestionTypes.remove(typeValue);
+                      } else {
+                        _selectedQuestionTypes.add(typeValue);
+                      }
+                    });
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? const Color(0xFFFFF5F5)
+                          : Colors.white,
+                      border: Border.all(
+                        color: isSelected ? primaryColor : Colors.grey.shade300,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Row(
+                      children: [
+                        Checkbox(
+                          activeColor: primaryColor,
+                          value: isSelected,
+                          onChanged: (bool? checked) {
+                            setState(() {
+                              if (checked == true) {
+                                _selectedQuestionTypes.add(typeValue);
+                              } else {
+                                _selectedQuestionTypes.remove(typeValue);
+                              }
+                            });
+                          },
+                        ),
+                        Expanded(
+                          child: Text(
+                            typeOption["label"]!,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+
+            const SizedBox(height: 24),
+            _buildStepHeader(3, 'Number of Items & Points'),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Total Points',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: _totalPointsController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          signed: false,
+                          decimal: false,
+                        ),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: InputDecoration(
+                          hintText: 'e.g. 50',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Total Items',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: _totalItemsController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          signed: false,
+                          decimal: false,
+                        ),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: InputDecoration(
+                          hintText: 'e.g. 50',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 24),
+            _buildStepHeader(4, 'Detected Subject & Main Topics'),
             const SizedBox(height: 12),
             Container(
               width: double.infinity,
@@ -1043,8 +1234,9 @@ class _InputPageState extends State<InputPage>
                       activeColor: primaryColor,
                       onChanged: (v) {
                         setState(() {
-                          if (_topicSelected.length > index)
+                          if (_topicSelected.length > index) {
                             _topicSelected[index] = v ?? false;
+                          }
                         });
                       },
                     ),
@@ -1063,14 +1255,11 @@ class _InputPageState extends State<InputPage>
                       child: TextField(
                         controller: _topicHoursControllers.length > index
                             ? _topicHoursControllers[index]
-                            : TextEditingController(text: '1'),
+                            : TextEditingController(text: '3.0'),
                         keyboardType: const TextInputType.numberWithOptions(
                           signed: false,
-                          decimal: false,
+                          decimal: true,
                         ),
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
                         decoration: InputDecoration(
                           hintText: 'hrs',
                           contentPadding: const EdgeInsets.symmetric(
@@ -1098,106 +1287,8 @@ class _InputPageState extends State<InputPage>
             })),
 
             const SizedBox(height: 24),
-            _buildStepHeader(3, 'Question Types Selection'),
-            const SizedBox(height: 8),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                childAspectRatio: 3.2,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-              ),
-              itemCount: _questionTypeOptions.length,
-              itemBuilder: (context, index) {
-                final typeOption = _questionTypeOptions[index];
-                final String typeValue = typeOption["value"]!;
-                final bool isSelected = _selectedQuestionTypes.contains(
-                  typeValue,
-                );
-
-                return InkWell(
-                  onTap: () {
-                    setState(() {
-                      if (isSelected) {
-                        _selectedQuestionTypes.remove(typeValue);
-                      } else {
-                        _selectedQuestionTypes.add(typeValue);
-                      }
-                    });
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? const Color(0xFFFFF5F5)
-                          : Colors.white,
-                      border: Border.all(
-                        color: isSelected ? primaryColor : Colors.grey.shade300,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: Row(
-                      children: [
-                        Checkbox(
-                          activeColor: primaryColor,
-                          value: isSelected,
-                          onChanged: (bool? checked) {
-                            setState(() {
-                              if (checked == true) {
-                                _selectedQuestionTypes.add(typeValue);
-                              } else {
-                                _selectedQuestionTypes.remove(typeValue);
-                              }
-                            });
-                          },
-                        ),
-                        Expanded(
-                          child: Text(
-                            typeOption["label"]!,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-
-            const SizedBox(height: 24),
-            _buildStepHeader(4, 'Number of Items'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _totalItemsController,
-              keyboardType: const TextInputType.numberWithOptions(
-                signed: false,
-                decimal: false,
-              ),
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                hintText: 'Enter total number of questions (e.g. 50)',
-                hintStyle: const TextStyle(fontSize: 13, color: Colors.grey),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-              ),
-              onChanged: (_) => setState(() {}),
-              autofocus: _tabController.index == 1,
-            ),
-            const SizedBox(height: 10),
             const Text(
-              'Tap the button below once you have selected topics, question types, and total item count to generate the TOS matrix.',
+              'Tap the button below once you have configured parameters to generate the TOS matrix.',
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
             const SizedBox(height: 12),
@@ -1256,38 +1347,320 @@ class _InputPageState extends State<InputPage>
             const SizedBox(height: 24),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: const Color(0xFFF0FDF4),
-                border: Border.all(color: const Color(0xFF86EFAC)),
+                border: Border.all(color: const Color(0xFFBBF7D0)),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
+                  const Text(
+                    '✓ Table of Specifications & Question Sheets Matrix Saved',
+                    style: TextStyle(
+                      color: Color(0xFF166534),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Items successfully saved inside the primary Question Bank registry rows.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Download Buttons Row matched to React version
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
-                      const Icon(
-                        Icons.check_circle,
-                        color: Color(0xFF16A34A),
-                        size: 18,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _generationResult!['message'] ?? '',
-                          style: const TextStyle(
-                            color: Color(0xFF16A34A),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue.shade600,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          elevation: 1,
+                        ),
+                        onPressed: () => _downloadFile('tos'),
+                        child: const Text(
+                          'Download Institutional TOS (.xlsx)',
+                          style: TextStyle(
+                            fontSize: 11,
                             fontWeight: FontWeight.bold,
-                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.purple.shade600,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          elevation: 1,
+                        ),
+                        onPressed: () => _downloadFile('assessment/docx'),
+                        child: const Text(
+                          'Download Test (.docx)',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red.shade600,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          elevation: 1,
+                        ),
+                        onPressed: () => _downloadFile('assessment/pdf'),
+                        child: const Text(
+                          'Download Test (.pdf)',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+
+                  const SizedBox(height: 24),
+
+                  // Web-styled TOS Summary Card
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border.all(color: Colors.grey.shade200),
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.03),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Table of Specifications Summary',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'This summary reflects the topic distribution, Bloom\'s taxonomy weights, and item counts used to generate the assessment.',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                const Text(
+                                  'Total Generated Questions',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                                Text(
+                                  '${_generationResult!['total_questions']}',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF15803D),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Render each topic block
+                        ...(_generationResult!['tos'] as List).map(
+                          (row) => Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.grey.shade200),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            row['topic'],
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.black87,
+                                            ),
+                                          ),
+                                          if (row['ilo'] != null &&
+                                              row['ilo']
+                                                  .toString()
+                                                  .isNotEmpty) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              row['ilo'],
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                          ] else ...[
+                                            const SizedBox(height: 4),
+                                            const Text(
+                                              'No ILO provided',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Items: ${row['total_items']}',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.black87,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'Weight: ${row['weight']}%',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.black87,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+
+                                // Bloom's breakdown grid styled like web
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children:
+                                      (row['bloom_breakdown']
+                                              as Map<String, dynamic>)
+                                          .entries
+                                          .map(
+                                            (entry) => Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 6,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white,
+                                                border: Border.all(
+                                                  color: Colors.grey.shade200,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                              ),
+                                              child: Column(
+                                                children: [
+                                                  Text(
+                                                    entry.key,
+                                                    style: const TextStyle(
+                                                      fontSize: 10,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: Colors.black87,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    '${entry.value['total']} item${entry.value['total'] == 1 ? '' : 's'}',
+                                                    style: const TextStyle(
+                                                      fontSize: 10,
+                                                      color: Colors.grey,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          )
+                                          .toList(),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // ─── ADDED: Generated Questions Preview Block ────────────────
+                  const SizedBox(height: 24),
                   const Text(
-                    'TABLE OF SPECIFICATION',
+                    'GENERATED PREVIEW SEGMENTED BY COGNITIVE TAXONOMY TIER',
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
@@ -1295,82 +1668,239 @@ class _InputPageState extends State<InputPage>
                       letterSpacing: 0.5,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  ...(_generationResult!['tos'] as List).map(
-                    (row) => Container(
-                      margin: const EdgeInsets.only(bottom: 6),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade200),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  row['topic'],
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                '${row['weight']}% • ${row['total_items']} items',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: primaryColor,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
+                  const SizedBox(height: 12),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border.all(color: Colors.grey.shade200),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      children: [
+                        // Horizontal Bloom's Level Tabs
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(8),
+                            ),
+                            border: Border(
+                              bottom: BorderSide(color: Colors.grey.shade200),
+                            ),
                           ),
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 4,
-                            children:
-                                (row['bloom_breakdown'] as Map<String, dynamic>)
-                                    .entries
-                                    .map(
-                                      (entry) => Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 3,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.grey.shade100,
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          '${entry.key}: ${entry.value['total']}',
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.grey,
-                                          ),
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            physics: const BouncingScrollPhysics(),
+                            child: Row(
+                              children: _bloomsLevels.map((level) {
+                                final count =
+                                    ((_generationResult!['questions_preview'] ??
+                                                [])
+                                            as List)
+                                        .where((q) => q['bloom_level'] == level)
+                                        .length;
+                                final isSelected = _previewBloomTab == level;
+
+                                return InkWell(
+                                  onTap: () =>
+                                      setState(() => _previewBloomTab = level),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 12,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? Colors.white
+                                          : Colors.transparent,
+                                      border: Border(
+                                        bottom: BorderSide(
+                                          color: isSelected
+                                              ? primaryColor
+                                              : Colors.transparent,
+                                          width: 2,
                                         ),
                                       ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Text(
+                                          level,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: isSelected
+                                                ? FontWeight.bold
+                                                : FontWeight.w500,
+                                            color: isSelected
+                                                ? primaryColor
+                                                : Colors.grey.shade600,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey.shade200,
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            '$count',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.grey.shade700,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                        // Questions List Preview
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          height: 320,
+                          child: ListView(
+                            physics: const BouncingScrollPhysics(),
+                            children:
+                                ((_generationResult!['questions_preview'] ?? [])
+                                        as List)
+                                    .where(
+                                      (q) =>
+                                          q['bloom_level'] == _previewBloomTab,
                                     )
+                                    .map((q) {
+                                      return Container(
+                                        margin: const EdgeInsets.only(
+                                          bottom: 12,
+                                        ),
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey.shade50,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.grey.shade200,
+                                          ),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment
+                                                      .spaceBetween,
+                                              children: [
+                                                Expanded(
+                                                  child: RichText(
+                                                    text: TextSpan(
+                                                      text:
+                                                          'Syllabus Reference: ',
+                                                      style: const TextStyle(
+                                                        fontSize: 10,
+                                                        color: Colors.grey,
+                                                      ),
+                                                      children: [
+                                                        TextSpan(
+                                                          text: q['topic_name'],
+                                                          style:
+                                                              const TextStyle(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                                color: Colors
+                                                                    .black87,
+                                                              ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 6,
+                                                        vertical: 2,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(
+                                                      0xFFFEF2F2,
+                                                    ),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          4,
+                                                        ),
+                                                  ),
+                                                  child: Text(
+                                                    q['type']
+                                                        .toString()
+                                                        .toUpperCase(),
+                                                    style: const TextStyle(
+                                                      fontSize: 9,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: Color(0xFF991B1B),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              q['question'],
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w500,
+                                                color: Colors.black87,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 4,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFF0FDF4),
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                                border: Border.all(
+                                                  color: const Color(
+                                                    0xFFBBF7D0,
+                                                  ),
+                                                ),
+                                              ),
+                                              child: Text(
+                                                '✓ Answer Key: ${q['correct_answer']}',
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Color(0xFF166534),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    })
                                     .toList(),
                           ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '✅ ${_generationResult!['total_questions']} questions saved to Question Bank!',
-                    style: const TextStyle(
-                      color: Color(0xFF16A34A),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
+                        ),
+                      ],
                     ),
                   ),
                 ],
