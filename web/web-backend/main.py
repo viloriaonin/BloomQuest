@@ -1,8 +1,8 @@
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, status, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, status, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text
 from dotenv import load_dotenv
@@ -16,12 +16,16 @@ from datetime import datetime, timedelta
 import logging
 import os
 import random
+import re
+import hashlib
+import hmac
+import secrets
+import time
+from collections import defaultdict
 from routers import assessment 
 from routers import questions
 from routers.assessment import build_assessment_docx, cleanup_file
 from routers import activity
-from pydantic import BaseModel
-import secrets
 import smtplib
 import string
 import pythoncom
@@ -33,6 +37,22 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "database.env"))
+
+EMAIL_REGEX = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$")
+SAFE_NAME_REGEX = re.compile(r"^[A-Za-zÀ-ÿ\u00C0-\u024F .'-]{2,100}$")
+ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".xls"}
+DENIED_UPLOAD_EXTENSIONS = {".exe", ".bat", ".cmd", ".scr", ".com", ".jar", ".ps1", ".php", ".jsp", ".html", ".svg", ".js", ".ts", ".py"}
+DISALLOWED_MIME_SIGNATURES = {
+    "image/png": b"\x89PNG\r\n\x1a\n",
+    "image/jpeg": b"\xff\xd8\xff",
+    "image/gif": b"GIF87a",
+    "image/gif": b"GIF89a",
+    "image/webp": b"RIFF",
+}
+MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
+RATE_LIMIT_WINDOW_SECONDS = 300
+RATE_LIMIT_MAX_REQUESTS = 5
+RATE_LIMIT_BUCKETS = defaultdict(list)
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -118,51 +138,197 @@ contact_admin_pending_requests = {}
 # Allow React frontend to talk to this backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173").split(","),
     allow_credentials=False,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
 
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=()"
+    return response
+
+
 class LoginRequest(BaseModel):
-    email: str
-    password: str
+    email: str = Field(..., min_length=5, max_length=255)
+    password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = normalize_email(value)
+        if not EMAIL_REGEX.fullmatch(normalized):
+            raise ValueError("Please provide a valid email address.")
+        return normalized
+
 
 class ForgotPasswordRequest(BaseModel):
-    email: str
+    email: str = Field(..., min_length=5, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = normalize_email(value)
+        if not EMAIL_REGEX.fullmatch(normalized):
+            raise ValueError("Please provide a valid email address.")
+        return normalized
+
 
 class VerifyOtpRequest(BaseModel):
-    email: str
-    otp: str
+    email: str = Field(..., min_length=5, max_length=255)
+    otp: str = Field(..., min_length=4, max_length=8)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = normalize_email(value)
+        if not EMAIL_REGEX.fullmatch(normalized):
+            raise ValueError("Please provide a valid email address.")
+        return normalized
+
 
 class ResetPasswordRequest(BaseModel):
-    email: str
-    otp: str
-    new_password: str
+    email: str = Field(..., min_length=5, max_length=255)
+    otp: str = Field(..., min_length=4, max_length=8)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = normalize_email(value)
+        if not EMAIL_REGEX.fullmatch(normalized):
+            raise ValueError("Please provide a valid email address.")
+        return normalized
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        error = validate_password_strength(value)
+        if error:
+            raise ValueError(error)
+        return value
+
 
 # Pydantic schema for account request submissions
 class AccountRequestPayload(BaseModel):
-    full_name: str
-    department: str
-    email: str
+    full_name: str = Field(..., min_length=2, max_length=100)
+    department: str = Field(..., min_length=2, max_length=100)
+    email: str = Field(..., min_length=5, max_length=255)
+
+    @field_validator("full_name")
+    @classmethod
+    def validate_full_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not SAFE_NAME_REGEX.fullmatch(cleaned):
+            raise ValueError("Please provide a valid full name.")
+        return cleaned
+
+    @field_validator("department")
+    @classmethod
+    def validate_department(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned or len(cleaned) > 100:
+            raise ValueError("Please provide a valid department name.")
+        return cleaned
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = normalize_email(value)
+        if not EMAIL_REGEX.fullmatch(normalized):
+            raise ValueError("Please provide a valid email address.")
+        return normalized
+
 
 class ContactAdminOtpRequest(BaseModel):
-    full_name: str
-    department: str
-    email: str
+    full_name: str = Field(..., min_length=2, max_length=100)
+    department: str = Field(..., min_length=2, max_length=100)
+    email: str = Field(..., min_length=5, max_length=255)
+
+    @field_validator("full_name")
+    @classmethod
+    def validate_full_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not SAFE_NAME_REGEX.fullmatch(cleaned):
+            raise ValueError("Please provide a valid full name.")
+        return cleaned
+
+    @field_validator("department")
+    @classmethod
+    def validate_department(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned or len(cleaned) > 100:
+            raise ValueError("Please provide a valid department name.")
+        return cleaned
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = normalize_email(value)
+        if not EMAIL_REGEX.fullmatch(normalized):
+            raise ValueError("Please provide a valid email address.")
+        return normalized
+
 
 class AccountActionRequest(BaseModel):
-    email: str
+    email: str = Field(..., min_length=5, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = normalize_email(value)
+        if not EMAIL_REGEX.fullmatch(normalized):
+            raise ValueError("Please provide a valid email address.")
+        return normalized
+
 
 class AdminVerifyRequest(BaseModel):
-    admin_email: str
-    admin_password: str
-    target_email: str
+    admin_email: str = Field(..., min_length=5, max_length=255)
+    admin_password: str = Field(..., min_length=8, max_length=128)
+    target_email: str = Field(..., min_length=5, max_length=255)
+
+    @field_validator("admin_email")
+    @classmethod
+    def validate_admin_email(cls, value: str) -> str:
+        normalized = normalize_email(value)
+        if not EMAIL_REGEX.fullmatch(normalized):
+            raise ValueError("Please provide a valid email address.")
+        return normalized
+
+    @field_validator("target_email")
+    @classmethod
+    def validate_target_email(cls, value: str) -> str:
+        normalized = normalize_email(value)
+        if not EMAIL_REGEX.fullmatch(normalized):
+            raise ValueError("Please provide a valid email address.")
+        return normalized
+
 
 class UpdatePasswordRequest(BaseModel):
-    email: str
-    new_password: str
+    email: str = Field(..., min_length=5, max_length=255)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = normalize_email(value)
+        if not EMAIL_REGEX.fullmatch(normalized):
+            raise ValueError("Please provide a valid email address.")
+        return normalized
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        error = validate_password_strength(value)
+        if error:
+            raise ValueError(error)
+        return value
 
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
@@ -171,20 +337,85 @@ SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "")
 
 
 def normalize_email(value: str) -> str:
-    """Normalize and correct common typos in email addresses.
-
-    - Trim whitespace
-    - Lowercase
-    - Replace common accidental separators (commas, semicolons) in the domain part with dots
-    """
-    raw = str(value or "").strip()
+    """Normalize and correct common typos in email addresses."""
+    raw = str(value or "").strip().lower()
     if "@" not in raw:
-        return raw.lower()
+        return raw
 
-    local, sep, domain = raw.partition("@")
-    # Replace commas/semicolons and collapse whitespace in domain
+    local, _, domain = raw.partition("@")
     domain = domain.replace(",", ".").replace(";", ".").replace(" ", "")
-    return f"{local}@{domain}".lower()
+    return f"{local}@{domain}"
+
+
+def hash_password(password: str) -> str:
+    if not password:
+        return ""
+    salt = secrets.token_bytes(16)
+    derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 200_000)
+    return f"pbkdf2_sha256$200000${salt.hex()}${derived.hex()}"
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    if not password or not stored_hash:
+        return False
+
+    if stored_hash.startswith("pbkdf2_sha256$"):
+        _, iterations_str, salt_hex, digest_hex = stored_hash.split("$", 3)
+        try:
+            iterations = int(iterations_str)
+        except ValueError:
+            return False
+        salt = bytes.fromhex(salt_hex)
+        derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+        return hmac.compare_digest(derived.hex(), digest_hex)
+
+    return hmac.compare_digest(password, stored_hash)
+
+
+def validate_password_strength(password: str) -> str | None:
+    if len(password) < 8:
+        return "Password must be at least 8 characters long."
+    if not any(char.isupper() for char in password):
+        return "Password must include at least one uppercase letter."
+    if not any(char.isdigit() for char in password):
+        return "Password must include at least one number."
+    if not any(not char.isalnum() for char in password):
+        return "Password must include at least one symbol."
+    return None
+
+
+async def read_upload_bytes(file: UploadFile, field_name: str, max_size: int = MAX_UPLOAD_SIZE_BYTES) -> bytes:
+    filename = (file.filename or "").strip()
+    if not filename:
+        raise HTTPException(status_code=400, detail=f"{field_name} filename is required.")
+
+    extension = os.path.splitext(filename)[1].lower()
+    if extension in DENIED_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"{field_name} type is not allowed.")
+    if extension not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported {field_name} file type. Use PDF, DOCX, XLSX, or XLS.")
+
+    contents = await file.read()
+    if len(contents) > max_size:
+        raise HTTPException(status_code=413, detail=f"{field_name} is too large. Maximum size is 10MB.")
+
+    if contents.startswith(b"\x25PDF"):
+        return contents
+
+    for signature_name, signature in DISALLOWED_MIME_SIGNATURES.items():
+        if contents.startswith(signature):
+            raise HTTPException(status_code=400, detail=f"{field_name} must be a document file, not an image.")
+
+    return contents
+
+
+def enforce_rate_limit(scope: str, key: str) -> None:
+    now = time.time()
+    bucket = RATE_LIMIT_BUCKETS[f"{scope}:{key}"]
+    bucket[:] = [timestamp for timestamp in bucket if now - timestamp < RATE_LIMIT_WINDOW_SECONDS]
+    if len(bucket) >= RATE_LIMIT_MAX_REQUESTS:
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait a few minutes and try again.")
+    bucket.append(now)
 
 
 def generate_temporary_password(length: int = 12) -> str:
@@ -391,7 +622,8 @@ def _cleanup_otp(email: str):
 
 @app.post("/api/forgot-password/send-otp")
 def send_otp(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.email == data.email).first()
+    enforce_rate_limit("otp", data.email)
+    user = db.query(models.User).filter(func.lower(models.User.email) == data.email).first()
     if not user:
         raise HTTPException(status_code=404, detail="No account found for this email.")
 
@@ -416,6 +648,7 @@ def send_otp(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
 
 @app.post("/api/forgot-password/verify-otp")
 def verify_otp(data: VerifyOtpRequest):
+    enforce_rate_limit("otp-verify", data.email)
     _cleanup_otp(data.email)
     record = otp_store.get(data.email)
     if not record or record["otp"] != data.otp:
@@ -425,16 +658,17 @@ def verify_otp(data: VerifyOtpRequest):
 
 @app.patch("/api/forgot-password/reset")
 def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
+    enforce_rate_limit("password-reset", data.email)
     _cleanup_otp(data.email)
     record = otp_store.get(data.email)
     if not record or record["otp"] != data.otp:
         raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
 
-    user = db.query(models.User).filter(models.User.email == data.email).first()
+    user = db.query(models.User).filter(func.lower(models.User.email) == data.email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
 
-    user.password = data.new_password
+    user.password = hash_password(data.new_password)
     db.commit()
     otp_store.pop(data.email, None)
 
@@ -442,11 +676,13 @@ def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
 
 @app.post("/api/login")
 def login(data: LoginRequest, db: Session = Depends(get_db)):
-    # Find user in database
-    user = db.query(models.User).filter(
-        models.User.email == data.email,
-        models.User.password == data.password
-    ).first()
+    enforce_rate_limit("login", data.email)
+    user = db.query(models.User).filter(func.lower(models.User.email) == data.email).first()
+
+    if user and verify_password(data.password, user.password):
+        pass
+    else:
+        user = None
 
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password.")
@@ -556,7 +792,7 @@ async def approve_account_request(payload: AccountActionRequest, background_task
 
     existing_user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
     if existing_user:
-        existing_user.password = temp_password
+        existing_user.password = hash_password(temp_password)
         existing_user.role = "faculty"
         existing_user.archived = False
         existing_user.department = department
@@ -564,7 +800,7 @@ async def approve_account_request(payload: AccountActionRequest, background_task
     else:
         new_user = models.User(
             email=normalized_email,
-            password=temp_password,
+            password=hash_password(temp_password),
             role="faculty",
             archived=False,
             name=full_name,
@@ -609,7 +845,7 @@ def update_user_password(payload: UpdatePasswordRequest, db: Session = Depends(g
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
 
-    user.password = payload.new_password
+    user.password = hash_password(payload.new_password)
     db.commit()
 
     return {"message": "Password updated successfully."}
@@ -642,10 +878,11 @@ def verify_admin_password(payload: AdminVerifyRequest, db: Session = Depends(get
     admin_user = (
         db.query(models.User)
         .filter(func.lower(models.User.email) == normalized_admin_email,
-                models.User.password == payload.admin_password,
                 models.User.role == "admin")
         .first()
     )
+    if admin_user and not verify_password(payload.admin_password, admin_user.password):
+        admin_user = None
     if not admin_user:
         raise HTTPException(status_code=403, detail="Invalid admin credentials.")
 
@@ -812,14 +1049,16 @@ def debug_list_users(db: Session = Depends(get_db)):
 
 @app.post("/api/upload")
 async def upload_files(
+    request: Request,
     module_file: UploadFile = File(...),
     syllabus_file: UploadFile = File(...),
     subject_id: Optional[int] = Form(None),
     db: Session = Depends(get_db)
 ):
     try:
-        module_bytes = await module_file.read()
-        syllabus_bytes = await syllabus_file.read()
+        enforce_rate_limit("upload", request.client.host if request.client else "unknown")
+        module_bytes = await read_upload_bytes(module_file, "module_file")
+        syllabus_bytes = await read_upload_bytes(syllabus_file, "syllabus_file")
         module_text = extract_text(module_bytes, module_file.filename)
         syllabus_text = extract_text(syllabus_bytes, syllabus_file.filename)
 

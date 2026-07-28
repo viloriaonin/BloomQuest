@@ -1,5 +1,6 @@
 import math
 from collections import defaultdict
+from pathlib import Path
 
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
@@ -34,6 +35,138 @@ SUPPORTED_QUESTION_TYPES = [
     "Matching Type",
     "Situational"
 ]
+
+
+TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "tos_template.xlsx"
+
+
+def _normalize_header(value):
+    if value is None:
+        return ""
+    return str(value).strip().lower()
+
+
+def _load_tos_template_workbook():
+    if TEMPLATE_PATH.exists():
+        try:
+            return openpyxl.load_workbook(TEMPLATE_PATH)
+        except Exception:
+            pass
+    return openpyxl.Workbook()
+
+
+def _find_header_row(ws):
+    for row in ws.iter_rows(min_row=1, max_row=50, max_col=40):
+        normalized = [_normalize_header(cell.value) for cell in row]
+        if any("topics" in cell for cell in normalized) and any("ilo" in cell for cell in normalized):
+            return row[0].row
+    return None
+
+
+def _guess_template_columns(ws, header_row):
+    cols = {}
+    normalized = [_normalize_header(ws.cell(row=header_row, column=c).value) for c in range(1, 41)]
+    for idx, val in enumerate(normalized, start=1):
+        if not val:
+            continue
+        if "topics" in val and "topic outcomes" not in val:
+            cols["topic_name"] = idx
+        elif "ilo" in val and "outcome" not in val:
+            cols["ilo"] = idx
+        elif "no. of hrs" in val or "hrs" in val or "hours" in val:
+            cols["hours_a"] = idx
+        elif "weight" in val:
+            cols["weight"] = idx
+        elif "total no. of points" in val or "total no. of point" in val:
+            cols["total_points"] = idx
+        elif "remember" in val:
+            cols["remember"] = idx
+        elif "understand" in val:
+            cols["understand"] = idx
+        elif val.startswith("apply"):
+            cols["apply"] = idx
+        elif "analyze" in val:
+            cols["analyze"] = idx
+        elif "evaluate" in val:
+            cols["evaluate"] = idx
+        elif "create" in val:
+            cols["create"] = idx
+    return cols
+
+
+def _write_course_label(ws, label_key, value):
+    label_key = label_key.lower()
+    for row in ws.iter_rows(min_row=1, max_row=40, max_col=10):
+        for cell in row:
+            cell_value = _normalize_header(cell.value)
+            if label_key in cell_value:
+                if ":" in str(cell.value):
+                    cell.value = f"{str(cell.value).split(':', 1)[0].strip()}: {value}"
+                else:
+                    right = ws.cell(row=cell.row, column=cell.column + 1)
+                    if right.value is None or str(right.value).strip() == "":
+                        right.value = value
+                    else:
+                        cell.value = f"{str(cell.value).strip()}: {value}"
+                return
+
+
+def _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_total_points):
+    topic_col = cols.get("topic_name", 2)
+    ilo_col = cols.get("ilo", 3)
+    hours_col = cols.get("hours_a", 4)
+    minutes_col = cols.get("minutes_b", 5)
+    weight_col = cols.get("weight", 6)
+    total_col = cols.get("total_points", 19)
+
+    bloom_cols = {
+        "Remember": cols.get("remember", 7),
+        "Understand": cols.get("understand", 9),
+        "Apply": cols.get("apply", 11),
+        "Analyze": cols.get("analyze", 13),
+        "Evaluate": cols.get("evaluate", 15),
+        "Create": cols.get("create", 17),
+    }
+
+    num_topics = len(selected_topics_data)
+    total_row_index = start_row + num_topics
+
+    for i, topic in enumerate(selected_topics_data):
+        current_row = start_row + i
+        ws.cell(row=current_row, column=topic_col, value=topic["topic_name"])
+        ws.cell(row=current_row, column=ilo_col, value=topic.get("ilo", f"ILO {topic.get('ilo_num', 1)}"))
+        ws.cell(row=current_row, column=hours_col, value=float(topic["hours_a"]))
+        if minutes_col:
+            ws.cell(row=current_row, column=minutes_col, value=float(topic.get("minutes_b", 2.0)))
+        if weight_col:
+            ws.cell(row=current_row, column=weight_col, value=f"=IFERROR({get_column_letter(total_col)}{current_row}/$S${total_row_index}*100,0)")
+
+        for bloom_level, col in bloom_cols.items():
+            ws.cell(row=current_row, column=col, value=topic.get("bloom_counts", {}).get(bloom_level, 0))
+            pct_col = col + 1
+            ws.cell(row=current_row, column=pct_col, value=f"=IFERROR(({get_column_letter(col)}{current_row}/$S${total_row_index})*100,0)")
+
+        ws.cell(row=current_row, column=total_col, value=f"=SUM({','.join(get_column_letter(bc) + str(current_row) for bc in bloom_cols.values())})")
+
+    if ws.cell(row=total_row_index, column=2).value is None:
+        ws.cell(row=total_row_index, column=2, value="Total")
+    if hours_col and ws.cell(row=total_row_index, column=hours_col).value is None:
+        ws.cell(row=total_row_index, column=hours_col, value=f"=SUM({get_column_letter(hours_col)}{start_row}:{get_column_letter(hours_col)}{total_row_index-1})")
+    if total_col and ws.cell(row=total_row_index, column=total_col).value is None:
+        ws.cell(row=total_row_index, column=total_col, value=f"=SUM({get_column_letter(total_col)}{start_row}:{get_column_letter(total_col)}{total_row_index-1})")
+
+    actual_total = sum(
+        sum(t.get("bloom_counts", {}).get(level, 0) for level in BLOOM_LEVELS)
+        for t in selected_topics_data
+    )
+    if whole_total_points and actual_total != whole_total_points:
+        warning_row = total_row_index + 2
+        warning_cell = ws.cell(row=warning_row, column=2, value=(
+            f"⚠ WARNING: Bloom's item counts sum to {actual_total}, "
+            f"but target Total No. of Points was {whole_total_points}. "
+            f"Re-check the TOS matrix before distributing this file."
+        ))
+        warning_cell.font = Font(name="Calibri", size=11, bold=True, color="CC0000")
 
 
 def normalize_question_types(question_types):
@@ -438,4 +571,41 @@ def generate_tos_from_institutional_template(selected_topics_data, course_code, 
     ws.column_dimensions['B'].width = 40
     ws.column_dimensions['S'].width = 24
     
+    return wb
+
+
+def generate_tos_from_excel_template(selected_topics_data, course_code, course_title, whole_total_points):
+    wb = _load_tos_template_workbook()
+    ws = wb.active
+    ws.views.sheetView[0].showGridLines = True
+
+    _write_course_label(ws, "course code", course_code or "IT 332")
+    _write_course_label(ws, "course title", course_title or "Integrative Programming and Technologies")
+
+    header_row = _find_header_row(ws)
+    if header_row is None:
+        header_row = 21
+
+    cols = _guess_template_columns(ws, header_row)
+    start_row = header_row + 2
+
+    if not cols:
+        cols = {
+            "topic_name": 2,
+            "ilo": 3,
+            "hours_a": 4,
+            "minutes_b": 5,
+            "weight": 6,
+            "remember": 7,
+            "understand": 9,
+            "apply": 11,
+            "analyze": 13,
+            "evaluate": 15,
+            "create": 17,
+            "total_points": 19,
+        }
+        start_row = 23
+
+    _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_total_points)
+
     return wb

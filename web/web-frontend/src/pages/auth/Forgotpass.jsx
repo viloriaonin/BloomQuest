@@ -47,6 +47,31 @@ const ForgotPassword = () => {
   const isValidEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
   const strength = getStrength(password);
 
+  const getErrorMessage = (payload) => {
+    if (!payload) return "Something went wrong. Please try again.";
+
+    if (typeof payload === "string") return payload;
+
+    if (Array.isArray(payload)) {
+      const parts = payload.map(getErrorMessage).filter(Boolean);
+      return parts.join(" ");
+    }
+
+    if (typeof payload === "object") {
+      if (typeof payload.detail === "string") return payload.detail;
+      if (typeof payload.message === "string") return payload.message;
+      if (Array.isArray(payload.detail)) return getErrorMessage(payload.detail);
+      if (payload.detail && typeof payload.detail === "object") {
+        if (typeof payload.detail.msg === "string") return payload.detail.msg;
+        if (typeof payload.detail.error === "string") return payload.detail.error;
+      }
+      if (typeof payload.error === "string") return payload.error;
+      return JSON.stringify(payload);
+    }
+
+    return String(payload);
+  };
+
   // ── Step 1: Email → send OTP ───────────────────────────────────
   const handleEmailSubmit = async () => {
     setError("");
@@ -63,7 +88,7 @@ const ForgotPassword = () => {
 
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setError(data.detail || "Unable to send reset code. Please check the email and try again.");
+        setError(getErrorMessage(data) || "Unable to send reset code. Please check the email and try again.");
         return;
       }
 
@@ -94,7 +119,7 @@ const ForgotPassword = () => {
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        setError(data.detail || "Incorrect code. Please try again.");
+        setError(getErrorMessage(data) || "Incorrect code. Please try again.");
         // Clear the OTP fields so the user can type again
         setOtp(["", "", "", "", "", ""]);
         otpRefs.current[0]?.focus();
@@ -114,7 +139,9 @@ const ForgotPassword = () => {
     setError("");
     if (!password)                   { setError("New password is required."); return; }
     if (password.length < 8)         { setError("Password must be at least 8 characters."); return; }
-    if (strength.score < 2)          { setError("Password is too weak. Add uppercase letters, numbers, or symbols."); return; }
+    if (!/[A-Z]/.test(password))      { setError("Password must include at least one uppercase letter."); return; }
+    if (!/[0-9]/.test(password))      { setError("Password must include at least one number."); return; }
+    if (!/[^A-Za-z0-9]/.test(password)) { setError("Password must include at least one symbol."); return; }
     if (password !== confirm)        { setError("Passwords do not match."); return; }
 
     setLoading(true);
@@ -127,7 +154,7 @@ const ForgotPassword = () => {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError(data.detail || data.message || "Failed to reset password. Please try again.");
+        setError(getErrorMessage(data) || "Failed to reset password. Please try again.");
         return;
       }
 
@@ -191,7 +218,7 @@ const ForgotPassword = () => {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setError(data.detail || "Unable to resend code. Please try again.");
+        setError(getErrorMessage(data) || "Unable to resend code. Please try again.");
         return;
       }
       showAlert("A new verification code has been sent to your email.");

@@ -1,4 +1,5 @@
 import io
+import os
 import re
 import json
 import logging
@@ -6,7 +7,7 @@ import uuid
 import openpyxl
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 from database import get_db
 import models
@@ -29,22 +30,97 @@ from ai_service import (
 from file_extractor import extract_text
 from routers.tos_utils import (
     compute_tos,
-    generate_tos_from_institutional_template,
+    generate_tos_from_excel_template,
 )
 
 router = APIRouter(prefix="/api/questions", tags=["Questions"])
 logger = logging.getLogger(__name__)
 
 FILE_CACHE = {}
+MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
+ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".docx", ".pptx", ".xlsx", ".xls"}
+DENIED_UPLOAD_EXTENSIONS = {".exe", ".bat", ".cmd", ".scr", ".com", ".jar", ".ps1", ".php", ".jsp", ".html", ".svg", ".js", ".ts", ".py"}
+DISALLOWED_MIME_SIGNATURES = {
+    "image/png": b"\x89PNG\r\n\x1a\n",
+    "image/jpeg": b"\xff\xd8\xff",
+    "image/gif": b"GIF87a",
+    "image/gif": b"GIF89a",
+    "image/webp": b"RIFF",
+}
 
 # Pydantic schema for Table of Specifications payload
 class TOSGenerationPayload(BaseModel):
-    upload_id: str
-    total_items: int
-    whole_total_points: int
-    question_types: list[str]
-    selected_topic_indices: list[int]
-    subcolumn_a_hours: dict[str, str]
+    upload_id: str = Field(..., min_length=1, max_length=128)
+    total_items: int = Field(..., ge=1, le=200)
+    whole_total_points: int = Field(..., ge=1, le=1000)
+    question_types: list[str] = Field(default_factory=list)
+    selected_topic_indices: list[int] = Field(default_factory=list)
+    subcolumn_a_hours: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("question_types")
+    @classmethod
+    def validate_question_types(cls, value: list[str]) -> list[str]:
+        allowed = {
+            "MCQ",
+            "True or False",
+            "True/False",
+            "Identification",
+            "Essay",
+            "Enumeration",
+            "Matching Type",
+            "Situational",
+            "Short Answer",
+        }
+        cleaned = []
+        for item in value:
+            item = str(item).strip()
+            if item in allowed:
+                cleaned.append(item)
+                continue
+
+            normalized = {
+                "true/false": "True/False",
+                "true or false": "True or False",
+                "short answer": "Short Answer",
+            }.get(item.lower())
+            if normalized:
+                cleaned.append(normalized)
+                continue
+
+            raise ValueError("Unsupported question type provided.")
+        return cleaned
+
+    @field_validator("selected_topic_indices")
+    @classmethod
+    def validate_selected_topic_indices(cls, value: list[int]) -> list[int]:
+        if any(idx < 0 for idx in value):
+            raise ValueError("Topic indices must be non-negative.")
+        return value
+
+
+async def read_upload_bytes(file: UploadFile, field_name: str, max_size: int = MAX_UPLOAD_SIZE_BYTES) -> bytes:
+    filename = (file.filename or "").strip()
+    if not filename:
+        raise HTTPException(status_code=400, detail=f"{field_name} filename is required.")
+
+    extension = os.path.splitext(filename)[1].lower()
+    if extension in DENIED_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"{field_name} type is not allowed.")
+    if extension not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported {field_name} file type. Use PDF, DOCX, PPTX, XLSX, or XLS.")
+
+    contents = await file.read()
+    if len(contents) > max_size:
+        raise HTTPException(status_code=413, detail=f"{field_name} is too large. Maximum size is 10MB.")
+
+    if contents.startswith(b"\x25PDF"):
+        return contents
+
+    for signature_name, signature in DISALLOWED_MIME_SIGNATURES.items():
+        if contents.startswith(signature):
+            raise HTTPException(status_code=400, detail=f"{field_name} must be a document file, not an image.")
+
+    return contents
 
 
 def parse_syllabus_pdf(contents: bytes):
@@ -275,12 +351,12 @@ async def upload_and_analyze_syllabus(
     db: Session = Depends(get_db)
 ):
     upload_id = uuid.uuid4().hex
-    filename = syllabus_file.filename.lower()
+    filename = (syllabus_file.filename or "").lower()
 
     try:
-        module_contents = await module_file.read()
+        module_contents = await read_upload_bytes(module_file, "module_file")
         module_text = extract_text(module_contents, module_file.filename)
-        contents = await syllabus_file.read()
+        contents = await read_upload_bytes(syllabus_file, "syllabus_file")
 
         if filename.endswith('.pdf'):
             course_title, course_code, detected_topics = parse_syllabus_pdf(contents)
@@ -404,7 +480,7 @@ async def generate_with_tos(
 
     FILE_CACHE[f"{payload.upload_id}_questions"] = generated_questions
 
-    workbook = generate_tos_from_institutional_template(
+    workbook = generate_tos_from_excel_template(
         selected_topics_data=selected_topics_data,
         course_code=subject_row.code,
         course_title=subject_row.name,

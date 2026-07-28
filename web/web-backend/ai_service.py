@@ -715,6 +715,24 @@ def _clean_markdown_noise(text: str) -> str:
     return text
 
 
+def _normalize_ai_value(value, default=""):
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value.strip() or default
+    if isinstance(value, dict):
+        normalized = " / ".join(
+            str(v).strip() for v in value.values() if v is not None and str(v).strip()
+        )
+        return normalized or default
+    if isinstance(value, list):
+        normalized = " / ".join(
+            str(item).strip() for item in value if item is not None and str(item).strip()
+        )
+        return normalized or default
+    return str(value).strip() or default
+
+
 def parse_syllabus_text_with_ai(full_text: str):
     """
     Parses raw syllabus text (including markdown-rendered tables) with the
@@ -733,16 +751,16 @@ def parse_syllabus_text_with_ai(full_text: str):
 
     formatted_topics = []
     for t in data.get("topics", []):
-        ilo_label = _extract_ilo_label(t.get("ilo_label", ""))
+        ilo_label = _extract_ilo_label(_normalize_ai_value(t.get("ilo_label", "")))
         formatted_topics.append({
-            "name": _clean_extracted_topic_name(t.get("name", "Untitled Topic Module")),
+            "name": _clean_extracted_topic_name(_normalize_ai_value(t.get("name", "Untitled Topic Module"))),
             "weight": 1.0,
             # Short "ILO N" label -- what's shown in the UI.
             "ilo": ilo_label or "Not specified in CIS -- please review.",
             # Full outcome description -- kept for question-generation
             # context (see generate_questions_from_tos below), not shown
             # verbatim in the UI anymore.
-            "ilo_description": _clean_topic_outcome(t.get("topic_outcome", "")),
+            "ilo_description": _clean_topic_outcome(_normalize_ai_value(t.get("topic_outcome", ""))),
         })
 
     return (
