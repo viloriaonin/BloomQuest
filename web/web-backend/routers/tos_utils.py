@@ -63,6 +63,51 @@ def _find_header_row(ws):
     return None
 
 
+def _find_total_row(ws, start_row, topic_col, max_search=200):
+    """Locate the template's built-in 'Total' row by scanning down the topic
+    name column. Used to figure out how many topic rows the template ships
+    with (base_rows = total_row - start_row), so we know whether we need to
+    add or remove rows for the actual number of topics being written."""
+    for r in range(start_row, start_row + max_search):
+        if _normalize_header(ws.cell(row=r, column=topic_col).value) == "total":
+            return r
+    return None
+
+
+def _resize_topic_row_block(ws, boundary_row, delta):
+    """Insert (delta > 0) or delete (delta < 0) rows at boundary_row so the
+    topic-row block exactly matches the number of topics being written.
+
+    openpyxl's insert_rows/delete_rows move cell values and styles but do
+    NOT move merged-cell ranges -- that's what caused the crash/misalignment
+    when topic counts didn't match the template's built-in 3 rows. So merges
+    at or below boundary_row are unmerged first, the rows are inserted or
+    deleted, and then those merges are re-created at their shifted position.
+    """
+    if delta == 0:
+        return
+
+    affected = [
+        (mc.min_row, mc.max_row, mc.min_col, mc.max_col)
+        for mc in list(ws.merged_cells.ranges)
+        if mc.min_row >= boundary_row
+    ]
+    for (min_row, max_row, min_col, max_col) in affected:
+        ws.unmerge_cells(start_row=min_row, start_column=min_col, end_row=max_row, end_column=max_col)
+
+    if delta > 0:
+        ws.insert_rows(boundary_row, delta)
+    else:
+        ws.delete_rows(boundary_row, -delta)
+
+    for (min_row, max_row, min_col, max_col) in affected:
+        new_min_row = min_row + delta
+        new_max_row = max_row + delta
+        if new_min_row < 1:
+            continue
+        ws.merge_cells(start_row=new_min_row, start_column=min_col, end_row=new_max_row, end_column=max_col)
+
+
 def _guess_template_columns(ws, header_row):
     cols = {}
     normalized = [_normalize_header(ws.cell(row=header_row, column=c).value) for c in range(1, 41)]
@@ -139,21 +184,59 @@ def _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_t
         if minutes_col:
             ws.cell(row=current_row, column=minutes_col, value=float(topic.get("minutes_b", 2.0)))
         if weight_col:
-            ws.cell(row=current_row, column=weight_col, value=f"=IFERROR({get_column_letter(total_col)}{current_row}/$S${total_row_index}*100,0)")
+            weight_cell = ws.cell(row=current_row, column=weight_col,
+                                    value=f"=IFERROR({get_column_letter(total_col)}{current_row}/$S${total_row_index}*100,0)")
+            # Formula already multiplies by 100 (e.g. 10 means "10%"). Excel's
+            # built-in '0%' number format would multiply by 100 AGAIN on
+            # display (10 -> "1000%"), which is exactly the bug the template
+            # shipped with on some of its percentage columns. Force a custom
+            # format that just appends a literal "%" without re-scaling.
+            weight_cell.number_format = '0.00"%"'
 
         for bloom_level, col in bloom_cols.items():
             ws.cell(row=current_row, column=col, value=topic.get("bloom_counts", {}).get(bloom_level, 0))
             pct_col = col + 1
-            ws.cell(row=current_row, column=pct_col, value=f"=IFERROR(({get_column_letter(col)}{current_row}/$S${total_row_index})*100,0)")
+            pct_cell = ws.cell(row=current_row, column=pct_col,
+                                 value=f"=IFERROR(({get_column_letter(col)}{current_row}/$S${total_row_index})*100,0)")
+            pct_cell.number_format = '0.00"%"'
 
         ws.cell(row=current_row, column=total_col, value=f"=SUM({','.join(get_column_letter(bc) + str(current_row) for bc in bloom_cols.values())})")
 
+    # Total row: always (re)write every formula from scratch, rather than only
+    # filling in blanks. "Only if None" let stale/leftover cell content (e.g.
+    # from a template built for a different topic count) survive untouched,
+    # which was the source of the mismatched-values bug. There is nothing to
+    # preserve here -- every one of these cells is derived, so it's always
+    # safe (and correct) to overwrite it on every generation.
+    last_data_row = total_row_index - 1
+
     if ws.cell(row=total_row_index, column=2).value is None:
         ws.cell(row=total_row_index, column=2, value="Total")
-    if hours_col and ws.cell(row=total_row_index, column=hours_col).value is None:
-        ws.cell(row=total_row_index, column=hours_col, value=f"=SUM({get_column_letter(hours_col)}{start_row}:{get_column_letter(hours_col)}{total_row_index-1})")
-    if total_col and ws.cell(row=total_row_index, column=total_col).value is None:
-        ws.cell(row=total_row_index, column=total_col, value=f"=SUM({get_column_letter(total_col)}{start_row}:{get_column_letter(total_col)}{total_row_index-1})")
+
+    if hours_col:
+        ws.cell(row=total_row_index, column=hours_col,
+                 value=f"=SUM({get_column_letter(hours_col)}{start_row}:{get_column_letter(hours_col)}{last_data_row})")
+
+    if total_col:
+        ws.cell(row=total_row_index, column=total_col,
+                 value=f"=SUM({get_column_letter(total_col)}{start_row}:{get_column_letter(total_col)}{last_data_row})")
+
+    if weight_col:
+        weight_total_cell = ws.cell(row=total_row_index, column=weight_col,
+                 value=f"=SUM({get_column_letter(weight_col)}{start_row}:{get_column_letter(weight_col)}{last_data_row})")
+        weight_total_cell.number_format = '0.00"%"'
+
+    # Bloom raw-count columns and their adjacent %-columns: sum each one down
+    # the actual data range (start_row..last_data_row), whatever that range
+    # turns out to be for this generation -- never a range baked in ahead of
+    # time.
+    for col in bloom_cols.values():
+        pct_col = col + 1
+        ws.cell(row=total_row_index, column=col,
+                 value=f"=SUM({get_column_letter(col)}{start_row}:{get_column_letter(col)}{last_data_row})")
+        pct_total_cell = ws.cell(row=total_row_index, column=pct_col,
+                 value=f"=SUM({get_column_letter(pct_col)}{start_row}:{get_column_letter(pct_col)}{last_data_row})")
+        pct_total_cell.number_format = '0.00"%"'
 
     actual_total = sum(
         sum(t.get("bloom_counts", {}).get(level, 0) for level in BLOOM_LEVELS)
@@ -606,6 +689,37 @@ def generate_tos_from_excel_template(selected_topics_data, course_code, course_t
         }
         start_row = 23
 
+    # The template ships with a fixed number of built-in topic rows (e.g. 3),
+    # with the Total row, signature block, and legend positioned right after
+    # them. If the actual number of topics differs, grow or shrink that block
+    # first so nothing gets overwritten (too few rows) or collides with the
+    # merged signature cells below it (too many rows) -- this was the cause
+    # of both the mismatched totals and the crash on larger topic counts.
+    topic_col = cols.get("topic_name", 2)
+    num_topics = len(selected_topics_data)
+    template_total_row = _find_total_row(ws, start_row, topic_col)
+    if template_total_row is not None:
+        base_rows = template_total_row - start_row
+        delta = num_topics - base_rows
+        if delta > 0:
+            _resize_topic_row_block(ws, start_row + base_rows, delta)
+        elif delta < 0:
+            _resize_topic_row_block(ws, start_row + num_topics, delta)
+
     _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_total_points)
+
+    # The template's column widths are inconsistent -- some %-columns (e.g.
+    # Understand, Apply) are a hair too narrow for a formatted value like
+    # "100.00%", which makes Excel show "####" instead of the number. Force
+    # every %-column (plus Weight) to a uniform, sufficiently wide column so
+    # this can't happen regardless of what the template shipped with.
+    from openpyxl.utils import get_column_letter as _gcl
+    pct_columns = [cols.get("weight", 6)] + [c + 1 for c in [
+        cols.get("remember", 7), cols.get("understand", 9), cols.get("apply", 11),
+        cols.get("analyze", 13), cols.get("evaluate", 15), cols.get("create", 17),
+    ]]
+    for col in pct_columns:
+        if col:
+            ws.column_dimensions[_gcl(col)].width = max(ws.column_dimensions[_gcl(col)].width or 0, 10)
 
     return wb
