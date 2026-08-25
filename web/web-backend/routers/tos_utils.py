@@ -40,6 +40,28 @@ SUPPORTED_QUESTION_TYPES = [
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "tos_template.xlsx"
 
 
+def check_totals_mismatch(selected_topics_data, whole_total_points):
+    """Compare the actual sum of Bloom's item counts against the target total
+    points. Used both to embed a warning cell in the generated Excel file and
+    to surface the same warning in the API response, so it isn't only visible
+    to someone who opens the file after the fact.
+
+    Returns (actual_total, mismatch_message_or_None).
+    """
+    actual_total = sum(
+        sum(t.get("bloom_counts", {}).get(level, 0) for level in BLOOM_LEVELS)
+        for t in selected_topics_data
+    )
+    if whole_total_points and actual_total != whole_total_points:
+        message = (
+            f"Bloom's item counts sum to {actual_total}, but the target "
+            f"Total No. of Points was {whole_total_points}. Re-check the "
+            f"TOS matrix before distributing this file."
+        )
+        return actual_total, message
+    return actual_total, None
+
+
 def _normalize_header(value):
     if value is None:
         return ""
@@ -238,17 +260,10 @@ def _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_t
                  value=f"=SUM({get_column_letter(pct_col)}{start_row}:{get_column_letter(pct_col)}{last_data_row})")
         pct_total_cell.number_format = '0.00"%"'
 
-    actual_total = sum(
-        sum(t.get("bloom_counts", {}).get(level, 0) for level in BLOOM_LEVELS)
-        for t in selected_topics_data
-    )
-    if whole_total_points and actual_total != whole_total_points:
+    actual_total, mismatch_message = check_totals_mismatch(selected_topics_data, whole_total_points)
+    if mismatch_message:
         warning_row = total_row_index + 2
-        warning_cell = ws.cell(row=warning_row, column=2, value=(
-            f"⚠ WARNING: Bloom's item counts sum to {actual_total}, "
-            f"but target Total No. of Points was {whole_total_points}. "
-            f"Re-check the TOS matrix before distributing this file."
-        ))
+        warning_cell = ws.cell(row=warning_row, column=2, value=f"⚠ WARNING: {mismatch_message}")
         warning_cell.font = Font(name="Calibri", size=11, bold=True, color="CC0000")
 
 
@@ -638,17 +653,9 @@ def generate_tos_from_institutional_template(selected_topics_data, course_code, 
     # (S{total_row_index}) -- if they disagree, something upstream (e.g. a
     # manual edit that wasn't re-validated) let a mismatched matrix through.
     # Flag it loudly rather than shipping a TOS that quietly doesn't add up.
-    actual_total = sum(
-        sum(t.get("bloom_counts", {}).get(level, 0) for level in BLOOMS_LEVELS)
-        for t in selected_topics_data
-    )
-    if whole_total_points and actual_total != whole_total_points:
-        warning_cell = ws.cell(
-            row=legend_row + 5, column=2,
-            value=(f"⚠ WARNING: Bloom's item counts sum to {actual_total}, "
-                   f"but target Total No. of Points was {whole_total_points}. "
-                   f"Re-check the TOS matrix before distributing this file."),
-        )
+    actual_total, mismatch_message = check_totals_mismatch(selected_topics_data, whole_total_points)
+    if mismatch_message:
+        warning_cell = ws.cell(row=legend_row + 5, column=2, value=f"⚠ WARNING: {mismatch_message}")
         warning_cell.font = Font(name="Calibri", size=11, bold=True, color="CC0000")
 
     ws.column_dimensions['B'].width = 40
@@ -657,13 +664,31 @@ def generate_tos_from_institutional_template(selected_topics_data, course_code, 
     return wb
 
 
-def generate_tos_from_excel_template(selected_topics_data, course_code, course_title, whole_total_points):
+def _write_exam_type_label(ws, exam_type):
+    """The template's header cell bakes in 'TABLE OF SPECIFICATIONS\\n<exam
+    type>\\n<semester/year>' as one multi-line string. Replace just the exam
+    type line so the file actually reflects Midterm/Final/Quiz/etc. instead
+    of always showing whatever the template shipped with."""
+    for row in ws.iter_rows(min_row=1, max_row=20, max_col=10):
+        for cell in row:
+            if isinstance(cell.value, str) and "TABLE OF SPECIFICATIONS" in cell.value:
+                lines = cell.value.split("\n")
+                if len(lines) >= 2:
+                    lines[1] = exam_type
+                else:
+                    lines.append(exam_type)
+                cell.value = "\n".join(lines)
+                return
+
+
+def generate_tos_from_excel_template(selected_topics_data, course_code, course_title, whole_total_points, exam_type="Final Exam"):
     wb = _load_tos_template_workbook()
     ws = wb.active
     ws.views.sheetView[0].showGridLines = True
 
     _write_course_label(ws, "course code", course_code or "IT 332")
     _write_course_label(ws, "course title", course_title or "Integrative Programming and Technologies")
+    _write_exam_type_label(ws, exam_type)
 
     header_row = _find_header_row(ws)
     if header_row is None:

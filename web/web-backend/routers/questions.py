@@ -31,6 +31,7 @@ from file_extractor import extract_text
 from routers.tos_utils import (
     compute_tos,
     generate_tos_from_excel_template,
+    check_totals_mismatch,
 )
 
 router = APIRouter(prefix="/api/questions", tags=["Questions"])
@@ -56,6 +57,18 @@ class TOSGenerationPayload(BaseModel):
     question_types: list[str] = Field(default_factory=list)
     selected_topic_indices: list[int] = Field(default_factory=list)
     subcolumn_a_hours: dict[str, str] = Field(default_factory=dict)
+    exam_type: str = Field(default="Examination", max_length=64)
+
+    @field_validator("exam_type")
+    @classmethod
+    def validate_exam_type(cls, value: str) -> str:
+        allowed = {"Midterm Exam", "Final Exam", "Quiz", "Long Exam", "Examination"}
+        value = (value or "").strip()
+        if not value:
+            return "Examination"
+        if value not in allowed:
+            raise ValueError("Unsupported exam type provided.")
+        return value
 
     @field_validator("question_types")
     @classmethod
@@ -299,6 +312,20 @@ def parse_syllabus_excel(contents: bytes):
 # ASSESSMENT DOCUMENT BUILDERS (docx / pdf)
 # ============================================================
 
+import random
+
+def _format_correct_answer(correct_answer):
+    """Render a question's correct_answer into one readable line for the
+    answer key, regardless of whether the AI returned a plain string
+    (MCQ / True-or-False / Identification), a list (Enumeration), or a
+    dict (Matching Type: {left_item: right_item, ...})."""
+    if isinstance(correct_answer, dict):
+        return "; ".join(f"{left} -> {right}" for left, right in correct_answer.items())
+    if isinstance(correct_answer, list):
+        return ", ".join(str(item) for item in correct_answer)
+    return str(correct_answer)
+
+
 def _build_assessment_docx(questions, course_title, course_code) -> bytes:
     doc = Document()
     doc.add_heading(f"{course_code} - {course_title}", level=1)
@@ -307,14 +334,42 @@ def _build_assessment_docx(questions, course_title, course_code) -> bytes:
     for i, q in enumerate(questions, start=1):
         p = doc.add_paragraph()
         p.add_run(f"{i}. {q['question']}").bold = True
-        if q.get("question_type") == "MCQ" and q.get("options"):
+        qtype = q.get("question_type")
+
+        if qtype == "MCQ" and q.get("options"):
             for idx, opt in enumerate(q["options"]):
                 doc.add_paragraph(f"    {chr(65 + idx)}. {opt}")
+
+        elif qtype == "Matching Type" and q.get("left_items") and q.get("right_items"):
+            left_items = q["left_items"]
+            right_items = list(q["right_items"])
+            random.shuffle(right_items)  # so the pairing isn't just position 1-to-1
+            rows = max(len(left_items), len(right_items))
+            table = doc.add_table(rows=rows + 1, cols=2)
+            table.style = "Table Grid"
+            table.rows[0].cells[0].text = "Column A"
+            table.rows[0].cells[1].text = "Column B"
+            for r in range(rows):
+                left_text = f"{r + 1}. {left_items[r]}" if r < len(left_items) else ""
+                right_text = f"{chr(65 + r)}. {right_items[r]}" if r < len(right_items) else ""
+                table.rows[r + 1].cells[0].text = left_text
+                table.rows[r + 1].cells[1].text = right_text
+            doc.add_paragraph()
+
+        elif qtype == "Enumeration" and isinstance(q.get("correct_answer"), list):
+            for idx in range(len(q["correct_answer"])):
+                doc.add_paragraph(f"    {idx + 1}. _______________________________")
+
+        elif qtype == "True or False":
+            doc.add_paragraph("    Answer: _____________")
+
+        elif qtype in ("Identification", "Essay", "Situational"):
+            doc.add_paragraph("    Answer: _______________________________________________")
 
     doc.add_page_break()
     doc.add_heading("Answer Key", level=1)
     for i, q in enumerate(questions, start=1):
-        doc.add_paragraph(f"{i}. {q['correct_answer']}")
+        doc.add_paragraph(f"{i}. {_format_correct_answer(q['correct_answer'])}")
 
     buf = io.BytesIO()
     doc.save(buf)
@@ -322,6 +377,9 @@ def _build_assessment_docx(questions, course_title, course_code) -> bytes:
 
 
 def _build_assessment_pdf(questions, course_title, course_code) -> bytes:
+    from reportlab.platypus import Table, TableStyle
+    from reportlab.lib import colors
+
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=LETTER)
     styles = getSampleStyleSheet()
@@ -329,15 +387,46 @@ def _build_assessment_pdf(questions, course_title, course_code) -> bytes:
 
     for i, q in enumerate(questions, start=1):
         story.append(Paragraph(f"{i}. {q['question']}", styles["Normal"]))
-        if q.get("question_type") == "MCQ" and q.get("options"):
+        qtype = q.get("question_type")
+
+        if qtype == "MCQ" and q.get("options"):
             for idx, opt in enumerate(q["options"]):
                 story.append(Paragraph(f"&nbsp;&nbsp;{chr(65 + idx)}. {opt}", styles["Normal"]))
+
+        elif qtype == "Matching Type" and q.get("left_items") and q.get("right_items"):
+            left_items = q["left_items"]
+            right_items = list(q["right_items"])
+            random.shuffle(right_items)
+            rows = max(len(left_items), len(right_items))
+            table_data = [["Column A", "Column B"]]
+            for r in range(rows):
+                left_text = f"{r + 1}. {left_items[r]}" if r < len(left_items) else ""
+                right_text = f"{chr(65 + r)}. {right_items[r]}" if r < len(right_items) else ""
+                table_data.append([left_text, right_text])
+            tbl = Table(table_data, colWidths=[240, 240])
+            tbl.setStyle(TableStyle([
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ]))
+            story.append(tbl)
+
+        elif qtype == "Enumeration" and isinstance(q.get("correct_answer"), list):
+            for idx in range(len(q["correct_answer"])):
+                story.append(Paragraph(f"&nbsp;&nbsp;{idx + 1}. _______________________________", styles["Normal"]))
+
+        elif qtype == "True or False":
+            story.append(Paragraph("&nbsp;&nbsp;Answer: _____________", styles["Normal"]))
+
+        elif qtype in ("Identification", "Essay", "Situational"):
+            story.append(Paragraph("&nbsp;&nbsp;Answer: _______________________________________________", styles["Normal"]))
+
         story.append(Spacer(1, 8))
 
     story.append(Spacer(1, 20))
     story.append(Paragraph("Answer Key", styles["Heading1"]))
     for i, q in enumerate(questions, start=1):
-        story.append(Paragraph(f"{i}. {q['correct_answer']}", styles["Normal"]))
+        story.append(Paragraph(f"{i}. {_format_correct_answer(q['correct_answer'])}", styles["Normal"]))
 
     doc.build(story)
     return buf.getvalue()
@@ -392,11 +481,21 @@ async def upload_and_analyze_syllabus(
 
 
 # --- STEP 2: MULTI-LEVEL TOS GENERATION AND DB CACHING ---
-@router.post("/generate-with-tos")
-async def generate_with_tos(
+class ConfirmGenerationPayload(BaseModel):
+    upload_id: str = Field(..., min_length=1, max_length=128)
+
+
+@router.post("/generate-preview")
+async def generate_preview(
     payload: TOSGenerationPayload,
     db: Session = Depends(get_db),
 ):
+    """Step 1 of 2: run the AI generation and hand back a preview -- nothing
+    is written to the database and no TOS file is built yet. The caller
+    reviews this, then calls /confirm-generation to actually persist it.
+    Keeping this a pure preview means a bad AI generation (wrong question
+    type, awkward matching pairs, etc.) never has to be manually deleted
+    out of the question bank -- just discard and regenerate."""
     meta = FILE_CACHE.get(f"{payload.upload_id}_metadata")
     if not meta:
         raise HTTPException(status_code=404, detail="Upload session expired.")
@@ -409,13 +508,6 @@ async def generate_with_tos(
         question_types=payload.question_types,
     )
 
-    subject_row = db.query(models.Subject).filter(models.Subject.code == meta["subject"]["code"]).first()
-    if not subject_row:
-        subject_row = models.Subject(name=meta["subject"]["name"], code=meta["subject"]["code"])
-        db.add(subject_row)
-        db.commit()
-        db.refresh(subject_row)
-
     try:
         generated_questions = generate_questions_from_tos(
             subject=meta["subject"],
@@ -423,18 +515,66 @@ async def generate_with_tos(
             tos_data=selected_topics_data,
         )
     except GroqDailyQuotaExceeded as e:
-        # Daily quota exhausted - not transient, so surface a clean
-        # 429 with the actual wait time instead of a raw 502 dump.
-        raise HTTPException(
-            status_code=429,
-            detail=str(e),
-        )
+        raise HTTPException(status_code=429, detail=str(e))
     except Exception as e:
         logger.exception("Question generation failed while contacting the AI service")
         raise HTTPException(
             status_code=502,
             detail=f"Question generation failed while contacting the AI service. Details: {str(e)}",
         )
+
+    # Stash everything needed for the confirm step. Nothing here touches the
+    # database or generates the Excel file yet -- that only happens once the
+    # user reviews and explicitly confirms.
+    FILE_CACHE[f"{payload.upload_id}_pending"] = {
+        "selected_topics_data": selected_topics_data,
+        "generated_questions": generated_questions,
+        "whole_total_points": payload.whole_total_points,
+        "exam_type": payload.exam_type,
+        "subject": meta["subject"],
+    }
+
+    preview = build_preview(generated_questions)
+    stats = statistics(generated_questions)
+    actual_total, tos_warning = check_totals_mismatch(selected_topics_data, payload.whole_total_points)
+
+    return {
+        "message": "Preview generated. Review it, then confirm to save.",
+        "tos": _build_tos_response_rows(selected_topics_data),
+        "questions_preview": preview,
+        "statistics": stats,
+        "total_questions": len(generated_questions),
+        "tos_warning": tos_warning,
+    }
+
+
+@router.post("/confirm-generation")
+async def confirm_generation(
+    payload: ConfirmGenerationPayload,
+    db: Session = Depends(get_db),
+):
+    """Step 2 of 2: persist the previewed questions to the database and
+    build the actual TOS/exam files. Only reachable after /generate-preview
+    has populated the pending cache entry for this upload_id."""
+    pending = FILE_CACHE.get(f"{payload.upload_id}_pending")
+    if not pending:
+        raise HTTPException(
+            status_code=404,
+            detail="No pending generation found for this session. Generate a preview first.",
+        )
+
+    selected_topics_data = pending["selected_topics_data"]
+    generated_questions = pending["generated_questions"]
+    whole_total_points = pending["whole_total_points"]
+    exam_type = pending["exam_type"]
+    subject = pending["subject"]
+
+    subject_row = db.query(models.Subject).filter(models.Subject.code == subject["code"]).first()
+    if not subject_row:
+        subject_row = models.Subject(name=subject["name"], code=subject["code"])
+        db.add(subject_row)
+        db.commit()
+        db.refresh(subject_row)
 
     rows = prepare_database_rows(generated_questions, subject_row.id)
     for row in rows:
@@ -484,40 +624,44 @@ async def generate_with_tos(
         selected_topics_data=selected_topics_data,
         course_code=subject_row.code,
         course_title=subject_row.name,
-        whole_total_points=payload.whole_total_points,
+        whole_total_points=whole_total_points,
+        exam_type=exam_type,
     )
     stream = io.BytesIO()
     workbook.save(stream)
     FILE_CACHE[f"{payload.upload_id}_tos"] = stream.getvalue()
 
+    FILE_CACHE.pop(f"{payload.upload_id}_pending", None)
+
     preview = build_preview(generated_questions)
     stats = statistics(generated_questions)
 
-    def _build_tos_response_rows(tos_data):
-        tos_rows = []
-        for topic in tos_data:
-            bloom_breakdown = {
-                bloom: {"total": count}
-                for bloom, count in topic.get("bloom_counts", {}).items()
-            }
-            tos_rows.append({
-                "topic": topic.get("topic_name", ""),
-                "weight": topic.get("weight", 0),
-                "total_items": topic.get("items", 0),
-                "bloom_breakdown": bloom_breakdown,
-                "question_distribution": topic.get("question_distribution", {}),
-                "ilo": topic.get("ilo", ""),
-                "ilo_description": topic.get("ilo_description", ""),
-            })
-        return tos_rows
-
     return {
-        "message": "Assessment generated successfully.",
+        "message": "Assessment saved successfully.",
         "tos": _build_tos_response_rows(selected_topics_data),
         "questions_preview": preview,
         "statistics": stats,
         "total_questions": len(generated_questions),
     }
+
+
+def _build_tos_response_rows(tos_data):
+    tos_rows = []
+    for topic in tos_data:
+        bloom_breakdown = {
+            bloom: {"total": count}
+            for bloom, count in topic.get("bloom_counts", {}).items()
+        }
+        tos_rows.append({
+            "topic": topic.get("topic_name", ""),
+            "weight": topic.get("weight", 0),
+            "total_items": topic.get("items", 0),
+            "bloom_breakdown": bloom_breakdown,
+            "question_distribution": topic.get("question_distribution", {}),
+            "ilo": topic.get("ilo", ""),
+            "ilo_description": topic.get("ilo_description", ""),
+        })
+    return tos_rows
 
 
 # --- STEP 3: EXPORT ROUTES ---
@@ -533,7 +677,7 @@ async def export_institutional_tos(upload_id: str):
     if not tos_binary:
         raise HTTPException(
             status_code=404,
-            detail="TOS file asset records not found or the cache session has expired."
+            detail="TOS file not found or the session has expired."
         )
 
     return StreamingResponse(

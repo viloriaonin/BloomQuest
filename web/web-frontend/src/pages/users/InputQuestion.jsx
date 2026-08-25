@@ -12,6 +12,7 @@ const QUESTION_TYPE_OPTIONS = [
   { label: 'Essay', value: 'Essay' },
   { label: 'Situational', value: 'Situational' },
 ];
+const EXAM_TYPE_OPTIONS = ['Midterm Exam', 'Final Exam', 'Quiz', 'Long Exam'];
 
 // File-type policies for each upload slot. Extension is checked rather than
 // relying purely on MIME type, since browsers/OS report MIME inconsistently
@@ -275,6 +276,10 @@ const InputQuestion = () => {
   const [generating, setGenerating] = useState(false);
   const [generationResult, setGenerationResult] = useState(null);
   const [previewBloomTab, setPreviewBloomTab] = useState('Remember'); // Syntax Error Fixed Here
+  const [tosWarning, setTosWarning] = useState('');
+  const [examType, setExamType] = useState('Final Exam');
+  const [previewResult, setPreviewResult] = useState(null);
+  const [confirming, setConfirming] = useState(false);
   const uploadAbortControllerRef = useRef(null);
 
   useEffect(() => {
@@ -308,6 +313,8 @@ const InputQuestion = () => {
       if (Array.isArray(parsed.selectedQuestionTypes)) setSelectedQuestionTypes(parsed.selectedQuestionTypes);
       if (parsed.totalPoints !== undefined) setTotalPoints(parsed.totalPoints);
       if (parsed.totalItems !== undefined) setTotalItems(parsed.totalItems);
+      if (parsed.examType) setExamType(parsed.examType);
+      if (parsed.previewResult) setPreviewResult(parsed.previewResult);
       if (parsed.previewBloomTab) setPreviewBloomTab(parsed.previewBloomTab);
       if (parsed.uploading !== undefined) setUploading(parsed.uploading);
       if (parsed.generating !== undefined) setGenerating(parsed.generating);
@@ -334,6 +341,8 @@ const InputQuestion = () => {
       selectedQuestionTypes,
       totalPoints,
       totalItems,
+      examType,
+      previewResult,
       previewBloomTab,
       error,
       successMessage,
@@ -354,6 +363,8 @@ const InputQuestion = () => {
     selectedQuestionTypes,
     totalPoints,
     totalItems,
+    examType,
+    previewResult,
     previewBloomTab,
     error,
     successMessage,
@@ -374,6 +385,8 @@ const InputQuestion = () => {
     selectedQuestionTypes,
     totalPoints,
     totalItems,
+    examType,
+    previewResult,
     previewBloomTab,
     uploading,
     generating,
@@ -389,7 +402,7 @@ const InputQuestion = () => {
       const data = await response.json();
       setSubjects(data);
     } catch (err) {
-      setError('Could not establish persistent communication hooks with active subjects database schemas.');
+      setError('Could not load subjects. Please refresh the page and try again.');
     }
   };
 
@@ -413,7 +426,7 @@ const InputQuestion = () => {
           );
 
           if (isDuplicateThought) {
-            setDuplicateWarning('⚠️ A question item with this identical concept or matching core text already exists within this subject layout block.');
+            setDuplicateWarning('This looks similar to a question already in this subject.');
           } else {
             setDuplicateWarning('');
           }
@@ -461,7 +474,7 @@ const InputQuestion = () => {
       setIsAddingNewSubject(false);
       setNewSubjectName('');
       setNewSubjectCode('');
-      setSuccessMessage('🎉 Course area injected into registry framework layout records successfully!');
+      setSuccessMessage('Subject added successfully.');
     } catch (err) {
       setError(err.message);
     }
@@ -469,15 +482,15 @@ const InputQuestion = () => {
 
   const handleManualClassification = async () => {
     if (!selectedSubject) {
-      setError('You must select a subject tracking reference framework before classifying items.');
+      setError('Please select a subject before classifying this item.');
       return;
     }
     if (!manualQuestion.trim()) {
-      setError('Question workspace cannot be submitted while empty.');
+      setError('Please enter a question before submitting.');
       return;
     }
     if (duplicateWarning) {
-      setError('Cannot proceed: Conceptual duplicate detected within this course pool.');
+      setError('This looks like a duplicate of a question already in this course.');
       return;
     }
 
@@ -498,7 +511,7 @@ const InputQuestion = () => {
 
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || 'Classification engine execution failed.');
-      setSuccessMessage(`🎉 Success! Machine Learning model analyzed the structure and placed the item into the "${data.bloom_level}" taxonomy rank tier inside your question bank.`);
+      setSuccessMessage(`Question classified as "${data.bloom_level}" and added to your question bank.`);
       setManualQuestion('');
     } catch (err) {
       setError(err.message);
@@ -517,6 +530,8 @@ const InputQuestion = () => {
     setGenerating(false);
     setUploadResult(null);
     setGenerationResult(null);
+    setPreviewResult(null);
+    setTosWarning('');
     setSelectedTopics([]);
     setSubcolumnAValues({});
     setError('Analysis cancelled. You can remove the uploaded files and try again.');
@@ -535,6 +550,8 @@ const InputQuestion = () => {
   const resetUploadState = () => {
     setUploadResult(null);
     setGenerationResult(null);
+    setPreviewResult(null);
+    setTosWarning('');
     setSelectedTopics([]);
     setSubcolumnAValues({});
     persistInputQuestionSession({
@@ -579,6 +596,8 @@ const InputQuestion = () => {
     setUploading(true);
     setUploadResult(null);
     setGenerationResult(null);
+    setPreviewResult(null);
+    setTosWarning('');
     persistInputQuestionSession({
       activeTab: 'upload',
       uploading: true,
@@ -676,7 +695,7 @@ const InputQuestion = () => {
       return;
     }
     if (selectedTopics.length === 0) {
-      setError('Please select at least one Main Topic to include in the TOS layout matrix.');
+      setError('Please select at least one topic to include in the TOS.');
       return;
     }
     if (selectedQuestionTypes.length === 0) {
@@ -716,9 +735,10 @@ const InputQuestion = () => {
         subcolumn_a_hours: Object.fromEntries(
           Object.entries(subcolumnAValues).map(([key, value]) => [String(key), String(value)])
         ),
+        exam_type: examType,
       };
 
-      const response = await fetch(`${API_URL}/questions/generate-with-tos`, {
+      const response = await fetch(`${API_URL}/questions/generate-preview`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -734,13 +754,14 @@ const InputQuestion = () => {
       }
 
       const data = await response.json();
-      setGenerationResult(data);
-      setSuccessMessage('🎉 Matrix TOS mapped and questions populated to the database store successfully!');
+      setPreviewResult(data);
+      setTosWarning(data.tos_warning || '');
+      setSuccessMessage('Preview ready. Review it below, then confirm to save.');
       persistInputQuestionSession({
         activeTab: 'upload',
         uploading: false,
         generating: false,
-        generationResult: data,
+        previewResult: data,
       });
     } catch (err) {
       const normalizedError = getErrorMessage(err) || 'An unexpected error occurred during matrix generation.';
@@ -760,6 +781,49 @@ const InputQuestion = () => {
         generating: false,
       });
     }
+  };
+
+  const handleConfirmGeneration = async () => {
+    setError('');
+    setSuccessMessage('');
+    setConfirming(true);
+
+    try {
+      const response = await fetch(`${API_URL}/questions/confirm-generation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ upload_id: uploadResult.upload_id }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(getErrorMessage(errData) || `Saving failed with server status code: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setGenerationResult(data);
+      setPreviewResult(null);
+      setSuccessMessage('Assessment saved. Your downloads are ready below.');
+      persistInputQuestionSession({
+        generationResult: data,
+        previewResult: null,
+      });
+    } catch (err) {
+      const normalizedError = getErrorMessage(err) || 'An unexpected error occurred while saving.';
+      setError(normalizedError);
+      persistInputQuestionSession({ error: normalizedError });
+      console.error("TOS Confirm Error:", err);
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  const handleDiscardPreview = () => {
+    setPreviewResult(null);
+    setTosWarning('');
+    setSuccessMessage('');
+    setError('');
+    persistInputQuestionSession({ previewResult: null });
   };
 
   const downloadFile = async (endpoint, filename) => {
@@ -980,7 +1044,15 @@ const InputQuestion = () => {
                     <span className="w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center text-xs">3</span>
                     Number of Items & Points
                   </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Exam Type</label>
+                      <select value={examType} onChange={(e) => setExamType(e.target.value)} disabled={!!previewResult || !!generationResult} className="w-full border border-gray-200 rounded-md p-2.5 text-sm focus:ring-1 focus:ring-red-500 outline-none disabled:bg-gray-100 disabled:text-gray-400">
+                        {EXAM_TYPE_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Total Points</label>
                       <input type="number" value={totalPoints} onChange={(e) => setTotalPoints(e.target.value)} placeholder="e.g. 50" className="w-full border border-gray-200 rounded-md p-2.5 text-sm focus:ring-1 focus:ring-red-500 outline-none" />
@@ -1013,7 +1085,7 @@ const InputQuestion = () => {
                       {uploadResult.topics.map((topic, i) => (
                         <div key={i} className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-gray-50 border border-gray-100 rounded-lg p-3 gap-3">
                           <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-700 flex-1 min-w-0">
-                            <input type="checkbox" checked={selectedTopics.includes(i)} onChange={() => toggleTopicSelection(i)} className="h-4 w-4 text-red-600 rounded border-gray-300 focus:ring-red-500" disabled={!!generationResult} />
+                            <input type="checkbox" checked={selectedTopics.includes(i)} onChange={() => toggleTopicSelection(i)} className="h-4 w-4 text-red-600 rounded border-gray-300 focus:ring-red-500" disabled={!!generationResult || !!previewResult} />
                             <div className="min-w-0 flex-1">
                               <p className="font-semibold text-gray-800 truncate">{safeRenderValue(topic.name)}</p>
                               <p className="text-xs text-gray-400 italic font-normal truncate">ILO: {safeRenderValue(topic.ilo) || 'None'}</p>
@@ -1022,7 +1094,7 @@ const InputQuestion = () => {
                           {selectedTopics.includes(i) && (
                             <div className="flex items-center gap-2 shrink-0">
                               <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Hours:</span>
-                              <input type="number" step="0.5" value={subcolumnAValues[i] || ''} onChange={(e) => handleSubcolumnAChange(i, e.target.value)} className="w-16 border border-gray-200 rounded-md p-1.5 text-center text-sm outline-none focus:border-red-400" disabled={!!generationResult} />
+                              <input type="number" step="0.5" value={subcolumnAValues[i] || ''} onChange={(e) => handleSubcolumnAChange(i, e.target.value)} className="w-16 border border-gray-200 rounded-md p-1.5 text-center text-sm outline-none focus:border-red-400" disabled={!!generationResult || !!previewResult} />
                             </div>
                           )}
                           <div className="shrink-0 w-12 text-right">
@@ -1035,37 +1107,66 @@ const InputQuestion = () => {
 
                   <button
                     onClick={handleGenerate}
-                    disabled={generating || selectedTopics.length === 0 || !totalItems || !!generationResult}
+                    disabled={generating || selectedTopics.length === 0 || !totalItems || !!generationResult || !!previewResult}
                     className="mt-6 w-full bg-green-700 hover:bg-green-800 text-white py-3.5 rounded-md text-sm font-bold transition-colors disabled:bg-gray-300 flex justify-center items-center gap-2 shadow-sm"
                   >
                     {generating ? (
                       <>
                         <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> 
-                        Running Deep Taxonomy Synthesis...
+                        Generating preview...
                       </>
-                    ) : generationResult ? '✓ Matrix TOS & Assessment Generated' : 'Generate Matrix TOS & Assessment Instruments'}
+                    ) : (generationResult || previewResult) ? '✓ Preview Generated' : 'Generate Preview'}
                   </button>
                 </div>
               </div>
             )}
 
             {/* Output Previews & Download Links */}
-            {generationResult && (
-              <div className="border border-green-200 bg-green-50/30 rounded-lg p-5 space-y-6">
+            {(previewResult || generationResult) && (() => {
+              const activeResult = generationResult || previewResult;
+              const isConfirmed = !!generationResult;
+              return (
+              <div className={`border rounded-lg p-5 space-y-6 ${isConfirmed ? 'border-green-200 bg-green-50/30' : 'border-amber-200 bg-amber-50/30'}`}>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-4 gap-3">
                   <div>
-                    <h3 className="font-bold text-green-800 text-sm">✓ Table of Specifications & Question Sheets Matrix Saved</h3>
-                    <p className="text-xs text-gray-500">Items successfully saved inside the primary Question Bank registry rows.</p>
+                    <h3 className={`font-bold text-sm ${isConfirmed ? 'text-green-800' : 'text-amber-800'}`}>
+                      {isConfirmed ? '✓ Table of Specifications Generated' : 'Preview Ready — Review Before Saving'}
+                    </h3>
+                    <p className="text-xs text-gray-500">
+                      {isConfirmed
+                        ? 'Questions have been saved to your question bank.'
+                        : 'Nothing has been saved yet. Review the questions below, then confirm to add them to your question bank and generate the TOS file.'}
+                    </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button onClick={() => downloadFile('tos', 'BatStateU_Standard_TOS.xlsx')} className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Institutional TOS (.xlsx)</button>
-                    <button onClick={() => downloadFile('assessment/docx', 'Exam_Paper_With_Keys.docx')} className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.docx)</button>
-                    <button onClick={() => downloadFile('assessment/pdf', 'Exam_Paper_With_Keys.pdf')} className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.pdf)</button>
+                    {isConfirmed ? (
+                      <>
+                        <button onClick={() => downloadFile('tos', 'BatStateU_Standard_TOS.xlsx')} className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Institutional TOS (.xlsx)</button>
+                        <button onClick={() => downloadFile('assessment/docx', 'Exam_Paper_With_Keys.docx')} className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.docx)</button>
+                        <button onClick={() => downloadFile('assessment/pdf', 'Exam_Paper_With_Keys.pdf')} className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.pdf)</button>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={handleDiscardPreview} disabled={confirming} className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:opacity-50">Discard & Regenerate</button>
+                        <button onClick={handleConfirmGeneration} disabled={confirming} className="bg-green-700 hover:bg-green-800 text-white text-xs px-4 py-2 rounded font-medium shadow-sm transition-colors disabled:bg-gray-300 flex items-center gap-2">
+                          {confirming && <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>}
+                          {confirming ? 'Saving...' : 'Confirm & Save'}
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
 
+                {tosWarning && (
+                  <div className="border border-amber-300 bg-amber-50 rounded-md p-3 flex items-start gap-2">
+                    <span className="text-amber-500 text-sm leading-none mt-0.5">⚠</span>
+                    <p className="text-xs text-amber-800">{tosWarning}</p>
+                  </div>
+                )}
+
+
                 {/* TOS Summary Section */}
-                {generationResult.tos && generationResult.tos.length > 0 && (
+                {activeResult.tos && activeResult.tos.length > 0 && (
                   <div className="border border-gray-200 rounded-lg p-5 bg-white shadow-sm space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
@@ -1074,11 +1175,11 @@ const InputQuestion = () => {
                       </div>
                       <div className="text-right">
                         <p className="text-xs text-gray-500">Total Generated Questions</p>
-                        <p className="text-lg font-semibold text-green-700">{generationResult.total_questions}</p>
+                        <p className="text-lg font-semibold text-green-700">{activeResult.total_questions}</p>
                       </div>
                     </div>
                     <div className="grid gap-3">
-                      {generationResult.tos.map((topic, idx) => (
+                      {activeResult.tos.map((topic, idx) => (
                         <div key={idx} className="rounded-xl border border-gray-100 p-4 bg-gray-50">
                           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                             <div>
@@ -1109,7 +1210,7 @@ const InputQuestion = () => {
                   <p className="text-xs font-bold text-gray-600 uppercase mb-3">Generated Preview Segmented By Cognitive Taxonomy Tier</p>
                   <div className="flex border-b overflow-x-auto gap-2 bg-gray-100/50 p-1 rounded-t-md">
                     {BLOOMS_LEVELS.map(level => {
-                      const count = (generationResult.questions_preview || []).filter(q => q.bloom_level === level).length;
+                      const count = (activeResult.questions_preview || []).filter(q => q.bloom_level === level).length;
                       return (
                         <button key={level} onClick={() => setPreviewBloomTab(level)} className={`py-2 px-4 text-xs font-semibold rounded-t transition-all min-w-max ${previewBloomTab === level ? 'bg-white text-red-600 shadow-sm font-bold border-b-2 border-red-600' : 'text-gray-500 hover:text-gray-700'}`}>
                           {level} <span className="ml-1 bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full text-[10px]">{count}</span>
@@ -1118,7 +1219,7 @@ const InputQuestion = () => {
                     })}
                   </div>
                   <div className="bg-white p-4 border-x border-b rounded-b-md max-h-80 overflow-y-auto space-y-4 shadow-inner">
-                    {(generationResult.questions_preview || [])
+                    {(activeResult.questions_preview || [])
                       .filter(q => q.bloom_level === previewBloomTab)
                       .map((q, idx) => (
                         <div key={idx} className="p-3 border rounded-md bg-gray-50/50 text-sm">
@@ -1134,7 +1235,8 @@ const InputQuestion = () => {
                 </div>
 
               </div>
-            )}
+              );
+            })()}
           </div>
         )}
 
