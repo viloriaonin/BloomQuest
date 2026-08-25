@@ -1,4 +1,6 @@
 from typing import Optional
+import io
+import json
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, status, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -9,7 +11,7 @@ from dotenv import load_dotenv
 from database import engine, get_db, SessionLocal
 from file_extractor import extract_text
 from ai_service import generate_questions_from_tos, build_preview, prepare_database_rows, statistics, parse_syllabus_text_with_ai
-from routers.tos_utils import compute_tos
+from routers.tos_utils import compute_tos, generate_tos_from_excel_template
 from classifier import classify_question
 import models
 from datetime import datetime, timedelta
@@ -108,6 +110,48 @@ def build_assessment_document(questions, subject_name, export_format, include_an
         raise ValueError(f"Unsupported export format: {export_format}")
     finally:
         cleanup_file(docx_path)
+
+
+def matching_choices(question):
+    options = question.options
+    if isinstance(options, str):
+        try:
+            options = json.loads(options)
+        except (TypeError, json.JSONDecodeError):
+            options = None
+    if isinstance(options, dict) and options.get("left_items") and options.get("right_items"):
+        return options["left_items"], options["right_items"]
+
+    answer = question.correct_answer
+    if isinstance(answer, str):
+        try:
+            answer = json.loads(answer)
+        except (TypeError, json.JSONDecodeError):
+            answer = None
+    if isinstance(answer, dict):
+        return list(answer.keys()), list(answer.values())
+    return [], []
+
+
+def serialize_question(question):
+    options = question.options
+    if question.question_type == "Matching Type":
+        left_items, right_items = matching_choices(question)
+        options = {"left_items": left_items, "right_items": right_items}
+    return {
+        "id": question.id,
+        "subject_id": question.subject_id,
+        "topic_name": question.topic_name,
+        "bloom_level": question.bloom_level,
+        "question_type": question.question_type,
+        "question": question.question,
+        "options": options,
+        "correct_answer": question.correct_answer,
+        "explanation": question.explanation,
+        "review_status": question.review_status,
+        "difficulty": question.difficulty,
+        "created_at": question.created_at,
+    }
 
 # Ensure the new archive, name, and department columns exist in the users table.
 # SQLAlchemy's create_all does not alter existing tables, so we add missing columns explicitly.
@@ -706,6 +750,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     # Return response (replace with JWT later)
     return {
         "token": "fake-token-for-now",
+        "user_id": user.id,
         "role": user.role,
         "email": user.email,
         "message": "Login successful"
@@ -1242,6 +1287,7 @@ class ManualQuestionRequest(BaseModel):
     question: str
     question_type: str
     subject_id: int
+    user_id: int | None = None
 
 class QuestionSetCreateRequest(BaseModel):
     name: str
@@ -1517,7 +1563,7 @@ def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Sessio
     db.commit()
     db.refresh(new_question)
 
-    log_activity(db, "Classified Question", f"Manual Input: '{payload.question[:60]}' → Categorized as {bloom_level}.", "classify")
+    log_activity(db, "Classified Question", f"Manual Input: '{payload.question[:60]}' → Categorized as {bloom_level}.", "classify", user_id=payload.user_id)
 
     return {
         "id": new_question.id,
@@ -1579,7 +1625,7 @@ def get_questions(
         query = query.filter(models.GeneratedQuestion.subject_id == subject_id)
     if bloom_level:
         query = query.filter(models.GeneratedQuestion.bloom_level == bloom_level)
-    return query.all()
+    return [serialize_question(question) for question in query.all()]
 
 
 def serialize_question_set(question_set):
@@ -1729,8 +1775,11 @@ def delete_question_set(set_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/api/history")
-def get_history(user_id: int = None, db: Session = Depends(get_db)):
+def get_history(user_id: int = None, email: str = None, db: Session = Depends(get_db)):
     query = db.query(models.ActivityLog).order_by(models.ActivityLog.created_at.desc())
+    if not user_id and email:
+        user = db.query(models.User).filter(func.lower(models.User.email) == email.strip().lower()).first()
+        user_id = user.id if user else -1
     if user_id:
         query = query.filter(models.ActivityLog.user_id == user_id)
     logs = query.limit(100).all()
@@ -1854,12 +1903,69 @@ def delete_question(question_id: int, db: Session = Depends(get_db)):
 
     return {"message": "Question deleted successfully"}
 
+
+@app.post("/api/questions/export/tos")
+def export_question_bank_tos(
+    subject_id: int = Form(...),
+    question_ids: str = Form(...),
+    exam_type: str = Form("Final Exam"),
+    semester: str = Form("First Semester"),
+    user_id: int | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    subject = db.query(models.Subject).filter(models.Subject.id == subject_id).first()
+    selected_ids = [int(value) for value in (question_ids or "").split(",") if value.strip().isdigit()]
+    questions = db.query(models.GeneratedQuestion).filter(
+        models.GeneratedQuestion.id.in_(selected_ids),
+        models.GeneratedQuestion.subject_id == subject_id,
+    ).order_by(models.GeneratedQuestion.id).all()
+    if not subject or not questions:
+        raise HTTPException(status_code=404, detail="No questions selected for this subject")
+
+    topics = {}
+    for number, question in enumerate(questions, start=1):
+        topic_name = question.topic_name or "General"
+        topic = topics.setdefault(topic_name, {
+            "topic_name": topic_name,
+            "ilo": "",
+            "hours_a": 1.0,
+            "items": 0,
+            "weight": 0,
+            "bloom_counts": {level: 0 for level in ("Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create")},
+            "bloom_question_numbers": {level: [] for level in ("Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create")},
+        })
+        level = question.bloom_level if question.bloom_level in topic["bloom_counts"] else "Remember"
+        topic["items"] += 1
+        topic["bloom_counts"][level] += 1
+        topic["bloom_question_numbers"][level].append(str(number))
+
+    selected_topics = list(topics.values())
+    total_hours = sum(topic["hours_a"] for topic in selected_topics)
+    for topic in selected_topics:
+        topic["weight"] = round(topic["hours_a"] / total_hours * 100, 2)
+        topic["bloom_question_numbers"] = {
+            level: ", ".join(numbers) for level, numbers in topic["bloom_question_numbers"].items()
+        }
+
+    workbook = generate_tos_from_excel_template(
+        selected_topics, subject.code, subject.name, len(questions), exam_type=exam_type, semester=semester
+    )
+    stream = io.BytesIO()
+    workbook.save(stream)
+    log_activity(db, "Downloaded TOS", f"Downloaded a TOS for {len(questions)} selected question(s) from '{subject.name}'.", "download", user_id=user_id)
+    return Response(
+        content=stream.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={subject.name.replace(' ', '_')}_TOS.xlsx"},
+    )
+
 @app.post("/api/question-sets/{set_id}/export")
 def export_question_set(
     set_id: int,
     export_format: str = Form("pdf"),
     include_answer_key: bool = Form(True),
     answer_mode: str = Form("with_key"),
+    user_id: int | None = Form(None),
     db: Session = Depends(get_db),
 ):
     export_format = export_format.lower()
@@ -1878,17 +1984,21 @@ def export_question_set(
             "question_type": question.question_type or "",
             "options": question.options or [],
             "correct_answer": question.correct_answer or "",
+            "left_items": matching_choices(question)[0] if question.question_type == "Matching Type" else [],
+            "right_items": matching_choices(question)[1] if question.question_type == "Matching Type" else [],
         })() for question in questions]
         content, filename = build_assessment_document(normalized_questions, question_set.subject.name, export_format, include_answer_key=include_answer_key, answer_mode=answer_mode)
         question_set.status = "exported"
         db.add(models.QuestionSetExport(question_set_id=question_set.id, export_format=export_format, filename=filename))
         db.commit()
-        log_activity(db, "Exported Question Set", f"Exported '{question_set.name}' as {export_format.upper()}.", "export")
+        log_activity(db, "Exported Question Set", f"Exported '{question_set.name}' as {export_format.upper()}.", "export", user_id=user_id)
         media_type = "application/pdf" if export_format == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         return Response(content=content, media_type=media_type, headers={"Content-Disposition": f"attachment; filename={filename}"})
-    except HTTPException:
+    except HTTPException as exc:
+        log_activity(db, "Question Set Export Failed", str(exc.detail), "export", status="error", user_id=user_id)
         raise
     except Exception as exc:
+        log_activity(db, "Question Set Export Failed", str(exc), "export", status="error", user_id=user_id)
         raise HTTPException(status_code=500, detail=str(exc))
     finally:
         pythoncom.CoUninitialize()
@@ -1900,6 +2010,7 @@ def export_assessment(
     export_format: str = Form("pdf"),
     include_answer_key: bool = Form(True),
     answer_mode: str = Form("with_key"),
+    user_id: int | None = Form(None),
     db: Session = Depends(get_db)
 ):
     pythoncom.CoInitialize()
@@ -1931,15 +2042,19 @@ def export_assessment(
                 "question_type": getattr(question, "question_type", "") or "",
                 "options": getattr(question, "options", None) or [],
                 "correct_answer": getattr(question, "correct_answer", "") or "",
+                "left_items": matching_choices(question)[0] if question.question_type == "Matching Type" else [],
+                "right_items": matching_choices(question)[1] if question.question_type == "Matching Type" else [],
             })())
 
         content, filename = build_assessment_document(normalized_questions, subject.name, export_format.lower(), include_answer_key=include_answer_key, answer_mode=answer_mode)
-        log_activity(db, "Assessment Exported", f"Exported {len(questions)} selected question(s) from '{subject.name}' as {export_format.upper()}.", "export")
+        log_activity(db, "Assessment Exported", f"Exported {len(questions)} selected question(s) from '{subject.name}' as {export_format.upper()}.", "export", user_id=user_id)
         media_type = "application/pdf" if export_format.lower() == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         return Response(content=content, media_type=media_type, headers={"Content-Disposition": f"attachment; filename={filename}"})
-    except HTTPException:
+    except HTTPException as exc:
+        log_activity(db, "Assessment Export Failed", str(exc.detail), "export", status="error", user_id=user_id)
         raise
     except Exception as e:
+        log_activity(db, "Assessment Export Failed", str(e), "export", status="error", user_id=user_id)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         pythoncom.CoUninitialize()

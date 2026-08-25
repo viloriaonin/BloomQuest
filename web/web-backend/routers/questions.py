@@ -5,7 +5,7 @@ import json
 import logging
 import uuid
 import openpyxl
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
@@ -49,6 +49,17 @@ DISALLOWED_MIME_SIGNATURES = {
     "image/webp": b"RIFF",
 }
 
+
+def record_activity(db, action, details, activity_type, status="success", user_id=None):
+    db.add(models.ActivityLog(
+        user_id=user_id,
+        action=action,
+        details=details,
+        type=activity_type,
+        status=status,
+    ))
+    db.commit()
+
 # Pydantic schema for Table of Specifications payload
 class TOSGenerationPayload(BaseModel):
     upload_id: str = Field(..., min_length=1, max_length=128)
@@ -58,6 +69,8 @@ class TOSGenerationPayload(BaseModel):
     selected_topic_indices: list[int] = Field(default_factory=list)
     subcolumn_a_hours: dict[str, str] = Field(default_factory=dict)
     exam_type: str = Field(default="Examination", max_length=64)
+    semester: str = Field(default="First Semester", max_length=32)
+    user_id: int | None = Field(default=None, ge=1)
 
     @field_validator("exam_type")
     @classmethod
@@ -68,6 +81,15 @@ class TOSGenerationPayload(BaseModel):
             return "Examination"
         if value not in allowed:
             raise ValueError("Unsupported exam type provided.")
+        return value
+
+    @field_validator("semester")
+    @classmethod
+    def validate_semester(cls, value: str) -> str:
+        allowed = {"First Semester", "Second Semester", "Summer"}
+        value = (value or "").strip()
+        if value not in allowed:
+            raise ValueError("Unsupported semester provided.")
         return value
 
     @field_validator("question_types")
@@ -437,6 +459,7 @@ def _build_assessment_pdf(questions, course_title, course_code) -> bytes:
 async def upload_and_analyze_syllabus(
     module_file: UploadFile = File(...),
     syllabus_file: UploadFile = File(...),
+    user_id: int | None = Form(None),
     db: Session = Depends(get_db)
 ):
     upload_id = uuid.uuid4().hex
@@ -467,11 +490,14 @@ async def upload_and_analyze_syllabus(
         }
 
     except HTTPException:
+        record_activity(db, "Upload Failed", f"Could not analyze '{module_file.filename}'.", "upload", status="error", user_id=user_id)
         raise
     except Exception as e:
+        record_activity(db, "Upload Failed", f"Could not analyze '{module_file.filename}'.", "upload", status="error", user_id=user_id)
         raise HTTPException(status_code=400, detail=f"Analysis Engine Error: {str(e)}")
 
     FILE_CACHE[f"{upload_id}_metadata"] = {"subject": detected_subject, "topics": detected_topics, "module_text": module_text}
+    record_activity(db, "Uploaded Learning Materials", f"Analyzed '{module_file.filename}' and '{syllabus_file.filename}'.", "upload", user_id=user_id)
 
     return {
         "upload_id": upload_id,
@@ -483,6 +509,20 @@ async def upload_and_analyze_syllabus(
 # --- STEP 2: MULTI-LEVEL TOS GENERATION AND DB CACHING ---
 class ConfirmGenerationPayload(BaseModel):
     upload_id: str = Field(..., min_length=1, max_length=128)
+
+
+def _attach_bloom_question_numbers(tos_data, generated_questions):
+    levels = ("Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create")
+    numbers = {topic["topic_name"]: {level: [] for level in levels} for topic in tos_data}
+    for number, question in enumerate(generated_questions, start=1):
+        topic_numbers = numbers.get(question.get("topic_name"))
+        level = question.get("bloom_level")
+        if topic_numbers is not None and level in topic_numbers:
+            topic_numbers[level].append(str(number))
+    for topic in tos_data:
+        topic["bloom_question_numbers"] = {
+            level: ", ".join(numbers[topic["topic_name"]][level]) for level in levels
+        }
 
 
 @router.post("/generate-preview")
@@ -517,11 +557,14 @@ async def generate_preview(
     except GroqDailyQuotaExceeded as e:
         raise HTTPException(status_code=429, detail=str(e))
     except Exception as e:
+        record_activity(db, "Question Generation Failed", f"Generation failed for upload {payload.upload_id}.", "generate", status="error", user_id=payload.user_id)
         logger.exception("Question generation failed while contacting the AI service")
         raise HTTPException(
             status_code=502,
             detail=f"Question generation failed while contacting the AI service. Details: {str(e)}",
         )
+
+    _attach_bloom_question_numbers(selected_topics_data, generated_questions)
 
     # Stash everything needed for the confirm step. Nothing here touches the
     # database or generates the Excel file yet -- that only happens once the
@@ -531,6 +574,8 @@ async def generate_preview(
         "generated_questions": generated_questions,
         "whole_total_points": payload.whole_total_points,
         "exam_type": payload.exam_type,
+        "semester": payload.semester,
+        "user_id": payload.user_id,
         "subject": meta["subject"],
     }
 
@@ -567,6 +612,8 @@ async def confirm_generation(
     generated_questions = pending["generated_questions"]
     whole_total_points = pending["whole_total_points"]
     exam_type = pending["exam_type"]
+    semester = pending["semester"]
+    user_id = pending.get("user_id")
     subject = pending["subject"]
 
     subject_row = db.query(models.Subject).filter(models.Subject.code == subject["code"]).first()
@@ -611,7 +658,11 @@ async def confirm_generation(
             question=row["question"],
             bloom_level=row["bloom_level"],
             question_type=row["question_type"],
-            options=row["options"],
+            options=(
+                {"left_items": row.get("left_items", []), "right_items": row.get("right_items", [])}
+                if row["question_type"] == "Matching Type"
+                else row["options"]
+            ),
             correct_answer=correct_ans,  # Swapped with our safely formatted array structure
             explanation=row["explanation"],
         )
@@ -619,6 +670,7 @@ async def confirm_generation(
     db.commit()
 
     FILE_CACHE[f"{payload.upload_id}_questions"] = generated_questions
+    record_activity(db, "Generated Question Set", f"Generated {len(generated_questions)} questions for {subject_row.name}.", "generate", user_id=user_id)
 
     workbook = generate_tos_from_excel_template(
         selected_topics_data=selected_topics_data,
@@ -626,6 +678,7 @@ async def confirm_generation(
         course_title=subject_row.name,
         whole_total_points=whole_total_points,
         exam_type=exam_type,
+        semester=semester,
     )
     stream = io.BytesIO()
     workbook.save(stream)
@@ -667,7 +720,7 @@ def _build_tos_response_rows(tos_data):
 # --- STEP 3: EXPORT ROUTES ---
 
 @router.get("/export/tos")
-async def export_institutional_tos(upload_id: str):
+async def export_institutional_tos(upload_id: str, user_id: int | None = None, db: Session = Depends(get_db)):
     """
     Retrieves the generated openpyxl Excel spreadsheet payload matching
     the active session token directly from the shared memory cache.
@@ -680,6 +733,8 @@ async def export_institutional_tos(upload_id: str):
             detail="TOS file not found or the session has expired."
         )
 
+    record_activity(db, "Downloaded TOS", "Downloaded the generated Table of Specifications.", "download", user_id=user_id)
+
     return StreamingResponse(
         io.BytesIO(tos_binary),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -691,13 +746,14 @@ async def export_institutional_tos(upload_id: str):
 
 
 @router.get("/export/assessment/docx")
-async def export_assessment_docx(upload_id: str):
+async def export_assessment_docx(upload_id: str, user_id: int | None = None, db: Session = Depends(get_db)):
     questions = FILE_CACHE.get(f"{upload_id}_questions")
     meta = FILE_CACHE.get(f"{upload_id}_metadata")
     if not questions or not meta:
         raise HTTPException(status_code=404, detail="Generated assessment not found or session expired.")
 
     data = _build_assessment_docx(questions, meta["subject"]["name"], meta["subject"]["code"])
+    record_activity(db, "Downloaded Test", "Downloaded the generated DOCX test.", "download", user_id=user_id)
     return StreamingResponse(
         io.BytesIO(data),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -709,13 +765,14 @@ async def export_assessment_docx(upload_id: str):
 
 
 @router.get("/export/assessment/pdf")
-async def export_assessment_pdf(upload_id: str):
+async def export_assessment_pdf(upload_id: str, user_id: int | None = None, db: Session = Depends(get_db)):
     questions = FILE_CACHE.get(f"{upload_id}_questions")
     meta = FILE_CACHE.get(f"{upload_id}_metadata")
     if not questions or not meta:
         raise HTTPException(status_code=404, detail="Generated assessment not found or session expired.")
 
     data = _build_assessment_pdf(questions, meta["subject"]["name"], meta["subject"]["code"])
+    record_activity(db, "Downloaded Test", "Downloaded the generated PDF test.", "download", user_id=user_id)
     return StreamingResponse(
         io.BytesIO(data),
         media_type="application/pdf",

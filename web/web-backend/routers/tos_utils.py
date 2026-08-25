@@ -204,7 +204,8 @@ def _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_t
         ws.cell(row=current_row, column=ilo_col, value=topic.get("ilo", f"ILO {topic.get('ilo_num', 1)}"))
         ws.cell(row=current_row, column=hours_col, value=float(topic["hours_a"]))
         if minutes_col:
-            ws.cell(row=current_row, column=minutes_col, value=float(topic.get("minutes_b", 2.0)))
+            ws.cell(row=current_row, column=minutes_col,
+                    value=f"=IFERROR({get_column_letter(hours_col)}{current_row}/{get_column_letter(hours_col)}{total_row_index}*60,0)")
         if weight_col:
             weight_cell = ws.cell(row=current_row, column=weight_col,
                                     value=f"=IFERROR({get_column_letter(total_col)}{current_row}/$S${total_row_index}*100,0)")
@@ -216,13 +217,19 @@ def _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_t
             weight_cell.number_format = '0.00"%"'
 
         for bloom_level, col in bloom_cols.items():
-            ws.cell(row=current_row, column=col, value=topic.get("bloom_counts", {}).get(bloom_level, 0))
+            question_numbers = topic.get("bloom_question_numbers", {}).get(bloom_level, "")
+            ws.cell(row=current_row, column=col, value=question_numbers)
             pct_col = col + 1
+            count_formula = f'IF({get_column_letter(col)}{current_row}="",0,LEN({get_column_letter(col)}{current_row})-LEN(SUBSTITUTE({get_column_letter(col)}{current_row},",",""))+1)'
             pct_cell = ws.cell(row=current_row, column=pct_col,
-                                 value=f"=IFERROR(({get_column_letter(col)}{current_row}/$S${total_row_index})*100,0)")
+                                 value=f"=IFERROR(({count_formula}/$S${total_row_index})*100,0)")
             pct_cell.number_format = '0.00"%"'
 
-        ws.cell(row=current_row, column=total_col, value=f"=SUM({','.join(get_column_letter(bc) + str(current_row) for bc in bloom_cols.values())})")
+        count_terms = [
+            f'IF({get_column_letter(col)}{current_row}="",0,LEN({get_column_letter(col)}{current_row})-LEN(SUBSTITUTE({get_column_letter(col)}{current_row},",",""))+1)'
+            for col in bloom_cols.values()
+        ]
+        ws.cell(row=current_row, column=total_col, value=f"={'+'.join(count_terms)}")
 
     # Total row: always (re)write every formula from scratch, rather than only
     # filling in blanks. "Only if None" let stale/leftover cell content (e.g.
@@ -239,6 +246,10 @@ def _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_t
         ws.cell(row=total_row_index, column=hours_col,
                  value=f"=SUM({get_column_letter(hours_col)}{start_row}:{get_column_letter(hours_col)}{last_data_row})")
 
+    if minutes_col:
+        ws.cell(row=total_row_index, column=minutes_col,
+                 value=f"=SUM({get_column_letter(minutes_col)}{start_row}:{get_column_letter(minutes_col)}{last_data_row})")
+
     if total_col:
         ws.cell(row=total_row_index, column=total_col,
                  value=f"=SUM({get_column_letter(total_col)}{start_row}:{get_column_letter(total_col)}{last_data_row})")
@@ -254,8 +265,11 @@ def _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_t
     # time.
     for col in bloom_cols.values():
         pct_col = col + 1
-        ws.cell(row=total_row_index, column=col,
-                 value=f"=SUM({get_column_letter(col)}{start_row}:{get_column_letter(col)}{last_data_row})")
+        count_terms = [
+            f'IF({get_column_letter(col)}{row}="",0,LEN({get_column_letter(col)}{row})-LEN(SUBSTITUTE({get_column_letter(col)}{row},",",""))+1)'
+            for row in range(start_row, last_data_row + 1)
+        ]
+        ws.cell(row=total_row_index, column=col, value=f"={'+'.join(count_terms)}")
         pct_total_cell = ws.cell(row=total_row_index, column=pct_col,
                  value=f"=SUM({get_column_letter(pct_col)}{start_row}:{get_column_letter(pct_col)}{last_data_row})")
         pct_total_cell.number_format = '0.00"%"'
@@ -664,7 +678,7 @@ def generate_tos_from_institutional_template(selected_topics_data, course_code, 
     return wb
 
 
-def _write_exam_type_label(ws, exam_type):
+def _write_exam_type_label(ws, exam_type, semester):
     """The template's header cell bakes in 'TABLE OF SPECIFICATIONS\\n<exam
     type>\\n<semester/year>' as one multi-line string. Replace just the exam
     type line so the file actually reflects Midterm/Final/Quiz/etc. instead
@@ -677,18 +691,21 @@ def _write_exam_type_label(ws, exam_type):
                     lines[1] = exam_type
                 else:
                     lines.append(exam_type)
+                if len(lines) >= 3:
+                    year = lines[2].split(",", 1)[-1].strip() if "," in lines[2] else "AY 2026 - 2027"
+                    lines[2] = f"{semester}, {year}"
                 cell.value = "\n".join(lines)
                 return
 
 
-def generate_tos_from_excel_template(selected_topics_data, course_code, course_title, whole_total_points, exam_type="Final Exam"):
+def generate_tos_from_excel_template(selected_topics_data, course_code, course_title, whole_total_points, exam_type="Final Exam", semester="First Semester"):
     wb = _load_tos_template_workbook()
     ws = wb.active
     ws.views.sheetView[0].showGridLines = True
 
     _write_course_label(ws, "course code", course_code or "IT 332")
     _write_course_label(ws, "course title", course_title or "Integrative Programming and Technologies")
-    _write_exam_type_label(ws, exam_type)
+    _write_exam_type_label(ws, exam_type, semester)
 
     header_row = _find_header_row(ws)
     if header_row is None:

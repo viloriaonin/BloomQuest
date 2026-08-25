@@ -544,6 +544,8 @@ def build_preview(generated_questions):
             "type": q["question_type"],
             "topic_name": q.get("topic_name", ""),
             "options": q.get("options", []),
+            "left_items": q.get("left_items", []),
+            "right_items": q.get("right_items", []),
             "explanation": q.get("explanation", "")
         })
     return preview

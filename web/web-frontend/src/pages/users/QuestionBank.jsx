@@ -28,7 +28,7 @@ const QuestionBank = () => {
   const location = useLocation();
   const { subjectId, setId } = useParams();
   const isCreatingSet = location.pathname.endsWith('/create-set');
-  const [activeTab, setActiveTab]             = useState('Remember');
+  const [activeTab, setActiveTab]             = useState('All');
   const [subjects, setSubjects]               = useState([]);
   const [selectedSubject, setSelectedSubject] = useState('');
   const [showAllQuestions, setShowAllQuestions] = useState(false);
@@ -45,7 +45,6 @@ const QuestionBank = () => {
   const [exportFormat, setExportFormat]       = useState('pdf');
   const [searchTerm, setSearchTerm]           = useState('');
   const [questionTypeFilter, setQuestionTypeFilter] = useState('All types');
-  const [bulkDifficulty, setBulkDifficulty] = useState('moderate');
   const [previewOpen, setPreviewOpen] = useState(false);
   const [assessmentSettingsOpen, setAssessmentSettingsOpen] = useState(false);
   const [answerMode, setAnswerMode] = useState('with_key');
@@ -246,7 +245,6 @@ const QuestionBank = () => {
       question: q.question,
       correct_answer: q.correct_answer || '',
       explanation: q.explanation || '',
-      difficulty: q.difficulty || 'moderate',
     });
   };
 
@@ -256,7 +254,6 @@ const QuestionBank = () => {
       formData.append('question', editForm.question);
       formData.append('correct_answer', editForm.correct_answer);
       formData.append('explanation', editForm.explanation);
-      formData.append('difficulty', editForm.difficulty || 'moderate');
       const res = await fetch(`${API_URL}/api/questions/${editingQuestion}`, {
         method: 'PUT',
         body: formData,
@@ -268,22 +265,6 @@ const QuestionBank = () => {
       setEditingQuestion(null);
     } catch (err) {
       setError('Failed to update question.');
-    }
-  };
-
-  const handleBulkUpdate = async () => {
-    if (selectedQuestions.length === 0) return;
-    const formData = new FormData();
-    formData.append('question_ids', selectedQuestions.join(','));
-    formData.append('difficulty', bulkDifficulty);
-    try {
-      const res = await fetch(`${API_URL}/api/questions/bulk`, { method: 'PUT', body: formData });
-      if (!res.ok) throw new Error('Bulk update failed');
-      setQuestions((current) => current.map((question) => selectedQuestions.includes(question.id)
-        ? { ...question, difficulty: bulkDifficulty }
-        : question));
-    } catch (err) {
-      setError(err.message);
     }
   };
 
@@ -400,7 +381,7 @@ const QuestionBank = () => {
 
   const countByLevel = (level) => questions.filter(q => q.bloom_level === level).length;
   const displayedQuestions = questions.filter(q => {
-    const matchesLevel = q.bloom_level === activeTab;
+    const matchesLevel = activeTab === 'All' || q.bloom_level === activeTab;
     const matchesType = questionTypeFilter === 'All types' || q.question_type === questionTypeFilter;
     const normalizedSearch = searchTerm.trim().toLowerCase();
     const matchesSearch = !normalizedSearch || [q.question, q.topic_name, q.correct_answer].filter(Boolean).join(' ').toLowerCase().includes(normalizedSearch);
@@ -437,7 +418,6 @@ const QuestionBank = () => {
   }, {}));
   const selectedTopicMix = countValues('topic_name');
   const selectedTypeMix = countValues('question_type');
-  const selectedDifficultyMix = countValues('difficulty');
   const answeredCount = summaryQuestionRecords.filter((question) => question.correct_answer).length;
   const explainedCount = summaryQuestionRecords.filter((question) => question.explanation).length;
   const sidebarSummary = {
@@ -464,22 +444,18 @@ const QuestionBank = () => {
     if (!selectedSubject || selectedQuestions.length === 0) return;
 
     if (mode === 'tos') {
-      const selected = questions.filter((question) => selectedQuestions.includes(question.id));
-      const csvRows = [
-        ['Bloom Level', 'Question Type', 'Topic', 'Question'],
-        ...selected.map((question) => [
-          question.bloom_level || '',
-          question.question_type || '',
-          question.topic_name || '',
-          `"${(question.question || '').replace(/"/g, '""')}"`,
-        ]),
-      ];
-      const csv = csvRows.map((row) => row.join(',')).join('\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const formData = new FormData();
+      formData.append('subject_id', selectedSubject);
+      formData.append('question_ids', selectedQuestions.join(','));
+      const userId = localStorage.getItem('user_id');
+      if (userId) formData.append('user_id', userId);
+      const res = await fetch(`${API_URL}/api/questions/export/tos`, { method: 'POST', body: formData });
+      if (!res.ok) throw new Error('TOS download failed');
+      const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${selectedSubjectName || 'question-bank'}-tos-summary.csv`;
+      link.download = `${selectedSubjectName || 'question-bank'}-TOS.xlsx`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -498,6 +474,8 @@ const QuestionBank = () => {
       formData.append('export_format', format);
       formData.append('answer_mode', 'with_key');
       formData.append('include_answer_key', 'true');
+      const userId = localStorage.getItem('user_id');
+      if (userId) formData.append('user_id', userId);
 
       const res = await fetch(`${API_URL}/api/questions/export`, {
         method: 'POST',
@@ -532,6 +510,7 @@ const QuestionBank = () => {
       formData.append('export_format', exportFormat);
       formData.append('answer_mode', answerMode);
       formData.append('include_answer_key', String(answerMode !== 'questions_only'));
+      formData.append('user_id', localStorage.getItem('user_id') || '');
       const res = await fetch(`${API_URL}/api/questions/export`, {
         method: 'POST',
         body: formData,
@@ -882,6 +861,14 @@ const QuestionBank = () => {
 
               <div className="border-b border-gray-200 overflow-x-auto">
                 <div className="flex px-4 min-w-max">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('All')}
+                    className={`flex items-center gap-2 border-b-2 px-6 py-4 text-sm font-medium transition-colors ${activeTab === 'All' ? 'border-red-600 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                  >
+                    All Questions
+                    <span className="ml-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">{questions.length}</span>
+                  </button>
                   {BLOOMS_LEVELS.map((tab) => (
                     <button
                       key={tab.name}
@@ -930,7 +917,6 @@ const QuestionBank = () => {
                         <input className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm outline-none focus:border-red-400" placeholder="Correct answer" value={editForm.correct_answer} onChange={(e) => setEditForm(prev => ({ ...prev, correct_answer: e.target.value }))} />
                         <input className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm outline-none focus:border-red-400" placeholder="Explanation" value={editForm.explanation} onChange={(e) => setEditForm(prev => ({ ...prev, explanation: e.target.value }))} />
                         <div className="flex gap-2">
-                          <select value={editForm.difficulty || 'moderate'} onChange={(e) => setEditForm(prev => ({ ...prev, difficulty: e.target.value }))} className="rounded-md border border-gray-200 px-2 py-2 text-xs"><option value="easy">Easy</option><option value="moderate">Moderate</option><option value="hard">Hard</option></select>
                           <button onClick={handleEditSave} className="rounded-md bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-700">Save</button>
                           <button onClick={() => setEditingQuestion(null)} className="rounded-md bg-gray-100 px-4 py-2 text-xs font-medium text-gray-600 hover:bg-gray-200">Cancel</button>
                         </div>
@@ -963,9 +949,22 @@ const QuestionBank = () => {
                                   }`}
                                   style={opt === q.correct_answer ? { borderColor: '#BBE3C7', backgroundColor: '#F1FBF4', color: '#15803D' } : undefined}
                                 >
-                                  {opt}
+                                  {String.fromCharCode(65 + i)}. {opt}
                                 </div>
                               ))}
+                            </div>
+                          )}
+
+                          {q.question_type === 'Matching Type' && q.options && !Array.isArray(q.options) && (
+                            <div className="mb-3 grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
+                              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                <p className="mb-1 font-bold text-slate-600">Column A</p>
+                                {(q.options.left_items || []).map((item, index) => <p key={index} className="py-1">{index + 1}. {item}</p>)}
+                              </div>
+                              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                <p className="mb-1 font-bold text-slate-600">Column B</p>
+                                {(q.options.right_items || []).map((item, index) => <p key={index} className="py-1">{String.fromCharCode(65 + index)}. {item}</p>)}
+                              </div>
                             </div>
                           )}
 
@@ -981,7 +980,6 @@ const QuestionBank = () => {
                             <div className="flex flex-wrap gap-1.5 text-xs font-medium">
                               <span className="rounded-full px-2.5 py-1" style={{ backgroundColor: PRIMARY_SOFT, color: PRIMARY }}>{q.bloom_level}</span>
                               <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-500">{q.question_type}</span>
-                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-500">{q.difficulty || 'moderate'}</span>
                             </div>
                             <div className="flex items-center gap-1">
                               <button type="button" onClick={() => toggleFavorite(q.id)} aria-label={favoriteIds.includes(q.id) ? 'Remove from favorites' : 'Add to favorites'} className={`rounded-md p-1.5 transition-colors ${favoriteIds.includes(q.id) ? '' : 'text-slate-400 hover:text-slate-600'}`} style={favoriteIds.includes(q.id) ? { color: PRIMARY } : undefined}>
@@ -1078,14 +1076,6 @@ const QuestionBank = () => {
                       )) : <span className="text-slate-400">None selected</span>}
                     </div>
                   </div>
-                  <div>
-                    <p className="font-semibold text-slate-600">Difficulty</p>
-                    <div className="mt-1 flex flex-wrap gap-1.5">
-                      {selectedDifficultyMix.length ? selectedDifficultyMix.map(([difficulty, count]) => (
-                        <span key={difficulty} className="rounded-full bg-slate-100 px-2 py-1 capitalize text-slate-600">{difficulty}: {count}</span>
-                      )) : <span className="text-slate-400">None selected</span>}
-                    </div>
-                  </div>
                   <div className="flex items-center justify-between border-t border-slate-100 pt-2 text-slate-500">
                     <span>Answer keys available</span>
                     <span className="font-semibold text-slate-800">{answeredCount}/{sidebarSummary.total}</span>
@@ -1133,21 +1123,6 @@ const QuestionBank = () => {
             <div className="text-gray-700 font-medium">
               Selected: <span className="text-red-600 font-bold text-lg">{selectedQuestions.length}</span>
             </div>
-            {selectedQuestions.length > 0 && <div className="flex items-center gap-2"><select value={bulkDifficulty} onChange={(e) => setBulkDifficulty(e.target.value)} className="border border-gray-200 rounded-md px-2 py-1 text-xs"><option value="easy">Easy</option><option value="moderate">Moderate</option><option value="hard">Hard</option></select><button type="button" onClick={handleBulkUpdate} className="rounded-md border border-red-200 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50">Apply</button></div>}
-          </div>
-          <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setPreviewOpen(true)}
-            disabled={selectedQuestions.length === 0 || exporting}
-            className={`py-2 px-6 rounded-md font-medium text-sm transition-colors ${
-              selectedQuestions.length > 0 && !exporting
-                ? 'bg-[#b90000] hover:bg-[#990000] text-white shadow-sm'
-                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-            }`}
-          >
-            {`Generate Assessment (${selectedQuestions.length})`}
-          </button>
           </div>
         </div>
       )}
@@ -1156,8 +1131,8 @@ const QuestionBank = () => {
         <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewOpen(false); }}>
           <section role="dialog" aria-modal="true" aria-labelledby="assessment-preview-title" className="bq-modal-panel flex max-h-[calc(100vh-2rem)] w-full max-w-3xl min-h-0 flex-col overflow-hidden">
             <div className="flex shrink-0 items-center justify-between border-b bg-[#fffdfc] p-5"><div><h2 id="assessment-preview-title" className="text-lg font-bold text-slate-900">Assessment preview</h2><p className="mt-1 text-sm text-slate-500">{selectedQuestions.length} selected question{selectedQuestions.length === 1 ? '' : 's'} for {selectedSubjectName}.</p></div><button type="button" onClick={() => setPreviewOpen(false)} className="text-sm font-semibold text-[#B4454A]">Close</button></div>
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#f8fafc] p-5">{selectedQuestions.map((questionId, index) => { const question = questions.find((item) => item.id === questionId); if (!question) return null; return <article key={question.id} className="rounded-lg border border-slate-200 bg-white p-4"><div className="flex items-start gap-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-slate-900">{index + 1}. {question.question}</p><div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500"><span>{question.bloom_level}</span><span>{question.question_type}</span><span>{question.difficulty || 'moderate'}</span></div>{question.options?.map((option) => <p key={option} className="mt-1 text-xs text-slate-600">{option}</p>)}</div><div className="flex shrink-0 flex-col items-end gap-1"><button type="button" onClick={() => { setPreviewOpen(false); handleEditOpen(question); }} className="text-xs font-semibold text-[#B4454A] hover:text-[#8f1c2b]">Edit question</button><div className="flex gap-1"><button type="button" onClick={() => moveSelectedQuestion(index, -1)} disabled={index === 0} aria-label="Move question up" className="rounded border px-2 py-1 text-xs disabled:text-slate-300">↑</button><button type="button" onClick={() => moveSelectedQuestion(index, 1)} disabled={index === selectedQuestions.length - 1} aria-label="Move question down" className="rounded border px-2 py-1 text-xs disabled:text-slate-300">↓</button></div></div></div></article>; })}</div>
-            <div className="flex shrink-0 justify-end gap-2 border-t bg-[#fffdfc] p-4"><button type="button" onClick={() => setPreviewOpen(false)} className="bq-secondary-button">Continue editing</button><button type="button" onClick={() => { setPreviewOpen(false); setAssessmentSettingsOpen(true); }} className="bq-primary-button">Generate Assessment</button></div>
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#f8fafc] p-5">{selectedQuestions.map((questionId, index) => { const question = questions.find((item) => item.id === questionId); if (!question) return null; return <article key={question.id} className="rounded-lg border border-slate-200 bg-white p-4"><div className="flex items-start gap-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-slate-900">{index + 1}. {question.question}</p><div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500"><span>{question.bloom_level}</span><span>{question.question_type}</span></div>{Array.isArray(question.options) && question.options.map((option, optionIndex) => <p key={optionIndex} className="mt-1 text-xs text-slate-600">{String.fromCharCode(65 + optionIndex)}. {option}</p>)}{question.question_type === 'Matching Type' && question.options && !Array.isArray(question.options) && <div className="mt-2 grid grid-cols-2 gap-3 text-xs"><div><p className="font-bold text-slate-600">Column A</p>{(question.options.left_items || []).map((item, itemIndex) => <p key={itemIndex}>{itemIndex + 1}. {item}</p>)}</div><div><p className="font-bold text-slate-600">Column B</p>{(question.options.right_items || []).map((item, itemIndex) => <p key={itemIndex}>{String.fromCharCode(65 + itemIndex)}. {item}</p>)}</div></div>}</div><div className="flex shrink-0 flex-col items-end gap-1"><button type="button" onClick={() => { setPreviewOpen(false); handleEditOpen(question); }} className="text-xs font-semibold text-[#B4454A] hover:text-[#8f1c2b]">Edit question</button><div className="flex gap-1"><button type="button" onClick={() => moveSelectedQuestion(index, -1)} disabled={index === 0} aria-label="Move question up" className="rounded border px-2 py-1 text-xs disabled:text-slate-300">↑</button><button type="button" onClick={() => moveSelectedQuestion(index, 1)} disabled={index === selectedQuestions.length - 1} aria-label="Move question down" className="rounded border px-2 py-1 text-xs disabled:text-slate-300">↓</button></div></div></div></article>; })}</div>
+            <div className="flex shrink-0 justify-end gap-2 border-t bg-[#fffdfc] p-4"><button type="button" onClick={() => setPreviewOpen(false)} className="bq-secondary-button">Close</button></div>
           </section>
         </div>
       )}
@@ -1170,7 +1145,7 @@ const QuestionBank = () => {
             <label className="mt-5 block text-sm font-semibold text-slate-700">Subject<input value={selectedSubjectName} readOnly className="mt-2 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 font-normal text-slate-600" /></label>
             <label className="mt-4 block text-sm font-semibold text-slate-700">File type<select value={exportFormat} onChange={(event) => setExportFormat(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2.5 font-normal outline-none focus:border-[#B4454A]"><option value="pdf">PDF</option><option value="docx">Word document</option></select></label>
             <label className="mt-4 block text-sm font-semibold text-slate-700">Content<select value={answerMode} onChange={(event) => setAnswerMode(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2.5 font-normal outline-none focus:border-[#B4454A]"><option value="with_key">Questions and answer key</option><option value="questions_only">Questions only</option><option value="key_only">Answer key only</option></select></label>
-            <div className="mt-6 flex justify-end gap-2"><button type="button" onClick={() => setAssessmentSettingsOpen(false)} className="bq-secondary-button">Cancel</button><button type="button" onClick={() => { setAssessmentSettingsOpen(false); handleGenerateAssessment(); }} disabled={exporting} className="bq-primary-button">{exporting ? 'Preparing...' : 'Generate Assessment'}</button></div>
+            <div className="mt-6 flex justify-end gap-2"><button type="button" onClick={() => setAssessmentSettingsOpen(false)} className="bq-secondary-button">Cancel</button></div>
           </section>
         </div>
       )}

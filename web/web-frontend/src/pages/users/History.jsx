@@ -103,7 +103,10 @@ const History = () => {
     const fetchHistory = async () => {
       try {
         setLoading(true);
-        const res = await fetch(API_URL);
+        const userId = localStorage.getItem('user_id');
+        const email = localStorage.getItem('email');
+        const query = userId ? `user_id=${encodeURIComponent(userId)}` : `email=${encodeURIComponent(email || '')}`;
+        const res = await fetch(`${API_URL}?${query}`);
         if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
         const data = await res.json();
         const formatted = data.map((item) => ({
@@ -128,9 +131,6 @@ const History = () => {
     { id: 'content', label: 'Content', types: ['upload', 'analysis', 'generate', 'classify', 'question', 'delete'] },
     { id: 'sets', label: 'Question Sets', types: ['question_set'] },
     { id: 'exports', label: 'Exports', types: ['export', 'download'] },
-    { id: 'security', label: 'Security', types: ['login', 'security'] },
-    { id: 'academic', label: 'Academic', types: ['academic'] },
-    { id: 'users', label: 'Users', types: ['user'] },
     { id: 'errors', label: 'Errors', types: null, status: 'error' },
   ];
 

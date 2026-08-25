@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { UploadCloud, FileText, FileSpreadsheet, Presentation, X, CheckCircle2, AlertCircle, Sparkles, PencilLine, FolderUp, RotateCcw, Plus } from 'lucide-react';
 
 const API_URL = '/api';
+const EXAM_TYPE_OPTIONS = ['Midterm Exam', 'Final Exam', 'Quiz', 'Long Exam'];
+const SEMESTER_OPTIONS = ['First Semester', 'Second Semester', 'Summer'];
 const PRIMARY = '#8F1424';
 const pageBg = '#F6F7F9';
 
@@ -296,6 +298,8 @@ const InputQuestion = () => {
   const [totalPoints, setTotalPoints] = useState('50');
   const [subcolumnAValues, setSubcolumnAValues] = useState({});
   const [totalItems, setTotalItems] = useState('');
+  const [examType, setExamType] = useState('Final Exam');
+  const [semester, setSemester] = useState('First Semester');
   const [selectedQuestionTypes, setSelectedQuestionTypes] = useState([]);
   const [generating, setGenerating] = useState(false);
   const [generationResult, setGenerationResult] = useState(null);
@@ -334,6 +338,8 @@ const InputQuestion = () => {
       if (Array.isArray(parsed.selectedQuestionTypes)) setSelectedQuestionTypes(parsed.selectedQuestionTypes);
       if (parsed.totalPoints !== undefined) setTotalPoints(parsed.totalPoints);
       if (parsed.totalItems !== undefined) setTotalItems(parsed.totalItems);
+      if (parsed.examType) setExamType(parsed.examType);
+      if (parsed.semester) setSemester(parsed.semester);
       if (parsed.previewBloomTab) setPreviewBloomTab(parsed.previewBloomTab);
       if (parsed.uploading !== undefined) setUploading(parsed.uploading);
       if (parsed.generating !== undefined) setGenerating(parsed.generating);
@@ -361,6 +367,8 @@ const InputQuestion = () => {
       selectedQuestionTypes,
       totalPoints,
       totalItems,
+      examType,
+      semester,
       previewBloomTab,
       error,
       successMessage,
@@ -382,6 +390,8 @@ const InputQuestion = () => {
     selectedQuestionTypes,
     totalPoints,
     totalItems,
+    examType,
+    semester,
     previewBloomTab,
     error,
     successMessage,
@@ -403,6 +413,8 @@ const InputQuestion = () => {
     selectedQuestionTypes,
     totalPoints,
     totalItems,
+    examType,
+    semester,
     previewBloomTab,
     uploading,
     generating,
@@ -525,6 +537,7 @@ const InputQuestion = () => {
           question: manualQuestion.trim(),
           question_type: manualQuestionType,
           subject_id: parseInt(selectedSubject),
+          user_id: Number(localStorage.getItem('user_id')) || null,
         }),
       });
 
@@ -632,10 +645,6 @@ const InputQuestion = () => {
   };
 
   const handleUpload = async () => {
-    if (!selectedSubject) {
-      setError('Please select a target course subject before uploading.');
-      return;
-    }
     if (!moduleFile || !syllabusFile) {
       setError('Please upload both module and syllabus files.');
       return;
@@ -666,7 +675,8 @@ const InputQuestion = () => {
       const formData = new FormData();
       formData.append('module_file', moduleFile);
       formData.append('syllabus_file', syllabusFile);
-      formData.append('subject_id', String(selectedSubject));
+      const userId = localStorage.getItem('user_id');
+      if (userId) formData.append('user_id', userId);
 
       uploadAbortControllerRef.current = new AbortController();
       const response = await fetch(`${API_URL}/questions/upload`, {
@@ -796,24 +806,38 @@ const InputQuestion = () => {
         subcolumn_a_hours: Object.fromEntries(
           Object.entries(subcolumnAValues).map(([key, value]) => [String(key), String(value)])
         ),
+        exam_type: examType,
+        semester,
+        user_id: Number(localStorage.getItem('user_id')) || null,
       };
 
-      const response = await fetch(`${API_URL}/questions/generate-with-tos`, {
+      const previewResponse = await fetch(`${API_URL}/questions/generate-preview`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) {
-        const errData = await parseApiResponse(response);
-        const message = getErrorMessage(errData) || `Generation failed with server status code: ${response.status}`;
-        if (response.status === 502) {
+      if (!previewResponse.ok) {
+        const errData = await parseApiResponse(previewResponse);
+        const message = getErrorMessage(errData) || `Generation failed with server status code: ${previewResponse.status}`;
+        if (previewResponse.status === 502) {
           throw new Error(message || 'The AI Service is currently rate-limited or timed out. Please wait a few moments and try generating again.');
         }
         throw new Error(message);
       }
 
-      const data = await parseApiResponse(response);
+      const confirmResponse = await fetch(`${API_URL}/questions/confirm-generation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ upload_id: uploadResult.upload_id }),
+      });
+
+      if (!confirmResponse.ok) {
+        const errData = await parseApiResponse(confirmResponse);
+        throw new Error(getErrorMessage(errData) || `Saving failed with server status code: ${confirmResponse.status}`);
+      }
+
+      const data = await parseApiResponse(confirmResponse);
       setGenerationResult(data);
       setSuccessMessage('🎉 Matrix TOS mapped and questions populated to the database store successfully!');
       persistInputQuestionSession({
@@ -844,7 +868,9 @@ const InputQuestion = () => {
 
   const downloadFile = async (endpoint, filename) => {
     try {
-      const response = await fetch(`${API_URL}/questions/export/${endpoint}?upload_id=${uploadResult.upload_id}`, {
+      const userId = localStorage.getItem('user_id');
+      const userParam = userId ? `&user_id=${encodeURIComponent(userId)}` : '';
+      const response = await fetch(`${API_URL}/questions/export/${endpoint}?upload_id=${encodeURIComponent(uploadResult.upload_id)}${userParam}`, {
         method: 'GET',
       });
       if (!response.ok) throw new Error('Failed to retrieve file asset binary records.');
@@ -1019,23 +1045,6 @@ const InputQuestion = () => {
                   <div className="rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-red-700">Required</div>
                 </div>
 
-                <div className="mb-4">
-                  <label className="mb-1.5 block text-[13px] font-medium text-slate-600">Subject</label>
-                  <select
-                    value={selectedSubject}
-                    onChange={handleSubjectDropdownChange}
-                    className="w-full rounded-lg border px-3 py-2 text-sm text-slate-700 outline-none focus:border-red-400"
-                    style={{ borderColor: border }}
-                    disabled={!!uploadResult}
-                  >
-                    <option value="">Select a subject</option>
-                    {subjects.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                    <option value="add_new">+ Add new subject</option>
-                  </select>
-                </div>
-
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <UploadSlot
                     policyKey="module"
@@ -1058,7 +1067,7 @@ const InputQuestion = () => {
                 <div className="mt-6 flex justify-end border-t pt-4" style={{ borderColor: border }}>
                   <button
                     onClick={handleUpload}
-                    disabled={uploading || !selectedSubject || !moduleFile || !syllabusFile || !!uploadResult}
+                    disabled={uploading || !moduleFile || !syllabusFile || !!uploadResult}
                     className="rounded-lg px-5 py-2.5 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
                     style={{ backgroundColor: PRIMARY }}
                   >
@@ -1120,6 +1129,18 @@ const InputQuestion = () => {
                     </div>
 
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div>
+                        <label className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">Kind of Exam</label>
+                        <select value={examType} onChange={(e) => setExamType(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:bg-white">
+                          {EXAM_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">Semester</label>
+                        <select value={semester} onChange={(e) => setSemester(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:bg-white">
+                          {SEMESTER_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                        </select>
+                      </div>
                       <div>
                         <label className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">Total Points</label>
                         <input type="number" value={totalPoints} onChange={(e) => setTotalPoints(e.target.value)} placeholder="e.g. 50" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:bg-white" />
@@ -1287,6 +1308,27 @@ const InputQuestion = () => {
                             <span className="bg-red-50 text-red-600 font-bold px-1.5 py-0.5 rounded uppercase">{safeRenderValue(q.type)}</span>
                           </div>
                           <p className="font-medium text-gray-800">{idx + 1}. {safeRenderValue(q.question)}</p>
+                          {q.type === 'MCQ' && Array.isArray(q.options) && (
+                            <div className="mt-2 space-y-1 text-xs text-gray-600">
+                              {q.options.map((option, optionIndex) => (
+                                <p key={optionIndex} className="rounded border border-gray-200 bg-white px-2 py-1">
+                                  {String.fromCharCode(65 + optionIndex)}. {safeRenderValue(option)}
+                                </p>
+                              ))}
+                            </div>
+                          )}
+                          {q.type === 'Matching Type' && Array.isArray(q.left_items) && Array.isArray(q.right_items) && (
+                            <div className="mt-3 grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
+                              <div className="rounded border border-gray-200 bg-white p-2">
+                                <p className="mb-1 font-bold text-gray-600">Column A</p>
+                                {q.left_items.map((item, itemIndex) => <p key={itemIndex} className="py-1">{itemIndex + 1}. {safeRenderValue(item)}</p>)}
+                              </div>
+                              <div className="rounded border border-gray-200 bg-white p-2">
+                                <p className="mb-1 font-bold text-gray-600">Column B</p>
+                                {q.right_items.map((item, itemIndex) => <p key={itemIndex} className="py-1">{String.fromCharCode(65 + itemIndex)}. {safeRenderValue(item)}</p>)}
+                              </div>
+                            </div>
+                          )}
                           <p className="text-xs text-green-700 font-bold mt-2 bg-green-50 border border-green-100 inline-block px-2 py-0.5 rounded">✓ Answer Key: {safeRenderValue(q.correct_answer)}</p>
                         </div>
                     ))}

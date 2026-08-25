@@ -48,9 +48,17 @@ def build_assessment_docx(subject: models.Subject, questions: list, include_answ
             p = doc.add_paragraph()
             p.add_run(f"{i}. {q.question}").bold = True
 
-            if q.options:
+            if q.question_type == "MCQ" and isinstance(q.options, list) and q.options:
                 for j, opt in enumerate(q.options):
                     doc.add_paragraph(f"   {letters[j]}. {opt}")
+            elif q.question_type == "Matching Type" and getattr(q, "left_items", None) and getattr(q, "right_items", None):
+                table = doc.add_table(rows=max(len(q.left_items), len(q.right_items)) + 1, cols=2)
+                table.style = "Table Grid"
+                table.rows[0].cells[0].text = "Column A"
+                table.rows[0].cells[1].text = "Column B"
+                for row_index in range(max(len(q.left_items), len(q.right_items))):
+                    table.rows[row_index + 1].cells[0].text = f"{row_index + 1}. {q.left_items[row_index]}" if row_index < len(q.left_items) else ""
+                    table.rows[row_index + 1].cells[1].text = f"{chr(65 + row_index)}. {q.right_items[row_index]}" if row_index < len(q.right_items) else ""
             else:
                 doc.add_paragraph("   Answer: ____________________________________")
             doc.add_paragraph()
