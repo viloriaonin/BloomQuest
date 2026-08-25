@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { UploadCloud, FileText, FileSpreadsheet, Presentation, X, CheckCircle2, AlertCircle } from 'lucide-react';
+import { UploadCloud, FileText, FileSpreadsheet, Presentation, X, CheckCircle2, AlertCircle, Sparkles, PencilLine, FolderUp, RotateCcw, Plus } from 'lucide-react';
 
 const API_URL = '/api';
+const PRIMARY = '#8F1424';
+const pageBg = '#F6F7F9';
+
+// Design tokens matching the dashboard theme
+const border = 'rgba(15, 23, 42, 0.08)';
+
 const BLOOMS_LEVELS = ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'];
 const QUESTION_TYPE_OPTIONS = [
   { label: 'Multiple Choice', value: 'MCQ' },
@@ -12,7 +18,6 @@ const QUESTION_TYPE_OPTIONS = [
   { label: 'Essay', value: 'Essay' },
   { label: 'Situational', value: 'Situational' },
 ];
-const EXAM_TYPE_OPTIONS = ['Midterm Exam', 'Final Exam', 'Quiz', 'Long Exam'];
 
 // File-type policies for each upload slot. Extension is checked rather than
 // relying purely on MIME type, since browsers/OS report MIME inconsistently
@@ -94,6 +99,17 @@ const formatFileSize = (bytes) => {
   return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 };
 
+const parseApiResponse = async (response) => {
+  const text = await response.text();
+  if (!text) return {};
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { detail: text };
+  }
+};
+
 const getErrorMessage = (error) => {
   if (!error) return '';
   if (typeof error === 'string') return error;
@@ -139,6 +155,7 @@ const safeRenderValue = (value) => {
   if (typeof value === 'object') return Object.values(value).map(safeRenderValue).filter(Boolean).join(' / ');
   return String(value);
 };
+
 
 // Professional drag-and-drop upload slot with inline validation
 const UploadSlot = ({ policyKey, file, onFileSelected, onRemove, stepBadge, locked }) => {
@@ -266,6 +283,13 @@ const InputQuestion = () => {
   const [syllabusFile, setSyllabusFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState(null);
+  const [wizardStep, setWizardStep] = useState(1);
+  const WIZARD_STEPS = [
+    { number: 1, label: 'Upload' },
+    { number: 2, label: 'Question Types' },
+    { number: 3, label: 'Items & Points' },
+    { number: 4, label: 'Topics & Generate' },
+  ];
 
   // Interactive Step Variables for TOS
   const [selectedTopics, setSelectedTopics] = useState([]);
@@ -276,10 +300,6 @@ const InputQuestion = () => {
   const [generating, setGenerating] = useState(false);
   const [generationResult, setGenerationResult] = useState(null);
   const [previewBloomTab, setPreviewBloomTab] = useState('Remember'); // Syntax Error Fixed Here
-  const [tosWarning, setTosWarning] = useState('');
-  const [examType, setExamType] = useState('Final Exam');
-  const [previewResult, setPreviewResult] = useState(null);
-  const [confirming, setConfirming] = useState(false);
   const uploadAbortControllerRef = useRef(null);
 
   useEffect(() => {
@@ -304,6 +324,7 @@ const InputQuestion = () => {
 
       const parsed = JSON.parse(stored);
       if (parsed.activeTab) setActiveTab(parsed.activeTab);
+      if (parsed.wizardStep) setWizardStep(parsed.wizardStep);
       if (parsed.moduleFile) setModuleFile(restoreFile(parsed.moduleFile));
       if (parsed.syllabusFile) setSyllabusFile(restoreFile(parsed.syllabusFile));
       if (parsed.uploadResult) setUploadResult(parsed.uploadResult);
@@ -313,8 +334,6 @@ const InputQuestion = () => {
       if (Array.isArray(parsed.selectedQuestionTypes)) setSelectedQuestionTypes(parsed.selectedQuestionTypes);
       if (parsed.totalPoints !== undefined) setTotalPoints(parsed.totalPoints);
       if (parsed.totalItems !== undefined) setTotalItems(parsed.totalItems);
-      if (parsed.examType) setExamType(parsed.examType);
-      if (parsed.previewResult) setPreviewResult(parsed.previewResult);
       if (parsed.previewBloomTab) setPreviewBloomTab(parsed.previewBloomTab);
       if (parsed.uploading !== undefined) setUploading(parsed.uploading);
       if (parsed.generating !== undefined) setGenerating(parsed.generating);
@@ -330,6 +349,7 @@ const InputQuestion = () => {
   const persistInputQuestionSession = React.useCallback((overrides = {}) => {
     const snapshot = {
       activeTab,
+      wizardStep,
       moduleFile: serializeFile(moduleFile),
       syllabusFile: serializeFile(syllabusFile),
       uploading,
@@ -341,8 +361,6 @@ const InputQuestion = () => {
       selectedQuestionTypes,
       totalPoints,
       totalItems,
-      examType,
-      previewResult,
       previewBloomTab,
       error,
       successMessage,
@@ -352,6 +370,7 @@ const InputQuestion = () => {
     sessionStorage.setItem(INPUT_QUESTION_SESSION_KEY, JSON.stringify(snapshot));
   }, [
     activeTab,
+    wizardStep,
     moduleFile,
     syllabusFile,
     uploading,
@@ -363,8 +382,6 @@ const InputQuestion = () => {
     selectedQuestionTypes,
     totalPoints,
     totalItems,
-    examType,
-    previewResult,
     previewBloomTab,
     error,
     successMessage,
@@ -376,6 +393,7 @@ const InputQuestion = () => {
   }, [
     isHydrated,
     activeTab,
+    wizardStep,
     moduleFile,
     syllabusFile,
     uploadResult,
@@ -385,8 +403,6 @@ const InputQuestion = () => {
     selectedQuestionTypes,
     totalPoints,
     totalItems,
-    examType,
-    previewResult,
     previewBloomTab,
     uploading,
     generating,
@@ -398,11 +414,14 @@ const InputQuestion = () => {
   const fetchSubjects = async () => {
     try {
       const response = await fetch(`${API_URL}/subjects`);
-      if (!response.ok) throw new Error('Failed to synchronize subject matrix context data records.');
-      const data = await response.json();
+      if (!response.ok) {
+        const errData = await parseApiResponse(response);
+        throw new Error(getErrorMessage(errData) || 'Failed to synchronize subject matrix context data records.');
+      }
+      const data = await parseApiResponse(response);
       setSubjects(data);
     } catch (err) {
-      setError('Could not load subjects. Please refresh the page and try again.');
+      setError(err.message || 'Could not establish persistent communication hooks with active subjects database schemas.');
     }
   };
 
@@ -417,7 +436,7 @@ const InputQuestion = () => {
       try {
         const response = await fetch(`${API_URL}/questions?subject_id=${selectedSubject}`);
         if (response.ok) {
-          const matchingQuestionBankItems = await response.json();
+          const matchingQuestionBankItems = await parseApiResponse(response);
           const targetInputText = manualQuestion.trim().toLowerCase();
 
           const isDuplicateThought = matchingQuestionBankItems.some(q =>
@@ -426,7 +445,7 @@ const InputQuestion = () => {
           );
 
           if (isDuplicateThought) {
-            setDuplicateWarning('This looks similar to a question already in this subject.');
+            setDuplicateWarning('⚠️ A question item with this identical concept or matching core text already exists within this subject layout block.');
           } else {
             setDuplicateWarning('');
           }
@@ -466,15 +485,15 @@ const InputQuestion = () => {
         }),
       });
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || 'Failed to register subject.');
+      const data = await parseApiResponse(response);
+      if (!response.ok) throw new Error(getErrorMessage(data) || 'Failed to register subject.');
 
       setSubjects(prev => [...prev, data]);
       setSelectedSubject(data.id);
       setIsAddingNewSubject(false);
       setNewSubjectName('');
       setNewSubjectCode('');
-      setSuccessMessage('Subject added successfully.');
+      setSuccessMessage('🎉 Course area injected into registry framework layout records successfully!');
     } catch (err) {
       setError(err.message);
     }
@@ -482,15 +501,15 @@ const InputQuestion = () => {
 
   const handleManualClassification = async () => {
     if (!selectedSubject) {
-      setError('Please select a subject before classifying this item.');
+      setError('You must select a subject tracking reference framework before classifying items.');
       return;
     }
     if (!manualQuestion.trim()) {
-      setError('Please enter a question before submitting.');
+      setError('Question workspace cannot be submitted while empty.');
       return;
     }
     if (duplicateWarning) {
-      setError('This looks like a duplicate of a question already in this course.');
+      setError('Cannot proceed: Conceptual duplicate detected within this course pool.');
       return;
     }
 
@@ -509,9 +528,9 @@ const InputQuestion = () => {
         }),
       });
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || 'Classification engine execution failed.');
-      setSuccessMessage(`Question classified as "${data.bloom_level}" and added to your question bank.`);
+      const data = await parseApiResponse(response);
+      if (!response.ok) throw new Error(getErrorMessage(data) || 'Classification engine execution failed.');
+      setSuccessMessage(`🎉 Success! Machine Learning model analyzed the structure and placed the item into the "${data.bloom_level}" taxonomy rank tier inside your question bank.`);
       setManualQuestion('');
     } catch (err) {
       setError(err.message);
@@ -530,10 +549,9 @@ const InputQuestion = () => {
     setGenerating(false);
     setUploadResult(null);
     setGenerationResult(null);
-    setPreviewResult(null);
-    setTosWarning('');
     setSelectedTopics([]);
     setSubcolumnAValues({});
+    setWizardStep(1);
     setError('Analysis cancelled. You can remove the uploaded files and try again.');
     persistInputQuestionSession({
       activeTab: 'upload',
@@ -541,6 +559,7 @@ const InputQuestion = () => {
       generating: false,
       uploadResult: null,
       generationResult: null,
+      wizardStep: 1,
       selectedTopics: [],
       subcolumnAValues: {},
       error: 'Analysis cancelled. You can remove the uploaded files and try again.',
@@ -550,16 +569,49 @@ const InputQuestion = () => {
   const resetUploadState = () => {
     setUploadResult(null);
     setGenerationResult(null);
-    setPreviewResult(null);
-    setTosWarning('');
     setSelectedTopics([]);
     setSubcolumnAValues({});
+    setWizardStep(1);
     persistInputQuestionSession({
       uploadResult: null,
       generationResult: null,
+      wizardStep: 1,
       selectedTopics: [],
       subcolumnAValues: {},
     });
+  };
+
+  const resetAssessmentProgress = () => {
+    const confirmed = window.confirm('Reset this assessment and clear all uploaded files, selections, and progress?');
+    if (!confirmed) return;
+
+    if (uploadAbortControllerRef.current) {
+      uploadAbortControllerRef.current.abort();
+      uploadAbortControllerRef.current = null;
+    }
+
+    setModuleFile(null);
+    setSyllabusFile(null);
+    setSelectedSubject('');
+    setIsAddingNewSubject(false);
+    setNewSubjectName('');
+    setNewSubjectCode('');
+    setManualQuestion('');
+    setManualQuestionType('MCQ');
+    setDuplicateWarning('');
+    setUploadResult(null);
+    setGenerationResult(null);
+    setSelectedTopics([]);
+    setSubcolumnAValues({});
+    setTotalPoints('50');
+    setTotalItems('');
+    setSelectedQuestionTypes([]);
+    setWizardStep(1);
+    setUploading(false);
+    setGenerating(false);
+    setError('');
+    setSuccessMessage('');
+    sessionStorage.removeItem(INPUT_QUESTION_SESSION_KEY);
   };
 
   const handleFileRemove = (policyKey) => {
@@ -580,6 +632,10 @@ const InputQuestion = () => {
   };
 
   const handleUpload = async () => {
+    if (!selectedSubject) {
+      setError('Please select a target course subject before uploading.');
+      return;
+    }
     if (!moduleFile || !syllabusFile) {
       setError('Please upload both module and syllabus files.');
       return;
@@ -596,8 +652,6 @@ const InputQuestion = () => {
     setUploading(true);
     setUploadResult(null);
     setGenerationResult(null);
-    setPreviewResult(null);
-    setTosWarning('');
     persistInputQuestionSession({
       activeTab: 'upload',
       uploading: true,
@@ -612,6 +666,7 @@ const InputQuestion = () => {
       const formData = new FormData();
       formData.append('module_file', moduleFile);
       formData.append('syllabus_file', syllabusFile);
+      formData.append('subject_id', String(selectedSubject));
 
       uploadAbortControllerRef.current = new AbortController();
       const response = await fetch(`${API_URL}/questions/upload`, {
@@ -620,7 +675,7 @@ const InputQuestion = () => {
         signal: uploadAbortControllerRef.current.signal,
       });
 
-      const data = await response.json().catch(() => ({}));
+      const data = await parseApiResponse(response);
       if (!response.ok) throw new Error(getErrorMessage(data) || 'Upload failed');
 
       setUploadResult(data);
@@ -631,12 +686,14 @@ const InputQuestion = () => {
         setSelectedTopics(nextSelectedTopics);
         setSubcolumnAValues(initialHours);
       }
+      setWizardStep(2);
       persistInputQuestionSession({
         activeTab: 'upload',
         uploading: false,
         generating: false,
         uploadResult: data,
         generationResult: null,
+        wizardStep: 2,
         selectedTopics: data.topics ? data.topics.map((_, idx) => idx) : [],
         subcolumnAValues: data.topics ? Object.fromEntries(data.topics.map((_, idx) => [idx, '3.0'])) : {},
       });
@@ -683,6 +740,10 @@ const InputQuestion = () => {
   };
 
   const handleGenerate = async () => {
+    if (!uploadResult?.upload_id) {
+      setError('Please upload and analyze the module and syllabus before generating questions.');
+      return;
+    }
     const intTotalItems = parseInt(totalItems, 10);
     const intTotalPoints = parseInt(totalPoints, 10);
 
@@ -695,7 +756,7 @@ const InputQuestion = () => {
       return;
     }
     if (selectedTopics.length === 0) {
-      setError('Please select at least one topic to include in the TOS.');
+      setError('Please select at least one Main Topic to include in the TOS layout matrix.');
       return;
     }
     if (selectedQuestionTypes.length === 0) {
@@ -735,17 +796,16 @@ const InputQuestion = () => {
         subcolumn_a_hours: Object.fromEntries(
           Object.entries(subcolumnAValues).map(([key, value]) => [String(key), String(value)])
         ),
-        exam_type: examType,
       };
 
-      const response = await fetch(`${API_URL}/questions/generate-preview`, {
+      const response = await fetch(`${API_URL}/questions/generate-with-tos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
+        const errData = await parseApiResponse(response);
         const message = getErrorMessage(errData) || `Generation failed with server status code: ${response.status}`;
         if (response.status === 502) {
           throw new Error(message || 'The AI Service is currently rate-limited or timed out. Please wait a few moments and try generating again.');
@@ -753,15 +813,14 @@ const InputQuestion = () => {
         throw new Error(message);
       }
 
-      const data = await response.json();
-      setPreviewResult(data);
-      setTosWarning(data.tos_warning || '');
-      setSuccessMessage('Preview ready. Review it below, then confirm to save.');
+      const data = await parseApiResponse(response);
+      setGenerationResult(data);
+      setSuccessMessage('🎉 Matrix TOS mapped and questions populated to the database store successfully!');
       persistInputQuestionSession({
         activeTab: 'upload',
         uploading: false,
         generating: false,
-        previewResult: data,
+        generationResult: data,
       });
     } catch (err) {
       const normalizedError = getErrorMessage(err) || 'An unexpected error occurred during matrix generation.';
@@ -783,49 +842,6 @@ const InputQuestion = () => {
     }
   };
 
-  const handleConfirmGeneration = async () => {
-    setError('');
-    setSuccessMessage('');
-    setConfirming(true);
-
-    try {
-      const response = await fetch(`${API_URL}/questions/confirm-generation`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ upload_id: uploadResult.upload_id }),
-      });
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(getErrorMessage(errData) || `Saving failed with server status code: ${response.status}`);
-      }
-
-      const data = await response.json();
-      setGenerationResult(data);
-      setPreviewResult(null);
-      setSuccessMessage('Assessment saved. Your downloads are ready below.');
-      persistInputQuestionSession({
-        generationResult: data,
-        previewResult: null,
-      });
-    } catch (err) {
-      const normalizedError = getErrorMessage(err) || 'An unexpected error occurred while saving.';
-      setError(normalizedError);
-      persistInputQuestionSession({ error: normalizedError });
-      console.error("TOS Confirm Error:", err);
-    } finally {
-      setConfirming(false);
-    }
-  };
-
-  const handleDiscardPreview = () => {
-    setPreviewResult(null);
-    setTosWarning('');
-    setSuccessMessage('');
-    setError('');
-    persistInputQuestionSession({ previewResult: null });
-  };
-
   const downloadFile = async (endpoint, filename) => {
     try {
       const response = await fetch(`${API_URL}/questions/export/${endpoint}?upload_id=${uploadResult.upload_id}`, {
@@ -843,35 +859,79 @@ const InputQuestion = () => {
   };
 
   return (
-    <div className="max-w-5xl w-full p-2 h-full flex flex-col min-h-0 overflow-y-auto">
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 flex-1 mb-6">
+    <div className="min-h-screen w-full" style={{ backgroundColor: pageBg, fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" }}>
+      <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+        <div className="mb-7 flex items-start gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl shadow-sm" style={{ backgroundColor: PRIMARY }}><Sparkles className="h-6 w-6 text-white" strokeWidth={2} /></div>
+          <div><p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: PRIMARY }}>Create Assessment</p><h1 className="text-2xl font-bold tracking-tight text-slate-900">Question Input &amp; TOS Generator</h1><p className="mt-1 max-w-2xl text-sm text-slate-500">Upload instructional materials or add questions manually, then generate a Table of Specifications and full assessment instruments.</p></div>
+        </div>
+
+        <div className="rounded-2xl bg-white shadow-sm" style={{ border: '1px solid rgba(15, 23, 42, 0.09)' }}><div className="p-5 sm:p-7">
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-gray-200 mb-6">
+        <div className="mb-6 flex w-full items-center justify-between gap-3 rounded-xl bg-slate-100 p-1">
+          <div className="flex min-w-0 gap-1.5">
           <button
-            className={`py-3 px-6 font-medium text-sm transition-colors border-b-2 ${activeTab === 'manual' ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-            onClick={() => {
-              setActiveTab('manual');
-              setError('');
-              setSuccessMessage('');
-            }}
-          >
-            Input Manually
-          </button>
-          <button
-            className={`py-3 px-6 font-medium text-sm transition-colors border-b-2 ${activeTab === 'upload' ? 'border-red-600 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+            className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'upload' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             onClick={() => {
               setActiveTab('upload');
               setError('');
               setSuccessMessage('');
             }}
           >
-            Upload File & Generate TOS
+            <FolderUp className="h-4 w-4" style={{ color: activeTab === 'upload' ? PRIMARY : undefined }} />
+            Upload &amp; generate
+          </button>
+          <button
+            className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'manual' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            onClick={() => {
+              setActiveTab('manual');
+              setError('');
+              setSuccessMessage('');
+            }}
+          >
+            <PencilLine className="h-4 w-4" style={{ color: activeTab === 'manual' ? PRIMARY : undefined }} />
+            Manual entry
+          </button>
+          </div>
+          <button
+            type="button"
+            onClick={resetAssessmentProgress}
+            className="mr-1 flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-slate-500 transition-colors hover:bg-white hover:text-[#8F1424]"
+          >
+            <RotateCcw className="h-4 w-4" />
+            <span className="hidden sm:inline">Reset</span>
           </button>
         </div>
 
-        {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">{error}</div>}
-        {successMessage && <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md text-sm text-green-700">{successMessage}</div>}
+        {/* Stepper */}
+        <div className="mb-7 flex items-center">
+          {WIZARD_STEPS.map((step, idx) => (
+            <React.Fragment key={step.number}>
+              <div className="flex items-center gap-2">
+                <div
+                  className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+                  style={{
+                    width: 26, height: 26,
+                    backgroundColor: wizardStep >= step.number ? PRIMARY : '#F1F5F9',
+                    color: wizardStep >= step.number ? '#fff' : '#94A3B8',
+                  }}
+                >
+                  {wizardStep > step.number ? <CheckCircle2 className="h-3.5 w-3.5" /> : step.number}
+                </div>
+                <span className={`text-[13px] font-medium ${wizardStep >= step.number ? 'text-slate-800' : 'text-slate-400'}`}>
+                  {step.label}
+                </span>
+              </div>
+              {idx < WIZARD_STEPS.length - 1 && (
+                <div className="mx-2.5 h-px flex-1" style={{ backgroundColor: border }} />
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+
+        {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">{error}</div>}
+        {successMessage && <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-3 text-sm font-medium text-green-700">{successMessage}</div>}
 
         {/* MANUAL WORKSPACE TAB */}
         {activeTab === 'manual' && (
@@ -891,19 +951,13 @@ const InputQuestion = () => {
                   <option value="add_new" className="text-red-600 font-semibold">+ Add New Subject Option...</option>
                 </select>
               </div>
-
               <div>
-                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Intended Item Assessment Type</label>
-                <select
-                  className="w-full border border-gray-200 rounded-md p-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-400 cursor-pointer"
-                  value={manualQuestionType}
-                  onChange={(e) => setManualQuestionType(e.target.value)}
-                >
-                  {QUESTION_TYPE_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
+                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Question Type</label>
+                <select value={manualQuestionType} onChange={(e) => setManualQuestionType(e.target.value)} className="w-full border border-gray-200 rounded-md p-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-400 cursor-pointer">
+                  {QUESTION_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </div>
+
             </div>
 
             {isAddingNewSubject && (
@@ -954,220 +1008,225 @@ const InputQuestion = () => {
         {/* AUTOMATED UPLOAD & GEN TAB */}
         {activeTab === 'upload' && (
           <div className="space-y-6">
-            
             {/* Step 1: Upload Files */}
-            <div>
-              <h3 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
-                <span className="w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center text-xs">1</span>
-                Upload Educational Material Assets
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <UploadSlot
-                  policyKey="module"
-                  file={moduleFile}
-                  stepBadge="Module"
-                  locked={!!uploadResult}
-                  onFileSelected={(f) => { setModuleFile(f); setError(''); }}
-                  onRemove={() => handleFileRemove('module')}
-                />
-                <UploadSlot
-                  policyKey="syllabus"
-                  file={syllabusFile}
-                  stepBadge="CIS / Syllabus"
-                  locked={!!uploadResult}
-                  onFileSelected={(f) => { setSyllabusFile(f); setError(''); }}
-                  onRemove={() => handleFileRemove('syllabus')}
-                />
-              </div>
-              {uploading && (
-                <div className="mt-4 flex items-center justify-between rounded-md border border-orange-200 bg-orange-50 px-3 py-2">
-                  <p className="text-sm text-orange-700">Analysis is still running. You can stop it and reset the upload.</p>
-                  <button
-                    type="button"
-                    onClick={cancelActiveAnalysis}
-                    className="text-sm font-semibold text-orange-700 hover:text-orange-800"
-                  >
-                    Cancel Analysis
-                  </button>
-                </div>
-              )}
-              <button
-                onClick={handleUpload}
-                disabled={uploading || !moduleFile || !syllabusFile || !!uploadResult}
-                className="mt-4 w-full bg-[#b90000] text-white py-3 rounded-md text-sm font-medium disabled:bg-gray-300 transition-colors flex justify-center items-center gap-2"
-              >
-                {uploading ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                    </svg>
-                    Processing & Analyzing Core Documents...
-                  </>
-                ) : uploadResult ? '✓ Files Analyzed — Remove a file above to redo' : 'Analyze Files'}
-              </button>
-            </div>
-
-            {/* Config Steps appear ONLY after successful upload */}
-            {uploadResult && (
-              <div className="space-y-6">
-                
-                {/* Step 2: Question Types Selection */}
-                <div className="border border-gray-200 rounded-lg p-5">
-                  <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-4">
-                    <span className="w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center text-xs">2</span>
-                    Question Types Selection
-                  </h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {QUESTION_TYPE_OPTIONS.map((option) => {
-                      const isChecked = selectedQuestionTypes.includes(option.value);
-                      return (
-                        <label key={option.value} className={`flex items-center gap-2 text-xs font-medium rounded-md border p-3 cursor-pointer transition-colors ${isChecked ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`}>
-                          <input 
-                            type="checkbox" 
-                            checked={isChecked} 
-                            onChange={() => {
-                              setSelectedQuestionTypes(curr => curr.includes(option.value) ? curr.filter(x => x !== option.value) : [...curr, option.value]);
-                            }} 
-                            className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500" 
-                          />
-                          <span>{option.label}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Step 3: Number of Items & Points */}
-                <div className="border border-gray-200 rounded-lg p-5">
-                  <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-4">
-                    <span className="w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center text-xs">3</span>
-                    Number of Items & Points
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Exam Type</label>
-                      <select value={examType} onChange={(e) => setExamType(e.target.value)} disabled={!!previewResult || !!generationResult} className="w-full border border-gray-200 rounded-md p-2.5 text-sm focus:ring-1 focus:ring-red-500 outline-none disabled:bg-gray-100 disabled:text-gray-400">
-                        {EXAM_TYPE_OPTIONS.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Total Points</label>
-                      <input type="number" value={totalPoints} onChange={(e) => setTotalPoints(e.target.value)} placeholder="e.g. 50" className="w-full border border-gray-200 rounded-md p-2.5 text-sm focus:ring-1 focus:ring-red-500 outline-none" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Total Intended Test Items</label>
-                      <input type="number" value={totalItems} onChange={(e) => setTotalItems(e.target.value)} placeholder="e.g. 50" className="w-full border border-gray-200 rounded-md p-2.5 text-sm focus:ring-1 focus:ring-red-500 outline-none" />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Step 4: Detected Subject & Main Topics */}
-                <div className="border border-gray-200 rounded-lg p-5">
-                  <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-4">
-                    <span className="w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center text-xs">4</span>
-                    Detected Subject & Main Topics
-                  </h3>
-                  
-                  {uploadResult.subject && (
-                    <div className="bg-red-50 border border-red-100 rounded-lg p-4 mb-4">
-                      <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Subject Detected</p>
-                      <p className="font-semibold text-gray-800 text-base">{uploadResult.subject.name}</p>
-                      {uploadResult.subject.code && <p className="text-xs text-gray-500 mt-0.5">{uploadResult.subject.code}</p>}
-                    </div>
-                  )}
-
+            {wizardStep === 1 && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                <div className="mb-5 flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-xs font-bold text-gray-600 uppercase mb-3">Topics Detected & Hours Covered (A)</p>
-                    <div className="space-y-3">
-                      {uploadResult.topics.map((topic, i) => (
-                        <div key={i} className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-gray-50 border border-gray-100 rounded-lg p-3 gap-3">
-                          <label className="flex items-center gap-3 cursor-pointer text-sm font-medium text-gray-700 flex-1 min-w-0">
-                            <input type="checkbox" checked={selectedTopics.includes(i)} onChange={() => toggleTopicSelection(i)} className="h-4 w-4 text-red-600 rounded border-gray-300 focus:ring-red-500" disabled={!!generationResult || !!previewResult} />
-                            <div className="min-w-0 flex-1">
-                              <p className="font-semibold text-gray-800 truncate">{safeRenderValue(topic.name)}</p>
-                              <p className="text-xs text-gray-400 italic font-normal truncate">ILO: {safeRenderValue(topic.ilo) || 'None'}</p>
-                            </div>
-                          </label>
-                          {selectedTopics.includes(i) && (
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Hours:</span>
-                              <input type="number" step="0.5" value={subcolumnAValues[i] || ''} onChange={(e) => handleSubcolumnAChange(i, e.target.value)} className="w-16 border border-gray-200 rounded-md p-1.5 text-center text-sm outline-none focus:border-red-400" disabled={!!generationResult || !!previewResult} />
-                            </div>
-                          )}
-                          <div className="shrink-0 w-12 text-right">
-                            <span className="text-xs font-bold text-red-600">{Math.round((topic.weight || 0) * 100)}%</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Step 1</p>
+                    <h3 className="mt-1 text-lg font-bold text-slate-800">Upload Educational Material Assets</h3>
                   </div>
+                  <div className="rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-red-700">Required</div>
+                </div>
 
-                  <button
-                    onClick={handleGenerate}
-                    disabled={generating || selectedTopics.length === 0 || !totalItems || !!generationResult || !!previewResult}
-                    className="mt-6 w-full bg-green-700 hover:bg-green-800 text-white py-3.5 rounded-md text-sm font-bold transition-colors disabled:bg-gray-300 flex justify-center items-center gap-2 shadow-sm"
+                <div className="mb-4">
+                  <label className="mb-1.5 block text-[13px] font-medium text-slate-600">Subject</label>
+                  <select
+                    value={selectedSubject}
+                    onChange={handleSubjectDropdownChange}
+                    className="w-full rounded-lg border px-3 py-2 text-sm text-slate-700 outline-none focus:border-red-400"
+                    style={{ borderColor: border }}
+                    disabled={!!uploadResult}
                   >
-                    {generating ? (
-                      <>
-                        <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> 
-                        Generating preview...
-                      </>
-                    ) : (generationResult || previewResult) ? '✓ Preview Generated' : 'Generate Preview'}
+                    <option value="">Select a subject</option>
+                    {subjects.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                    <option value="add_new">+ Add new subject</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <UploadSlot
+                    policyKey="module"
+                    file={moduleFile}
+                    onFileSelected={(f) => { setModuleFile(f); setError(''); }}
+                    onRemove={() => handleFileRemove('module')}
+                    stepBadge="Module"
+                    locked={uploading || !!uploadResult}
+                  />
+                  <UploadSlot
+                    policyKey="syllabus"
+                    file={syllabusFile}
+                    onFileSelected={(f) => { setSyllabusFile(f); setError(''); }}
+                    onRemove={() => handleFileRemove('syllabus')}
+                    stepBadge="Syllabus"
+                    locked={uploading || !!uploadResult}
+                  />
+                </div>
+
+                <div className="mt-6 flex justify-end border-t pt-4" style={{ borderColor: border }}>
+                  <button
+                    onClick={handleUpload}
+                    disabled={uploading || !selectedSubject || !moduleFile || !syllabusFile || !!uploadResult}
+                    className="rounded-lg px-5 py-2.5 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+                    style={{ backgroundColor: PRIMARY }}
+                  >
+                    {uploading ? 'Analyzing…' : 'Continue'}
                   </button>
                 </div>
               </div>
             )}
 
-            {/* Output Previews & Download Links */}
-            {(previewResult || generationResult) && (() => {
-              const activeResult = generationResult || previewResult;
-              const isConfirmed = !!generationResult;
-              return (
-              <div className={`border rounded-lg p-5 space-y-6 ${isConfirmed ? 'border-green-200 bg-green-50/30' : 'border-amber-200 bg-amber-50/30'}`}>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-4 gap-3">
-                  <div>
-                    <h3 className={`font-bold text-sm ${isConfirmed ? 'text-green-800' : 'text-amber-800'}`}>
-                      {isConfirmed ? '✓ Table of Specifications Generated' : 'Preview Ready — Review Before Saving'}
-                    </h3>
-                    <p className="text-xs text-gray-500">
-                      {isConfirmed
-                        ? 'Questions have been saved to your question bank.'
-                        : 'Nothing has been saved yet. Review the questions below, then confirm to add them to your question bank and generate the TOS file.'}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {isConfirmed ? (
-                      <>
-                        <button onClick={() => downloadFile('tos', 'BatStateU_Standard_TOS.xlsx')} className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Institutional TOS (.xlsx)</button>
-                        <button onClick={() => downloadFile('assessment/docx', 'Exam_Paper_With_Keys.docx')} className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.docx)</button>
-                        <button onClick={() => downloadFile('assessment/pdf', 'Exam_Paper_With_Keys.pdf')} className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.pdf)</button>
-                      </>
-                    ) : (
-                      <>
-                        <button onClick={handleDiscardPreview} disabled={confirming} className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:opacity-50">Discard & Regenerate</button>
-                        <button onClick={handleConfirmGeneration} disabled={confirming} className="bg-green-700 hover:bg-green-800 text-white text-xs px-4 py-2 rounded font-medium shadow-sm transition-colors disabled:bg-gray-300 flex items-center gap-2">
-                          {confirming && <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>}
-                          {confirming ? 'Saving...' : 'Confirm & Save'}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
+            {/* Config Steps appear ONLY after successful upload */}
+            {uploadResult && (
+              <div className="space-y-6">
+                {/* Step 2: Question Types Selection */}
+                {wizardStep === 2 && (
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                    <div className="mb-5 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Step 2</p>
+                        <h3 className="mt-1 text-lg font-bold text-slate-800">Question Types Selection</h3>
+                      </div>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-600">{selectedQuestionTypes.length} selected</span>
+                    </div>
 
-                {tosWarning && (
-                  <div className="border border-amber-300 bg-amber-50 rounded-md p-3 flex items-start gap-2">
-                    <span className="text-amber-500 text-sm leading-none mt-0.5">⚠</span>
-                    <p className="text-xs text-amber-800">{tosWarning}</p>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      {QUESTION_TYPE_OPTIONS.map((option) => {
+                        const isChecked = selectedQuestionTypes.includes(option.value);
+                        return (
+                          <label
+                            key={option.value}
+                            className={`flex cursor-pointer items-center gap-2 rounded-xl border p-3 text-xs font-semibold transition-all ${isChecked ? 'border-red-500 bg-red-50 text-red-700 shadow-sm' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-slate-100'}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                setSelectedQuestionTypes((curr) => curr.includes(option.value) ? curr.filter((x) => x !== option.value) : [...curr, option.value]);
+                              }}
+                              className="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
+                            />
+                            <span>{option.label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-8 flex items-center justify-between border-t border-slate-200 pt-5">
+                      <button type="button" onClick={() => setWizardStep(1)} className="bq-secondary-button">Back</button>
+                      <button type="button" onClick={() => setWizardStep(3)} disabled={selectedQuestionTypes.length === 0} className="bq-primary-button disabled:cursor-not-allowed disabled:bg-gray-300">Next: Items &amp; Points</button>
+                    </div>
                   </div>
                 )}
 
+                {/* Step 3: Number of Items & Points */}
+                {wizardStep === 3 && (
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                    <div className="mb-5">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Step 3</p>
+                      <h3 className="mt-1 text-lg font-bold text-slate-800">Number of Items &amp; Points</h3>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div>
+                        <label className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">Total Points</label>
+                        <input type="number" value={totalPoints} onChange={(e) => setTotalPoints(e.target.value)} placeholder="e.g. 50" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">Total Intended Test Items</label>
+                        <input type="number" value={totalItems} onChange={(e) => setTotalItems(e.target.value)} placeholder="e.g. 50" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:bg-white" />
+                      </div>
+                    </div>
+
+                    <div className="mt-8 flex items-center justify-between border-t border-slate-200 pt-5">
+                      <button type="button" onClick={() => setWizardStep(2)} className="bq-secondary-button">Back</button>
+                      <button type="button" onClick={() => setWizardStep(4)} disabled={!totalItems || !totalPoints} className="bq-primary-button disabled:cursor-not-allowed disabled:bg-gray-300">Next: Topics &amp; Generate</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 4: Detected Subject & Main Topics */}
+                {wizardStep === 4 && (
+                  <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div className="p-5 sm:p-6">
+                      <div className="mb-5 flex items-start gap-3">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white" style={{ backgroundColor: PRIMARY }}>
+                          <Sparkles className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-bold uppercase tracking-[0.14em]" style={{ color: PRIMARY }}>Create Assessment</p>
+                          <h3 className="mt-1 text-xl font-bold text-slate-900">Detected Subject &amp; Main Topics</h3>
+                          <p className="mt-1 text-sm text-slate-500">Review the detected topics and assign the hours that will shape your assessment matrix.</p>
+                        </div>
+                      </div>
+
+                      {uploadResult.subject && (
+                        <div className="mb-5 rounded-xl border border-rose-100 bg-rose-50/60 p-4">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-rose-400">Subject Detected</p>
+                          <p className="mt-1 text-base font-bold text-slate-900">{uploadResult.subject.name}</p>
+                          {uploadResult.subject.code && <p className="text-xs text-slate-500">{uploadResult.subject.code}</p>}
+                        </div>
+                      )}
+
+                      <div>
+                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-400">Topics Detected &amp; Hours Covered ({uploadResult.topics.length})</p>
+                        <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200">
+                          {uploadResult.topics.map((topic, i) => (
+                            <div key={i} className="flex flex-col items-start gap-3 px-4 py-3.5 transition-colors hover:bg-slate-50 sm:flex-row sm:items-center sm:gap-4">
+                              <input type="checkbox" checked={selectedTopics.includes(i)} onChange={() => toggleTopicSelection(i)} className="h-4 w-4 rounded border-slate-300" style={{ accentColor: PRIMARY }} disabled={!!generationResult} />
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-semibold text-slate-800">{safeRenderValue(topic.name)}</p>
+                                <p className="truncate text-xs italic text-slate-400">{safeRenderValue(topic.ilo) || 'No ILO provided'}</p>
+                              </div>
+                              {selectedTopics.includes(i) && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">Hours</span>
+                                  <input type="number" step="0.5" value={subcolumnAValues[i] || ''} onChange={(e) => handleSubcolumnAChange(i, e.target.value)} className="w-16 rounded-md border border-slate-300 px-2 py-1 text-center text-sm text-slate-800 outline-none focus:border-slate-500" disabled={!!generationResult} />
+                                </div>
+                              )}
+                              <span className="w-12 shrink-0 text-right text-sm font-bold" style={{ color: PRIMARY }}>{Math.round((topic.weight || 0) * 100)}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-5">
+                        <button type="button" onClick={() => setWizardStep(3)} disabled={generating} className="flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700">&larr; Back</button>
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          {generationResult && (
+                            <button type="button" onClick={resetAssessmentProgress} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition-colors hover:border-[#B4454A]/40 hover:text-[#B4454A]">
+                              <Plus className="h-4 w-4" /> Create new
+                            </button>
+                          )}
+                          <button
+                            onClick={handleGenerate}
+                            disabled={generating || selectedTopics.length === 0 || !totalItems || !!generationResult}
+                            className="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-slate-300"
+                            style={{ backgroundColor: PRIMARY }}
+                          >
+                            {generating ? <><svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" /></svg>Generating...</> : <><CheckCircle2 className="h-4 w-4" />{generationResult ? 'Matrix TOS & Assessment Generated' : 'Generate Matrix TOS & Assessment'}</>}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Output Previews & Download Links */}
+            {generationResult && (
+              <div className="rounded-lg p-5 space-y-6" style={{ backgroundColor: 'rgba(220, 252, 231, 0.35)', border: `1px solid rgba(34, 197, 94, 0.25)` }}>
+                  <div className="flex flex-col justify-between gap-3 border-b pb-4 sm:flex-row sm:items-center">
+                  <div>
+                    <h3 className="font-bold text-green-800 text-sm">✓ Table of Specifications & Question Sheets Matrix Saved</h3>
+                    <p className="text-xs text-gray-500">Items successfully saved inside the primary Question Bank registry rows.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={resetAssessmentProgress} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition-colors hover:border-[#B4454A]/40 hover:text-[#B4454A]">
+                      <Plus className="h-4 w-4" /> Create new
+                    </button>
+                    <button onClick={() => downloadFile('tos', 'BatStateU_Standard_TOS.xlsx')} className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Institutional TOS (.xlsx)</button>
+                    <button onClick={() => downloadFile('assessment/docx', 'Exam_Paper_With_Keys.docx')} className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.docx)</button>
+                    <button onClick={() => downloadFile('assessment/pdf', 'Exam_Paper_With_Keys.pdf')} className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.pdf)</button>
+                  </div>
+                </div>
 
                 {/* TOS Summary Section */}
-                {activeResult.tos && activeResult.tos.length > 0 && (
-                  <div className="border border-gray-200 rounded-lg p-5 bg-white shadow-sm space-y-4">
+                {generationResult.tos && generationResult.tos.length > 0 && (
+                  <div className="rounded-lg p-5 bg-white shadow-sm space-y-4" style={{ border: `1px solid ${border}` }}>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
                         <h4 className="text-sm font-bold text-gray-800">Table of Specifications Summary</h4>
@@ -1175,12 +1234,12 @@ const InputQuestion = () => {
                       </div>
                       <div className="text-right">
                         <p className="text-xs text-gray-500">Total Generated Questions</p>
-                        <p className="text-lg font-semibold text-green-700">{activeResult.total_questions}</p>
+                        <p className="text-lg font-semibold text-green-700">{generationResult.total_questions}</p>
                       </div>
                     </div>
                     <div className="grid gap-3">
-                      {activeResult.tos.map((topic, idx) => (
-                        <div key={idx} className="rounded-xl border border-gray-100 p-4 bg-gray-50">
+                      {generationResult.tos.map((topic, idx) => (
+                        <div key={idx} className="rounded-xl p-4" style={{ backgroundColor: '#F8FAFC', border: `1px solid rgba(226, 232, 240, 0.95)` }}>
                           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                             <div>
                               <p className="text-sm font-semibold text-gray-800">{safeRenderValue(topic.topic)}</p>
@@ -1210,7 +1269,7 @@ const InputQuestion = () => {
                   <p className="text-xs font-bold text-gray-600 uppercase mb-3">Generated Preview Segmented By Cognitive Taxonomy Tier</p>
                   <div className="flex border-b overflow-x-auto gap-2 bg-gray-100/50 p-1 rounded-t-md">
                     {BLOOMS_LEVELS.map(level => {
-                      const count = (activeResult.questions_preview || []).filter(q => q.bloom_level === level).length;
+                      const count = (generationResult.questions_preview || []).filter(q => q.bloom_level === level).length;
                       return (
                         <button key={level} onClick={() => setPreviewBloomTab(level)} className={`py-2 px-4 text-xs font-semibold rounded-t transition-all min-w-max ${previewBloomTab === level ? 'bg-white text-red-600 shadow-sm font-bold border-b-2 border-red-600' : 'text-gray-500 hover:text-gray-700'}`}>
                           {level} <span className="ml-1 bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full text-[10px]">{count}</span>
@@ -1218,11 +1277,11 @@ const InputQuestion = () => {
                       );
                     })}
                   </div>
-                  <div className="bg-white p-4 border-x border-b rounded-b-md max-h-80 overflow-y-auto space-y-4 shadow-inner">
-                    {(activeResult.questions_preview || [])
+                  <div className="bg-white p-4 rounded-b-md max-h-80 overflow-y-auto space-y-4 shadow-inner" style={{ borderColor: border, borderWidth: '1px', borderStyle: 'solid', borderTopWidth: '0' }}>
+                    {(generationResult.questions_preview || [])
                       .filter(q => q.bloom_level === previewBloomTab)
                       .map((q, idx) => (
-                        <div key={idx} className="p-3 border rounded-md bg-gray-50/50 text-sm">
+                        <div key={idx} className="p-3 rounded-md bg-gray-50/50 text-sm" style={{ border: `1px solid rgba(226, 232, 240, 0.95)` }}>
                           <div className="flex justify-between text-[11px] text-gray-400 mb-1">
                             <span>Syllabus Reference: <strong className="text-gray-600">{safeRenderValue(q.topic_name)}</strong></span>
                             <span className="bg-red-50 text-red-600 font-bold px-1.5 py-0.5 rounded uppercase">{safeRenderValue(q.type)}</span>
@@ -1235,12 +1294,13 @@ const InputQuestion = () => {
                 </div>
 
               </div>
-              );
-            })()}
+            )}
           </div>
         )}
 
+        </div>
       </div>
+    </div>
     </div>
   );
 };
