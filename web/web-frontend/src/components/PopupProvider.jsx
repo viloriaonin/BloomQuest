@@ -43,8 +43,8 @@ export const PopupProvider = ({ children }) => {
     <PopupContext.Provider value={{ showAlert, showConfirm }}>
       {children}
       {popup.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 transition-all duration-300">
-          <div className="relative w-full max-w-lg overflow-hidden rounded-[2rem] border border-[#E5E7EB] bg-white p-6 shadow-[0_24px_80px_rgba(0,0,0,0.16)] transition-all duration-300 ease-out">
+        <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 transition-all duration-300">
+          <div className="bq-modal-panel relative w-full max-w-lg overflow-hidden p-6 transition-all duration-300 ease-out">
             <button
               type="button"
               onClick={handleCancel}

@@ -2,11 +2,20 @@ import React, { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { usePopup } from "../../components/PopupProvider";
 import LoadingSpinner from "../../components/LoadingSpinner";
-import logo from "../../assets/images/bloomquest-logo.png";
+import LegalModal from "../../components/LegalModal";
 
 const SEND_OTP_URL    = "http://localhost:8000/api/forgot-password/send-otp";
 const VERIFY_OTP_URL  = "http://localhost:8000/api/forgot-password/verify-otp";
 const RESET_PASS_URL  = "http://localhost:8000/api/forgot-password/reset";
+
+const paper = '#F7F6F3';
+const surface = '#FFFFFF';
+const border = 'rgba(20, 20, 15, 0.14)';
+const ruleSoft = 'rgba(20, 20, 15, 0.08)';
+const textPrimary = '#14140F';
+const textMuted = '#6F6C64';
+const accent = '#B4454A';
+const accentHover = '#8F1C2B';
 
 // ── Password strength helper ───────────────────────────────────────
 const getStrength = (pw) => {
@@ -41,6 +50,7 @@ const ForgotPassword = () => {
   const [error, setError]       = useState("");
   const [loading, setLoading]   = useState(false);
   const [demoCode, setDemoCode] = useState("");
+  const [legalModal, setLegalModal] = useState(null); // "privacy" | "terms" | null
 
   const otpRefs = useRef([]);
 
@@ -233,8 +243,8 @@ const ForgotPassword = () => {
   const BackButton = ({ label = "Back", onClick }) => (
     <button
       onClick={onClick}
-      className="flex items-center gap-1.5 text-sm font-medium mb-8 transition"
-      style={{ color: "#7B1113" }}
+      className="inline-flex items-center gap-1.5 text-sm font-medium mb-8 transition"
+      style={{ color: accent, fontFamily: 'Inter, sans-serif' }}
       onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.7")}
       onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
     >
@@ -249,10 +259,10 @@ const ForgotPassword = () => {
     <button
       onClick={onClick}
       disabled={disabled}
-      className="w-full text-white font-semibold py-3 rounded-md transition duration-200 shadow-md hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
-      style={{ backgroundColor: "#B01C1C" }}
-      onMouseOver={(e) => !disabled && (e.currentTarget.style.backgroundColor = "#931616")}
-      onMouseOut={(e) => !disabled && (e.currentTarget.style.backgroundColor = "#B01C1C")}
+      className="w-full text-white font-semibold py-3.5 transition duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+      style={{ backgroundColor: accent, fontFamily: 'Inter, sans-serif', letterSpacing: '0.08em', textTransform: 'uppercase', fontSize: '13px' }}
+      onMouseOver={(e) => !disabled && (e.currentTarget.style.backgroundColor = accentHover)}
+      onMouseOut={(e) => !disabled && (e.currentTarget.style.backgroundColor = accent)}
     >
       {children}
     </button>
@@ -260,7 +270,7 @@ const ForgotPassword = () => {
 
   const ErrorBox = ({ msg }) =>
     msg ? (
-      <div className="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-4 py-2.5">
+      <div className="mb-4 text-sm px-4 py-2.5" style={{ color: '#8E2B33', backgroundColor: 'rgba(180, 69, 74, 0.06)', border: '1px solid rgba(180,69,74,0.25)', fontFamily: 'Inter, sans-serif' }}>
         {msg}
       </div>
     ) : null;
@@ -281,32 +291,25 @@ const ForgotPassword = () => {
     <>
       <BackButton label="Back to Login" onClick={() => navigate("/")} />
       <div className="mb-8">
-        <div
-          className="w-12 h-12 rounded-xl flex items-center justify-center mb-5"
-          style={{ background: "rgba(123,17,19,0.08)" }}
-        >
-          <svg className="w-6 h-6" fill="none" stroke="#7B1113" strokeWidth="1.75" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-          </svg>
-        </div>
-        <h2 className="text-3xl font-bold" style={{ color: "#7B1113" }}>Forgot password?</h2>
-        <p className="text-sm text-gray-500 mt-1">
+        <h2 className="bq-headline text-4xl" style={{ color: textPrimary }}>Forgot password?</h2>
+        <div style={{ width: '36px', height: '2px', backgroundColor: accent, marginTop: '14px', marginBottom: '14px' }} />
+        <p className="text-base" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
           Enter your email and we'll send you a one-time code.
         </p>
       </div>
 
       <ErrorBox msg={error} />
 
-      <div className="space-y-4">
+      <div className="space-y-6">
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>
+          <label className="bq-label block mb-2">Email Address</label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleEmailSubmit()}
-            placeholder="Enter your email"
-            className="w-full border border-gray-300 rounded-md px-4 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:border-transparent transition"
+            placeholder="name@example.com"
+            className="bq-field"
           />
         </div>
         <PrimaryButton onClick={handleEmailSubmit} disabled={loading}>
@@ -323,31 +326,23 @@ const ForgotPassword = () => {
         onClick={() => { setStep("email"); setError(""); setOtp(["", "", "", "", "", ""]); }}
       />
       <div className="mb-6">
-        <div
-          className="w-12 h-12 rounded-xl flex items-center justify-center mb-5"
-          style={{ background: "rgba(123,17,19,0.08)" }}
-        >
-          <svg className="w-6 h-6" fill="none" stroke="#7B1113" strokeWidth="1.75" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-          </svg>
-        </div>
-        <h2 className="text-3xl font-bold" style={{ color: "#7B1113" }}>Check your email</h2>
-        <p className="text-sm text-gray-500 mt-1">
-          We sent a 6-digit code to{" "}
-          <span className="font-medium text-gray-700">{email}</span>
+        <h2 className="bq-headline text-4xl" style={{ color: textPrimary }}>Check your email</h2>
+        <div style={{ width: '36px', height: '2px', backgroundColor: accent, marginTop: '14px', marginBottom: '14px' }} />
+        <p className="text-base" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
+          We sent a 6-digit code to <span style={{ color: textPrimary, fontWeight: 600 }}>{email}</span>
         </p>
       </div>
 
       <ErrorBox msg={error} />
 
       {demoCode ? (
-        <div className="mb-4 text-sm text-gray-600 rounded-lg border border-gray-200 bg-gray-50 p-4">
-          <p className="font-semibold text-gray-900">Demo Mode — OTP not actually sent via email</p>
-          <p className="mt-1 text-sm text-gray-600">
+        <div className="mb-4 rounded-xl p-4" style={{ backgroundColor: 'rgba(180,69,74,0.04)', border: `1px solid ${border}`, fontFamily: 'Inter, sans-serif' }}>
+          <p className="font-semibold" style={{ color: textPrimary }}>Demo Mode — OTP not actually sent via email</p>
+          <p className="mt-1 text-sm" style={{ color: textMuted }}>
             Use the demo code below to continue, or paste your real email code if it arrives.
           </p>
           <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="inline-flex items-center rounded-lg bg-white px-3 py-2 text-lg font-semibold tracking-widest text-red-700 shadow-sm">
+            <div className="inline-flex items-center rounded-lg px-3 py-2 text-lg font-semibold tracking-widest" style={{ backgroundColor: surface, color: accent, border: `1px solid ${border}` }}>
               {demoCode}
             </div>
             <button
@@ -356,7 +351,8 @@ const ForgotPassword = () => {
                 setOtp(demoCode.split(""));
                 otpRefs.current[0]?.focus();
               }}
-              className="inline-flex items-center justify-center rounded-md bg-red-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-800"
+              className="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+              style={{ backgroundColor: accent }}
             >
               Auto-fill
             </button>
@@ -377,12 +373,13 @@ const ForgotPassword = () => {
             onKeyDown={(e) => handleOtpKeyDown(i, e)}
             className="w-12 h-14 text-center text-xl font-bold border-2 rounded-lg focus:outline-none transition"
             style={{
-              borderColor: digit ? "#7B1113" : "#D1D5DB",
-              color: "#1A0A0A",
-              caretColor: "#7B1113",
+              borderColor: digit ? accent : "#D1D5DB",
+              color: textPrimary,
+              caretColor: accent,
+              fontFamily: 'Inter, sans-serif',
             }}
-            onFocus={(e) => (e.target.style.borderColor = "#7B1113")}
-            onBlur={(e) => (e.target.style.borderColor = digit ? "#7B1113" : "#D1D5DB")}
+            onFocus={(e) => (e.target.style.borderColor = accent)}
+            onBlur={(e) => (e.target.style.borderColor = digit ? accent : "#D1D5DB")}
           />
         ))}
       </div>
@@ -395,7 +392,7 @@ const ForgotPassword = () => {
         onClick={resendOtp}
         disabled={loading}
         className="w-full mt-3 text-sm font-medium py-2 transition"
-        style={{ color: "#7B1113" }}
+        style={{ color: accent, fontFamily: 'Inter, sans-serif' }}
         onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.7")}
         onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
       >
@@ -407,26 +404,18 @@ const ForgotPassword = () => {
   const renderReset = () => (
     <>
       <div className="mb-8">
-        <div
-          className="w-12 h-12 rounded-xl flex items-center justify-center mb-5"
-          style={{ background: "rgba(123,17,19,0.08)" }}
-        >
-          <svg className="w-6 h-6" fill="none" stroke="#7B1113" strokeWidth="1.75" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-          </svg>
-        </div>
-        <h2 className="text-3xl font-bold" style={{ color: "#7B1113" }}>Set new password</h2>
-        <p className="text-sm text-gray-500 mt-1">
+        <h2 className="bq-headline text-4xl" style={{ color: textPrimary }}>Reset your password</h2>
+        <div style={{ width: '36px', height: '2px', backgroundColor: accent, marginTop: '14px', marginBottom: '14px' }} />
+        <p className="text-base" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
           Choose a strong password for your account.
         </p>
       </div>
 
       <ErrorBox msg={error} />
 
-      <div className="space-y-4">
-        {/* New password */}
+      <div className="space-y-6">
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1">New Password</label>
+          <label className="bq-label block mb-2">New Password</label>
           <div className="relative">
             <input
               type={showPw ? "text" : "password"}
@@ -434,19 +423,19 @@ const ForgotPassword = () => {
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleResetSubmit()}
               placeholder="Enter new password"
-              className="w-full border border-gray-300 rounded-md px-4 py-2.5 pr-10 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:border-transparent transition"
+              className="bq-field pr-10"
             />
             <button
               type="button"
               onClick={() => setShowPw(!showPw)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
+              className="absolute right-0 top-1/2 -translate-y-1/2 transition"
+              style={{ color: textMuted }}
               tabIndex={-1}
             >
               <EyeIcon open={showPw} />
             </button>
           </div>
 
-          {/* Strength bar */}
           {password && (
             <div className="mt-2">
               <div className="flex gap-1 mb-1">
@@ -454,25 +443,22 @@ const ForgotPassword = () => {
                   <div
                     key={n}
                     className="flex-1 h-1 rounded-full transition-all duration-300"
-                    style={{
-                      background: strength.score >= n ? strength.color : "#E5E7EB",
-                    }}
+                    style={{ background: strength.score >= n ? strength.color : "#E5E7EB" }}
                   />
                 ))}
               </div>
-              <p className="text-xs" style={{ color: strength.color }}>
+              <p className="text-xs" style={{ color: strength.color, fontFamily: 'Inter, sans-serif' }}>
                 {strength.label}
               </p>
             </div>
           )}
-          <p className="text-xs text-gray-400 mt-1.5">
-            At least 8 characters with uppercase, numbers, or symbols.
+          <p className="text-xs mt-1.5" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
+            At least 8 characters with uppercase, numbers, and symbols.
           </p>
         </div>
 
-        {/* Confirm password */}
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1">Confirm Password</label>
+          <label className="bq-label block mb-2">Confirm Password</label>
           <div className="relative">
             <input
               type={showCf ? "text" : "password"}
@@ -480,22 +466,23 @@ const ForgotPassword = () => {
               onChange={(e) => setConfirm(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleResetSubmit()}
               placeholder="Re-enter new password"
-              className="w-full border border-gray-300 rounded-md px-4 py-2.5 pr-10 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:border-transparent transition"
+              className="bq-field pr-10"
             />
             <button
               type="button"
               onClick={() => setShowCf(!showCf)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
+              className="absolute right-0 top-1/2 -translate-y-1/2 transition"
+              style={{ color: textMuted }}
               tabIndex={-1}
             >
               <EyeIcon open={showCf} />
             </button>
           </div>
           {confirm && password && confirm !== password && (
-            <p className="text-xs text-red-500 mt-1">Passwords do not match.</p>
+            <p className="text-xs mt-1" style={{ color: '#B4454A', fontFamily: 'Inter, sans-serif' }}>Passwords do not match.</p>
           )}
           {confirm && password && confirm === password && (
-            <p className="text-xs text-green-600 mt-1">✓ Passwords match.</p>
+            <p className="text-xs mt-1" style={{ color: '#15803D', fontFamily: 'Inter, sans-serif' }}>✓ Passwords match.</p>
           )}
         </div>
 
@@ -516,17 +503,17 @@ const ForgotPassword = () => {
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       </div>
-      <h2 className="text-2xl font-bold mb-2" style={{ color: "#7B1113" }}>Password updated!</h2>
-      <p className="text-sm text-gray-500 mb-6">
+      <h2 className="bq-headline text-4xl mb-3" style={{ color: textPrimary }}>Password updated!</h2>
+      <p className="text-base mb-6" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
         Your password has been successfully changed. You can now sign in with your new password.
       </p>
 
       <button
         onClick={() => navigate("/")}
-        className="w-full text-white font-semibold py-3 rounded-md transition duration-200 shadow-md hover:shadow-lg"
-        style={{ backgroundColor: "#B01C1C" }}
-        onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#931616")}
-        onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#B01C1C")}
+        className="w-full text-white font-semibold py-3.5 transition duration-200"
+        style={{ backgroundColor: accent, fontFamily: 'Inter, sans-serif', letterSpacing: '0.08em', textTransform: 'uppercase', fontSize: '13px' }}
+        onMouseOver={(e) => (e.currentTarget.style.backgroundColor = accentHover)}
+        onMouseOut={(e) => (e.currentTarget.style.backgroundColor = accent)}
       >
         Back to Login
       </button>
@@ -539,102 +526,134 @@ const ForgotPassword = () => {
   const STEP_LABELS = ["Email", "Code", "New Password"];
 
   return (
-    <div className="min-h-screen flex flex-col page-transition">
-      <div className="flex flex-col md:flex-row flex-1">
+    <div className="min-h-screen flex flex-col page-transition relative" style={{ minHeight: '100vh', overflow: 'hidden', backgroundColor: paper }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
+        .bq-card-shell {
+          position: relative;
+          background: ${surface};
+          border: 1px solid ${border};
+          border-radius: 28px;
+          box-shadow: 0 18px 48px rgba(20, 20, 15, 0.08);
+        }
+        .bq-corner {
+          position: absolute;
+          width: 22px;
+          height: 22px;
+          border-color: ${accent};
+        }
+        .bq-corner-tl { top: -10px; left: -10px; border-top: 1.5px solid; border-left: 1.5px solid; }
+        .bq-corner-tr { top: -10px; right: -10px; border-top: 1.5px solid; border-right: 1.5px solid; }
+        .bq-corner-bl { bottom: -10px; left: -10px; border-bottom: 1.5px solid; border-left: 1.5px solid; }
+        .bq-corner-br { bottom: -10px; right: -10px; border-bottom: 1.5px solid; border-right: 1.5px solid; }
+        .bq-label {
+          font-family: 'Inter', sans-serif;
+          font-size: 11px;
+          font-weight: 600;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          color: ${textMuted};
+        }
+        .bq-headline {
+          font-family: 'Fraunces', serif;
+          font-weight: 500;
+          letter-spacing: -0.02em;
+        }
+        .bq-field {
+          width: 100%;
+          background: transparent;
+          border: none;
+          border-bottom: 1px solid ${border};
+          border-radius: 0;
+          padding: 10px 2px;
+          font-size: 16px;
+          color: ${textPrimary};
+          font-family: 'Inter', sans-serif;
+          transition: border-color 0.2s ease;
+        }
+        .bq-field::placeholder { color: #A6A39A; }
+        .bq-field:focus { outline: none; border-bottom-color: ${accent}; }
+      `}</style>
 
-        {/* LEFT: Brand Panel */}
-        <div
-          className="relative w-full md:w-1/2 flex flex-col items-center justify-center py-16 px-8 overflow-hidden"
-          style={{
-            background: "radial-gradient(circle at 50% 35%, #9c1c1f 0%, #7B1113 55%, #5c0d0f 100%)",
-          }}
-        >
-          <div
-            className="absolute rounded-full"
-            style={{
-              width: "640px",
-              height: "640px",
-              background: "radial-gradient(circle, rgba(212,175,55,0.25) 0%, rgba(212,175,55,0.08) 45%, rgba(212,175,55,0) 70%)",
-            }}
-          />
-          <div
-            className="absolute rounded-full border"
-            style={{ width: "440px", height: "440px", borderColor: "rgba(212,175,55,0.2)" }}
-          />
-          <img
-            src={logo}
-            alt="BloomQuest Logo"
-            className="relative w-80 h-80 md:w-96 md:h-96 object-contain drop-shadow-2xl mb-6"
-          />
-          <h1 className="relative text-4xl font-bold tracking-wide text-white mb-2">BloomQuest</h1>
-          <div className="relative w-16 h-1 rounded-full mb-4" style={{ backgroundColor: "#D4AF37" }} />
-          <p className="relative text-sm text-center max-w-xs" style={{ color: "#e8c97a" }}>
-            Empowering students to grow, learn, and lead.
-          </p>
-        </div>
+      <div className="absolute inset-0 -z-10" style={{ background: `linear-gradient(135deg, #F1F0EC 0%, #EEF2F8 100%)` }} />
+      <div className="absolute -top-20 -right-20 rounded-full opacity-20" style={{ width: 420, height: 420, background: `radial-gradient(circle, ${accent} 0%, transparent 70%)` }} />
+      <div className="absolute -bottom-28 -left-24 rounded-full opacity-15" style={{ width: 500, height: 500, background: `radial-gradient(circle, ${accent} 0%, transparent 70%)` }} />
 
-        {/* RIGHT: Panel */}
-        <div className="w-full md:w-1/2 flex items-center justify-center bg-gray-50 py-16 px-6">
-          <div className="w-full max-w-sm">
+      <div className="flex-1 flex items-center justify-center px-4 py-6">
+        <div className="bq-card-shell w-full max-w-md p-8 md:p-10">
+          <span className="bq-corner bq-corner-tl" />
+          <span className="bq-corner bq-corner-tr" />
+          <span className="bq-corner bq-corner-bl" />
+          <span className="bq-corner bq-corner-br" />
 
-            {/* Step progress — hidden on done */}
-            {step !== "done" && (
-              <div className="flex items-center gap-2 mb-8">
-                {STEP_LABELS.map((label, i) => (
-                  <React.Fragment key={label}>
-                    <div className="flex items-center gap-1.5">
-                      <div
-                        className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all"
-                        style={{
-                          background: i <= currentIndex ? "#7B1113" : "rgba(123,17,19,0.12)",
-                          color: i <= currentIndex ? "#fff" : "#7B1113",
-                        }}
-                      >
-                        {i < currentIndex ? (
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                        ) : (
-                          i + 1
-                        )}
-                      </div>
-                      <span
-                        className="text-xs font-medium"
-                        style={{ color: i <= currentIndex ? "#7B1113" : "#9CA3AF" }}
-                      >
-                        {label}
-                      </span>
+          {step !== "done" && (
+            <div className="flex items-center gap-2 mb-8">
+              {STEP_LABELS.map((label, i) => (
+                <React.Fragment key={label}>
+                  <div className="flex items-center gap-2 md:gap-3">
+                    <div
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all"
+                      style={{
+                        background: i <= currentIndex ? accent : "rgba(180,69,74,0.12)",
+                        color: i <= currentIndex ? "#fff" : textPrimary,
+                        fontFamily: 'Inter, sans-serif',
+                      }}
+                    >
+                      {i < currentIndex ? (
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        i + 1
+                      )}
                     </div>
-                    {i < STEP_LABELS.length - 1 && (
-                      <div
-                        className="flex-1 h-px transition-all"
-                        style={{ background: i < currentIndex ? "#7B1113" : "#E5E7EB" }}
-                      />
-                    )}
-                  </React.Fragment>
-                ))}
-              </div>
-            )}
+                    <span className="text-xs font-medium" style={{ color: i <= currentIndex ? textPrimary : textMuted, fontFamily: 'Inter, sans-serif' }}>
+                      {label}
+                    </span>
+                  </div>
+                  {i < STEP_LABELS.length - 1 && (
+                    <div className="flex-1 h-px transition-all" style={{ background: i < currentIndex ? accent : '#D9D4CD', minWidth: '12px' }} />
+                  )}
+                </React.Fragment>
+              ))}
+            </div>
+          )}
 
-            {step === "email" && renderEmail()}
-            {step === "otp"   && renderOtp()}
-            {step === "reset" && renderReset()}
-            {step === "done"  && renderDone()}
-          </div>
+          {step === "email" && renderEmail()}
+          {step === "otp" && renderOtp()}
+          {step === "reset" && renderReset()}
+          {step === "done" && renderDone()}
         </div>
       </div>
 
       <footer
         className="w-full py-4 px-6 flex flex-col sm:flex-row items-center justify-between gap-2"
-        style={{ backgroundColor: "#5c0d0f" }}
+        style={{ backgroundColor: paper, borderTop: `1px solid ${ruleSoft}`, fontFamily: 'Inter, sans-serif' }}
       >
-        <p className="text-xs" style={{ color: "#D4AF37" }}>© 2026 BloomQuest. All rights reserved.</p>
-        <div className="flex gap-4 text-xs" style={{ color: "#D4AF37" }}>
-          <a href="#" className="hover:text-white transition">Privacy Policy</a>
-          <a href="#" className="hover:text-white transition">Terms of Service</a>
-          <a href="#" className="hover:text-white transition">Help Center</a>
+        <p className="text-xs" style={{ color: textMuted }}>
+          © 2026 BloomQuest. All rights reserved.
+        </p>
+        <div className="flex gap-4 text-xs" style={{ color: textMuted }}>
+          <button
+            type="button"
+            onClick={() => setLegalModal("privacy")}
+            className="hover:opacity-70 transition"
+            style={{ color: textMuted }}
+          >
+            Privacy Policy
+          </button>
+          <button
+            type="button"
+            onClick={() => setLegalModal("terms")}
+            className="hover:opacity-70 transition"
+            style={{ color: textMuted }}
+          >
+            Terms of Service
+          </button>
         </div>
       </footer>
+
+      <LegalModal type={legalModal} onClose={() => setLegalModal(null)} />
     </div>
   );
 };

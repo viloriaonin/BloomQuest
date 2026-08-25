@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { usePopup } from '../../components/PopupProvider';
+import subjectImage from '../../assets/images/bloomquest-logo.png';
 
 const API_URL = 'http://localhost:8000';
 
@@ -23,6 +24,7 @@ export const QuestionBankContent = () => {
   const [activeTab, setActiveTab]             = useState('Remember');
   const [subjects, setSubjects]               = useState([]);
   const [selectedSubject, setSelectedSubject] = useState('');
+  const [showAllQuestions, setShowAllQuestions] = useState(false);
   const [questions, setQuestions]             = useState([]);
   const [loading, setLoading]                 = useState(false);
   const [loadingSubjects, setLoadingSubjects] = useState(true);
@@ -51,19 +53,20 @@ export const QuestionBankContent = () => {
 
   // Fetch questions when subject changes
   useEffect(() => {
-    if (!selectedSubject) {
+    if (!selectedSubject && !showAllQuestions) {
       setQuestions([]);
       return;
     }
-    fetchQuestions(selectedSubject);
-  }, [selectedSubject]);
+    fetchQuestions(selectedSubject || null);
+  }, [selectedSubject, showAllQuestions]);
 
   const fetchQuestions = async (subjectId) => {
     setLoading(true);
     setError('');
     setSelectedQuestions([]);
     try {
-      const res = await fetch(`${API_URL}/api/questions?subject_id=${subjectId}`);
+      const subjectQuery = subjectId ? `?subject_id=${subjectId}` : '';
+      const res = await fetch(`${API_URL}/api/questions${subjectQuery}`);
       if (!res.ok) throw new Error('Failed to fetch questions');
       const data = await res.json();
       setQuestions(data);
@@ -212,6 +215,7 @@ export const QuestionBankContent = () => {
   const countByLevel = (level) => questions.filter(q => q.bloom_level === level).length;
   const displayedQuestions = questions.filter(q => q.bloom_level === activeTab);
   const selectedSubjectName = subjects.find(s => s.id === parseInt(selectedSubject))?.name || '';
+  const questionScope = selectedSubject || showAllQuestions;
 
   // ── Analytics (computed from currently loaded questions) ──
   const totalQuestions = questions.length;
@@ -246,19 +250,19 @@ export const QuestionBankContent = () => {
           <div className="bg-gray-50 border border-gray-100 rounded-xl p-5">
             <p className="text-xs text-gray-500 mb-1">Total questions</p>
             <p className="text-3xl font-bold text-gray-900">
-              {selectedSubject ? totalQuestions : '—'}
+              {questionScope ? totalQuestions : '—'}
             </p>
           </div>
           <div className="bg-gray-50 border border-gray-100 rounded-xl p-5">
             <p className="text-xs text-gray-500 mb-1">Ready for review</p>
             <p className="text-3xl font-bold text-gray-900">
-              {selectedSubject ? readyForReview : '—'}
+              {questionScope ? readyForReview : '—'}
             </p>
           </div>
           <div className="bg-gray-50 border border-gray-100 rounded-xl p-5">
             <p className="text-xs text-gray-500 mb-1">High-order items</p>
             <p className="text-3xl font-bold text-gray-900">
-              {selectedSubject ? highOrderItems : '—'}
+              {questionScope ? highOrderItems : '—'}
             </p>
           </div>
         </div>
@@ -271,56 +275,28 @@ export const QuestionBankContent = () => {
         </div>
       )}
 
-      {/* ── Subject Filter ── */}
-      <div className="relative z-20 bg-white rounded-lg shadow-sm border border-gray-100 p-4 mb-4 flex flex-wrap items-center gap-4">
-        <span className="text-gray-600 font-medium text-sm whitespace-nowrap">Filter by Subject:</span>
-        <select
-          className="border border-gray-200 rounded-md p-2 text-sm text-gray-600 focus:outline-none focus:border-red-400 flex-1 max-w-xs cursor-pointer"
-          value={selectedSubject}
-          onChange={(e) => setSelectedSubject(e.target.value)}
-          disabled={loadingSubjects}
-        >
-          <option value="">— Select a subject —</option>
-          {subjects.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} {s.code ? `(${s.code})` : ''}
-            </option>
-          ))}
-        </select>
+      <section className="mb-4">
+        <div className="mb-3 flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#B4454A]">Choose a subject</p><h2 className="mt-1 text-lg font-bold text-slate-900">Question collections</h2></div><button type="button" onClick={() => { setSelectedSubject(''); setShowAllQuestions(true); fetchQuestions(null); }} className={`rounded-lg border px-4 py-2 text-sm font-semibold transition-colors ${showAllQuestions ? 'border-[#B4454A] bg-[#B4454A] text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:text-[#B4454A]'}`}>All Questions</button></div>
+        {loadingSubjects ? <div className="bg-white p-6 text-sm text-slate-500">Loading subjects...</div> : <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{subjects.map((subject) => <button key={subject.id} type="button" onClick={() => { setSelectedSubject(String(subject.id)); setShowAllQuestions(false); }} className={`overflow-hidden rounded-xl border bg-white text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-red-200 hover:shadow-md ${String(subject.id) === String(selectedSubject) ? 'border-[#B4454A] ring-1 ring-[#B4454A]' : 'border-slate-200'}`}><img src={subjectImage} alt="" className="h-24 w-full bg-[#f8e9e6] object-cover object-center p-4" /><div className="p-4"><div className="flex items-start justify-between gap-3"><span className="font-bold text-slate-900">{subject.name}</span>{subject.code && <span className="rounded bg-red-50 px-2 py-1 text-[10px] font-bold uppercase text-[#B4454A]">{subject.code}</span>}</div><p className="mt-2 line-clamp-2 text-xs text-slate-500">{subject.description || 'Generated question collection'}</p><p className="mt-3 text-[11px] font-semibold text-slate-400">Generated {subject.created_at ? new Date(subject.created_at).toLocaleDateString() : 'Date unavailable'}</p></div></button>)}</div>}
+      </section>
 
-        {selectedSubject && (
-          <div className="flex items-center gap-3 ml-auto">
-            <span className="text-sm text-gray-400">
-              {questions.length} question{questions.length !== 1 ? 's' : ''} found
-            </span>
-            <button
-              onClick={() => fetchQuestions(selectedSubject)}
-              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded-md px-3 py-1.5 transition-colors"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Refresh
-            </button>
-          </div>
-        )}
-      </div>
+      {questionScope && <div className="relative z-20 mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 bg-white p-4"><span className="text-sm font-semibold text-slate-700">{showAllQuestions ? 'All questions' : selectedSubjectName}</span><span className="text-sm text-gray-400">{questions.length} question{questions.length !== 1 ? 's' : ''} found</span><button onClick={() => fetchQuestions(selectedSubject || null)} className="ml-auto flex items-center gap-1.5 border border-gray-200 px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700">Refresh</button></div>}
 
       {/* No subject selected — placeholder */}
-      {!selectedSubject && (
+      {!questionScope && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 flex-1 flex flex-col items-center justify-center text-center p-12 mb-20">
           <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
             <svg className="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
             </svg>
           </div>
-          <h3 className="text-gray-500 font-medium mb-1">No Subject Selected</h3>
-          <p className="text-sm text-gray-400">Please select a subject above to view its questions.</p>
+          <h3 className="text-gray-500 font-medium mb-1">Select a collection to begin</h3>
+          <p className="text-sm text-gray-400">Choose a subject card or view all questions.</p>
         </div>
       )}
 
       {/* Subject selected — show tabs and questions */}
-      {selectedSubject && (
+      {questionScope && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 flex-1 flex flex-col overflow-visible mb-20">
 
           {/* Bloom's Tabs */}
@@ -489,8 +465,8 @@ export const QuestionBankContent = () => {
 
       {/* Add Question Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-2xl p-6">
+        <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="bq-modal-panel w-full max-w-2xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold">Add Question</h3>
               <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-700">✕</button>

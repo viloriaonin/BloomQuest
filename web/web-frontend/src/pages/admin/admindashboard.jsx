@@ -128,23 +128,6 @@ const AdminDashboard = () => {
     </div>
   );
 
-  const renderPlaceholder = (title, description) => (
-    <div className="rounded-3xl bg-white border border-gray-200 p-8 shadow-sm">
-      <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
-      <p className="mt-3 text-sm text-gray-600">{description}</p>
-      <div className="mt-8 grid gap-4 md:grid-cols-2">
-        <div className="rounded-3xl bg-gray-50 p-5 border border-gray-100">
-          <p className="text-sm font-semibold text-gray-700">Quick stats</p>
-          <p className="mt-3 text-3xl font-bold text-gray-900">No data yet</p>
-        </div>
-        <div className="rounded-3xl bg-gray-50 p-5 border border-gray-100">
-          <p className="text-sm font-semibold text-gray-700">Next action</p>
-          <p className="mt-3 text-sm text-gray-600">Complete the section with your actual dataset for the demo.</p>
-        </div>
-      </div>
-    </div>
-  );
-
   const renderTabContent = () => {
     switch (activeTab) {
       case "dashboard":
@@ -163,9 +146,9 @@ const AdminDashboard = () => {
   };
 
   return (
-    <div className="flex h-screen" style={{ backgroundColor: "#F7F3F3" }}>
+    <div className="bq-shell flex h-screen" style={{ backgroundColor: "var(--bq-bg)" }}>
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
-      <main className="flex-1 ml-64 flex flex-col overflow-auto">
+      <main className="bq-admin-main flex flex-1 flex-col overflow-auto">
         <header
           className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 flex-shrink-0"
           style={{
@@ -198,7 +181,7 @@ const AdminDashboard = () => {
             </div>
           </div>
         </header>
-        <div className="flex-1 px-8 py-6 flex flex-col">
+        <div className="bq-page flex-1 px-4 py-6 sm:px-6 lg:px-8">
           <div className="mb-4">
             <p className="text-sm" style={{ color: "rgba(26,10,10,0.55)" }}>
               {meta.description}

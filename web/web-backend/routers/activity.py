@@ -21,6 +21,7 @@ def get_activity_logs(db: Session = Depends(get_db)):
             "id": log.id,
             "name": user.name if user else "System",
             "dept": user.department if user else None,
+            "role": user.role if user else "system",
             "action": log.action,
             "detail": log.details,
             "type": log.type,

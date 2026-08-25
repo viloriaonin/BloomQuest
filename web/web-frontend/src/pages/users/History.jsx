@@ -60,6 +60,28 @@ const getIcon = (type, status) => {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
         </svg>
       );
+    case 'question_set':
+    case 'export':
+      return (
+        <svg className="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5h6m-7 4h8m-9 4h10m-9 4h6M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"></path>
+        </svg>
+      );
+    case 'security':
+      return (
+        <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7l7-4zm-2 9l1.5 1.5L15 10"></path>
+        </svg>
+      );
+    case 'academic':
+    case 'user':
+    case 'analysis':
+    case 'question':
+      return (
+        <svg className="w-5 h-5 text-[#B4454A]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 5a2 2 0 012-2h12a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm4 3h8M8 12h8M8 16h5"></path>
+        </svg>
+      );
     case 'login':
     default:
       return (
@@ -72,6 +94,7 @@ const getIcon = (type, status) => {
 
 const History = () => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState('all');
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -100,20 +123,42 @@ const History = () => {
     fetchHistory();
   }, []);
 
-  // Filter history based on search input
+  const tabs = [
+    { id: 'all', label: 'All Activity', types: null },
+    { id: 'content', label: 'Content', types: ['upload', 'analysis', 'generate', 'classify', 'question', 'delete'] },
+    { id: 'sets', label: 'Question Sets', types: ['question_set'] },
+    { id: 'exports', label: 'Exports', types: ['export', 'download'] },
+    { id: 'security', label: 'Security', types: ['login', 'security'] },
+    { id: 'academic', label: 'Academic', types: ['academic'] },
+    { id: 'users', label: 'Users', types: ['user'] },
+    { id: 'errors', label: 'Errors', types: null, status: 'error' },
+  ];
+
+  const activeTabConfig = tabs.find((tab) => tab.id === activeTab);
+  const countForTab = (tab) => tab.types
+    ? history.filter((item) => tab.types.includes(String(item.type).toLowerCase())).length
+    : tab.status === 'error' ? history.filter((item) => item.status === 'error').length
+    : history.length;
+
+  // Filter history by the selected activity category and search input.
   const filteredHistory = history.filter(item =>
-    item.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.details.toLowerCase().includes(searchTerm.toLowerCase())
+    (!activeTabConfig.types ? (!activeTabConfig.status || item.status === activeTabConfig.status) : activeTabConfig.types.includes(String(item.type).toLowerCase())) &&
+    (
+      item.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.details.toLowerCase().includes(searchTerm.toLowerCase())
+    )
   );
 
   return (
-    <div className="max-w-5xl w-full p-2 h-full flex flex-col">
+    <div className="bq-page">
+      <div className="bq-page-inner">
 
       {/* Header & Search Bar */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="bq-page-header">
         <div>
-          <h2 className="text-xl font-bold text-gray-800">Activity History</h2>
-          <p className="text-sm text-gray-500 mt-1">Review your recent actions and system logs.</p>
+          <p className="bq-eyebrow">Monitor workspace</p>
+          <h2 className="bq-page-title">Activity History</h2>
+          <p className="bq-page-description">Review your recent actions and system logs.</p>
         </div>
 
         <div className="relative w-full sm:w-72">
@@ -132,8 +177,31 @@ const History = () => {
         </div>
       </div>
 
+      <div className="mb-6 overflow-x-auto rounded-lg border border-gray-100 bg-white px-3 shadow-sm">
+        <div className="flex min-w-max items-center gap-1" role="tablist" aria-label="Activity history categories">
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setActiveTab(tab.id)}
+                className={`border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${isActive ? 'border-[#B4454A] text-[#B4454A]' : 'border-transparent text-gray-500 hover:border-gray-200 hover:text-gray-700'}`}
+              >
+                {tab.label}
+                <span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] ${isActive ? 'bg-red-50 text-[#B4454A]' : 'bg-gray-100 text-gray-500'}`}>
+                  {countForTab(tab)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Timeline Content */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-8 flex-1 overflow-y-auto">
+      <div className="bq-panel p-6">
 
         {loading ? (
           <div className="flex flex-col items-center justify-center h-48 text-gray-400">
@@ -165,7 +233,10 @@ const History = () => {
                       {item.date}
                     </span>
                   </div>
-                  <p className="text-gray-600 text-sm">{item.details}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-gray-600 text-sm">{item.details}</p>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${item.status === 'error' ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-500'}`}>{item.type || 'system'}</span>
+                  </div>
                 </div>
 
               </div>
@@ -180,6 +251,7 @@ const History = () => {
           </div>
         )}
 
+      </div>
       </div>
     </div>
   );

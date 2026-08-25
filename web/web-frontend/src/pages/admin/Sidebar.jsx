@@ -9,10 +9,10 @@ import LogoutBtn from "./Logout";
 const Sidebar = ({ activeTab, setActiveTab }) => {
   return (
     <aside
-      className="fixed left-0 top-0 w-64 h-screen flex flex-col"
+      className="bq-admin-sidebar fixed left-0 top-0 z-40 flex h-screen w-64 flex-col"
       style={{
-        background: "linear-gradient(180deg, #6B0F11 0%, #8B1315 50%, #7B1113 100%)",
-        boxShadow: "4px 0 24px rgba(107,15,17,0.35)",
+        background: "linear-gradient(180deg, #7B1113 0%, #8F1C2B 100%)",
+        boxShadow: "8px 0 24px rgba(15,23,42,0.16)",
       }}
     >
       {/* Logo Section */}

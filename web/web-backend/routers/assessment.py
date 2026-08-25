@@ -29,38 +29,41 @@ def convert_docx_to_pdf(docx_path: str, pdf_path: str):
         pythoncom.CoUninitialize()
 
 
-def build_assessment_docx(subject: models.Subject, questions: list) -> str:
+def build_assessment_docx(subject: models.Subject, questions: list, include_answer_key: bool = True, answer_mode: str = "with_key") -> str:
     doc = Document()
 
-    # ── Title ──
-    title = doc.add_heading(f"{subject.name} — Assessment", level=1)
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if answer_mode != "key_only":
+        # ── Title ──
+        title = doc.add_heading(f"{subject.name} — Assessment", level=1)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    sub = doc.add_paragraph(f"Total Items: {len(questions)}")
-    sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    doc.add_paragraph("Name: ____________________    Score: _______")
-    doc.add_paragraph()
-
-    # ── Questions ──
-    letters = ['A', 'B', 'C', 'D', 'E', 'F']
-    for i, q in enumerate(questions, start=1):
-        p = doc.add_paragraph()
-        p.add_run(f"{i}. {q.question}").bold = True
-
-        if q.options:
-            for j, opt in enumerate(q.options):
-                doc.add_paragraph(f"   {letters[j]}. {opt}")
-        else:
-            doc.add_paragraph("   Answer: ____________________________________")
+        sub = doc.add_paragraph(f"Total Items: {len(questions)}")
+        sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph("Name: ____________________    Score: _______")
         doc.add_paragraph()
 
-    # ── Answer Key (new page) ──
-    doc.add_page_break()
-    doc.add_heading("Answer Key", level=1)
+        # ── Questions ──
+        letters = ['A', 'B', 'C', 'D', 'E', 'F']
+        for i, q in enumerate(questions, start=1):
+            p = doc.add_paragraph()
+            p.add_run(f"{i}. {q.question}").bold = True
 
-    for i, q in enumerate(questions, start=1):
-        answer = q.correct_answer or "N/A"
-        doc.add_paragraph(f"{i}. {answer}")
+            if q.options:
+                for j, opt in enumerate(q.options):
+                    doc.add_paragraph(f"   {letters[j]}. {opt}")
+            else:
+                doc.add_paragraph("   Answer: ____________________________________")
+            doc.add_paragraph()
+
+    if answer_mode in {"with_key", "key_only"}:
+        # ── Answer Key (new page) ──
+        if answer_mode == "with_key":
+            doc.add_page_break()
+        doc.add_heading("Answer Key", level=1)
+
+        for i, q in enumerate(questions, start=1):
+            answer = q.correct_answer or "N/A"
+            doc.add_paragraph(f"{i}. {answer}")
 
     file_path = os.path.join(TEMP_DIR, f"assessment_{uuid.uuid4().hex}.docx")
     doc.save(file_path)

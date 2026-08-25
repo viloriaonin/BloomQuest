@@ -55,6 +55,8 @@ RATE_LIMIT_MAX_REQUESTS = 5
 RATE_LIMIT_BUCKETS = defaultdict(list)
 
 models.Base.metadata.create_all(bind=engine)
+with engine.begin() as connection:
+    connection.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"))
 
 
 def log_activity(db: Session, action: str, details: str, type: str, status: str = "success", user_id: int = None):
@@ -79,9 +81,9 @@ def detect_topics(syllabus_text: str, module_text: str):
     return {"course_title": course_title, "course_code": course_code, "topics": topics}
 
 
-def build_assessment_document(questions, subject_name, export_format):
+def build_assessment_document(questions, subject_name, export_format, include_answer_key=True, answer_mode="with_key"):
     SubjectLike = type("SubjectLike", (), {"name": subject_name})
-    docx_path = build_assessment_docx(SubjectLike(), questions)
+    docx_path = build_assessment_docx(SubjectLike(), questions, include_answer_key=include_answer_key, answer_mode=answer_mode)
     try:
         if export_format == "docx":
             with open(docx_path, "rb") as f:
@@ -114,6 +116,14 @@ with engine.begin() as conn:
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR"))
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR"))
     conn.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS department_id INTEGER"))
+    conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS review_status VARCHAR(32) NOT NULL DEFAULT 'needs_review'"))
+    conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS difficulty VARCHAR(32) NOT NULL DEFAULT 'moderate'"))
+    conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS exam_title VARCHAR(255)"))
+    conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS instructions TEXT"))
+    conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS total_points INTEGER"))
+    conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS time_limit VARCHAR(64)"))
+    conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS instructor_name VARCHAR(255)"))
+    conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS department VARCHAR(255)"))
 
 # Seed the default academic departments so the mobile dropdown has visible choices.
 with SessionLocal() as db:
@@ -637,23 +647,26 @@ def send_otp(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
     sent = send_password_reset_email(data.email, code)
     if not sent:
         logger.warning("[OTP] Password reset email not sent; returning demo code for %s", data.email)
+        log_activity(db, "Password Reset Code Generated", f"Generated a reset code for {data.email}.", "security")
         return {
             "message": "A password reset code has been sent to your email address.",
             "demo_code": code,
         }
 
+    log_activity(db, "Password Reset Code Sent", f"Sent a reset code for {data.email}.", "security")
     return {
         "message": "A password reset code has been sent to your email address.",
     }
 
 @app.post("/api/forgot-password/verify-otp")
-def verify_otp(data: VerifyOtpRequest):
+def verify_otp(data: VerifyOtpRequest, db: Session = Depends(get_db)):
     enforce_rate_limit("otp-verify", data.email)
     _cleanup_otp(data.email)
     record = otp_store.get(data.email)
     if not record or record["otp"] != data.otp:
         raise HTTPException(status_code=400, detail="Incorrect or expired verification code.")
 
+    log_activity(db, "Password Reset Verified", f"Verified a password reset request for {data.email}.", "security")
     return {"message": "OTP verified."}
 
 @app.patch("/api/forgot-password/reset")
@@ -671,6 +684,7 @@ def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
     user.password = hash_password(data.new_password)
     db.commit()
     otp_store.pop(data.email, None)
+    log_activity(db, "Password Reset Completed", f"Password reset completed for {data.email}.", "security")
 
     return {"message": "Password has been reset successfully."}
 
@@ -811,12 +825,15 @@ async def approve_account_request(payload: AccountActionRequest, background_task
     # remove the pending account request and commit
     db.delete(request_entry)
     db.commit()
+    log_activity(db, "Password Updated", f"Password updated for {normalized_email}.", "security")
 
     # send the approval email in the background with templated fields
     background_tasks.add_task(send_approval_email, normalized_email, temp_password, full_name, department)
 
     # fetch the user row we just created/updated to return a formatted user object
     created_user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
+
+    log_activity(db, "Account Request Approved", f"Approved account request for {normalized_email}.", "user")
 
     formatted = None
     if created_user:
@@ -859,6 +876,7 @@ def archive_user(payload: AccountActionRequest, db: Session = Depends(get_db)):
 
     user.archived = True
     db.commit()
+    log_activity(db, "User Archived", f"Archived user {normalized_email}.", "user")
     return {"message": "User archived successfully.", "status": "archived"}
 
 @app.post("/api/users/restore")
@@ -870,6 +888,7 @@ def restore_user(payload: AccountActionRequest, db: Session = Depends(get_db)):
 
     user.archived = False
     db.commit()
+    log_activity(db, "User Restored", f"Restored user {normalized_email}.", "user")
     return {"message": "User restored successfully.", "status": "active"}
 
 @app.post("/api/users/verify-admin-password")
@@ -911,6 +930,7 @@ def delete_user(email: str, db: Session = Depends(get_db)):
 
     db.delete(user)
     db.commit()
+    log_activity(db, "User Deleted", f"Deleted user {normalized_email}.", "user")
 
     return {"message": "User deleted successfully."}
 
@@ -927,6 +947,7 @@ def decline_account_request(payload: AccountActionRequest, db: Session = Depends
 
     request_entry.status = "declined"
     db.commit()
+    log_activity(db, "Account Request Declined", f"Declined account request for {normalized_email}.", "user")
 
     return {"message": "Account request declined successfully.", "status": request_entry.status}
 
@@ -1200,6 +1221,7 @@ async def generate_questions(
             "message": f"Successfully generated and classified {len(questions)} questions!"
         }
     except Exception as e:
+        log_activity(db, "Assessment Generation Failed", f"Legacy generation failed for upload {upload_id}.", "generate", status="error")
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- NEW SCHEMAS FOR MANUAL ENTERED OPERATIONS ---
@@ -1220,6 +1242,29 @@ class ManualQuestionRequest(BaseModel):
     question: str
     question_type: str
     subject_id: int
+
+class QuestionSetCreateRequest(BaseModel):
+    name: str
+    subject_id: int
+    exam_title: str | None = None
+    instructions: str | None = None
+    total_points: int | None = None
+    time_limit: str | None = None
+    instructor_name: str | None = None
+    department: str | None = None
+
+class QuestionSetItemsRequest(BaseModel):
+    question_ids: list[int] = []
+
+class QuestionSetUpdateRequest(BaseModel):
+    name: str | None = None
+    status: str | None = None
+    exam_title: str | None = None
+    instructions: str | None = None
+    total_points: int | None = None
+    time_limit: str | None = None
+    instructor_name: str | None = None
+    department: str | None = None
 
 @app.get("/api/departments")
 def get_departments(db: Session = Depends(get_db)):
@@ -1259,6 +1304,7 @@ def create_department(payload: DepartmentCreateRequest, db: Session = Depends(ge
     db.add(new_department)
     db.commit()
     db.refresh(new_department)
+    log_activity(db, "Department Created", f"Created department '{new_department.name}'.", "academic")
 
     return {
         "id": new_department.id,
@@ -1316,6 +1362,7 @@ def update_department(department_id: int, payload: DepartmentUpdateRequest, db: 
     department.code = normalized_code
     db.commit()
     db.refresh(department)
+    log_activity(db, "Department Updated", f"Updated department '{department.name}'.", "academic")
 
     return {
         "id": department.id,
@@ -1333,6 +1380,7 @@ def delete_department(department_id: int, db: Session = Depends(get_db)):
     db.query(models.Subject).filter(models.Subject.department_id == department_id).update({"department_id": None})
     db.delete(department)
     db.commit()
+    log_activity(db, "Department Deleted", f"Deleted department '{department.name}'.", "academic")
     return {"message": "Department deleted successfully."}
 
 
@@ -1363,6 +1411,7 @@ def create_subject_manually(payload: SubjectCreateRequest, db: Session = Depends
     db.add(new_subject)
     db.commit()
     db.refresh(new_subject)
+    log_activity(db, "Subject Created", f"Created subject '{new_subject.name}'.", "academic")
     
     return {
         "id": new_subject.id,
@@ -1400,6 +1449,7 @@ def update_subject(subject_id: int, payload: SubjectCreateRequest, db: Session =
     subject.code = normalized_code
     db.commit()
     db.refresh(subject)
+    log_activity(db, "Subject Updated", f"Updated subject '{subject.name}'.", "academic")
 
     return {
         "id": subject.id,
@@ -1414,12 +1464,25 @@ def delete_subject(subject_id: int, db: Session = Depends(get_db)):
     subject = db.query(models.Subject).filter(models.Subject.id == subject_id).first()
     if not subject:
         raise HTTPException(status_code=404, detail="Subject not found.")
-    # Nullify references in dependent tables to avoid foreign key constraint errors
-    db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.subject_id == subject_id).update({"subject_id": None})
-    db.query(models.UploadedFile).filter(models.UploadedFile.subject_id == subject_id).update({"subject_id": None})
-    db.delete(subject)
+    subject.archived = True
     db.commit()
+    log_activity(db, "Subject Deleted", f"Deleted subject '{subject.name}'.", "academic")
     return {"message": "Subject deleted successfully."}
+
+@app.get("/api/recycle-bin/subjects")
+def get_archived_subjects(db: Session = Depends(get_db)):
+    return db.query(models.Subject).filter(models.Subject.archived.is_(True)).order_by(models.Subject.created_at.desc()).all()
+
+@app.post("/api/recycle-bin/subjects/{subject_id}/restore")
+def restore_subject(subject_id: int, db: Session = Depends(get_db)):
+    subject = db.query(models.Subject).filter(models.Subject.id == subject_id).first()
+    if not subject:
+        raise HTTPException(status_code=404, detail="Subject not found.")
+    subject.archived = False
+    db.commit()
+    db.refresh(subject)
+    log_activity(db, "Subject Restored", f"Restored subject '{subject.name}'.", "academic")
+    return subject
 
 # --- NEW ROUTE: SINGLE QUESTION MANUAL CLASSIFICATION ---
 @app.post("/api/questions/manual", status_code=201)
@@ -1464,7 +1527,25 @@ def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Sessio
 
 @app.get("/api/subjects")
 def get_subjects(db: Session = Depends(get_db)):
-    return db.query(models.Subject).all()
+    subjects = db.query(models.Subject).filter(models.Subject.archived.is_(False)).all()
+    question_counts = dict(
+        db.query(models.GeneratedQuestion.subject_id, func.count(models.GeneratedQuestion.id))
+        .group_by(models.GeneratedQuestion.subject_id)
+        .all()
+    )
+    return [
+        {
+            "id": subject.id,
+            "name": subject.name,
+            "code": subject.code,
+            "description": subject.description,
+            "department_id": subject.department_id,
+            "created_at": subject.created_at,
+            "archived": subject.archived,
+            "question_count": question_counts.get(subject.id, 0),
+        }
+        for subject in subjects
+    ]
 
 # Backwards-compatible subject endpoints without the '/api' prefix
 @app.get("/subjects")
@@ -1501,6 +1582,152 @@ def get_questions(
     return query.all()
 
 
+def serialize_question_set(question_set):
+    set_questions = [item.question for item in question_set.items if item.question]
+    def count_values(key, fallback):
+        counts = {}
+        for question in set_questions:
+            value = str(getattr(question, key, None) or fallback)
+            counts[value] = counts.get(value, 0) + 1
+        return counts
+    return {
+        "id": question_set.id,
+        "name": question_set.name,
+        "subject_id": question_set.subject_id,
+        "subject_name": question_set.subject.name if question_set.subject else "",
+        "status": question_set.status,
+        "question_ids": [item.question_id for item in question_set.items],
+        "question_count": len(question_set.items),
+        "created_at": question_set.created_at.isoformat() if question_set.created_at else None,
+        "updated_at": question_set.updated_at.isoformat() if question_set.updated_at else None,
+        "exam_title": question_set.exam_title,
+        "instructions": question_set.instructions,
+        "total_points": question_set.total_points,
+        "time_limit": question_set.time_limit,
+        "instructor_name": question_set.instructor_name,
+        "department": question_set.department,
+        "export_history": [{"id": item.id, "format": item.export_format, "filename": item.filename, "created_at": item.created_at.isoformat() if item.created_at else None} for item in question_set.exports],
+        "statistics": {
+            "bloom": count_values("bloom_level", "Unknown"),
+            "difficulty": count_values("difficulty", "moderate"),
+            "types": count_values("question_type", "Unknown"),
+            "topics": count_values("topic_name", "Unknown"),
+        },
+    }
+
+
+@app.get("/api/question-sets")
+def get_question_sets(subject_id: int | None = None, db: Session = Depends(get_db)):
+    query = db.query(models.QuestionSet).order_by(models.QuestionSet.updated_at.desc(), models.QuestionSet.created_at.desc())
+    if subject_id:
+        query = query.filter(models.QuestionSet.subject_id == subject_id)
+    return [serialize_question_set(question_set) for question_set in query.all()]
+
+
+@app.post("/api/question-sets", status_code=201)
+def create_question_set(payload: QuestionSetCreateRequest, db: Session = Depends(get_db)):
+    subject = db.query(models.Subject).filter(models.Subject.id == payload.subject_id).first()
+    if not subject:
+        raise HTTPException(status_code=404, detail="Subject not found")
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Question set name is required")
+    question_set = models.QuestionSet(
+        name=name,
+        subject_id=subject.id,
+        exam_title=payload.exam_title or name,
+        instructions=payload.instructions,
+        total_points=payload.total_points,
+        time_limit=payload.time_limit,
+        instructor_name=payload.instructor_name,
+        department=payload.department,
+    )
+    db.add(question_set)
+    db.commit()
+    db.refresh(question_set)
+    log_activity(db, "Created Question Set", f"Created '{name}' for {subject.name}.", "question_set")
+    return serialize_question_set(question_set)
+
+
+@app.put("/api/question-sets/{set_id}")
+def update_question_set(set_id: int, payload: QuestionSetUpdateRequest, db: Session = Depends(get_db)):
+    question_set = db.query(models.QuestionSet).filter(models.QuestionSet.id == set_id).first()
+    if not question_set:
+        raise HTTPException(status_code=404, detail="Question set not found")
+    if payload.name is not None:
+        if not payload.name.strip():
+            raise HTTPException(status_code=400, detail="Question set name is required")
+        question_set.name = payload.name.strip()
+    if payload.status is not None:
+        if payload.status not in {"draft", "ready", "exported"}:
+            raise HTTPException(status_code=400, detail="Invalid question set status")
+        question_set.status = payload.status
+    for field in ("exam_title", "instructions", "total_points", "time_limit", "instructor_name", "department"):
+        value = getattr(payload, field)
+        if value is not None:
+            setattr(question_set, field, value)
+    db.commit()
+    db.refresh(question_set)
+    log_activity(db, "Question Set Updated", f"Updated '{question_set.name}' status to {question_set.status}.", "question_set")
+    return serialize_question_set(question_set)
+
+
+@app.put("/api/question-sets/{set_id}/items")
+def update_question_set_items(set_id: int, payload: QuestionSetItemsRequest, db: Session = Depends(get_db)):
+    question_set = db.query(models.QuestionSet).filter(models.QuestionSet.id == set_id).first()
+    if not question_set:
+        raise HTTPException(status_code=404, detail="Question set not found")
+    unique_ids = list(dict.fromkeys(payload.question_ids))
+    questions = db.query(models.GeneratedQuestion).filter(
+        models.GeneratedQuestion.id.in_(unique_ids),
+        models.GeneratedQuestion.subject_id == question_set.subject_id,
+    ).all() if unique_ids else []
+    valid_ids = {question.id for question in questions}
+    if len(valid_ids) != len(unique_ids):
+        raise HTTPException(status_code=400, detail="Every selected question must belong to the set subject")
+    db.query(models.QuestionSetItem).filter(models.QuestionSetItem.question_set_id == set_id).delete(synchronize_session=False)
+    for position, question_id in enumerate(unique_ids):
+        db.add(models.QuestionSetItem(question_set_id=set_id, question_id=question_id, position=position))
+    question_set.status = "ready" if unique_ids else "draft"
+    db.commit()
+    db.refresh(question_set)
+    log_activity(db, "Question Set Selection Saved", f"Saved {len(unique_ids)} question(s) in '{question_set.name}'.", "question_set")
+    return serialize_question_set(question_set)
+
+
+@app.post("/api/question-sets/{set_id}/duplicate", status_code=201)
+def duplicate_question_set(set_id: int, db: Session = Depends(get_db)):
+    source = db.query(models.QuestionSet).filter(models.QuestionSet.id == set_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Question set not found")
+    duplicate = models.QuestionSet(
+        name=f"{source.name} Copy",
+        subject_id=source.subject_id,
+        status="draft",
+    )
+    db.add(duplicate)
+    db.flush()
+    for item in source.items:
+        db.add(models.QuestionSetItem(question_set_id=duplicate.id, question_id=item.question_id, position=item.position))
+    duplicate.status = "ready" if source.items else "draft"
+    db.commit()
+    db.refresh(duplicate)
+    log_activity(db, "Question Set Duplicated", f"Duplicated '{source.name}' as '{duplicate.name}'.", "question_set")
+    return serialize_question_set(duplicate)
+
+
+@app.delete("/api/question-sets/{set_id}")
+def delete_question_set(set_id: int, db: Session = Depends(get_db)):
+    question_set = db.query(models.QuestionSet).filter(models.QuestionSet.id == set_id).first()
+    if not question_set:
+        raise HTTPException(status_code=404, detail="Question set not found")
+    set_name = question_set.name
+    db.delete(question_set)
+    db.commit()
+    log_activity(db, "Question Set Deleted", f"Deleted question set '{set_name}'.", "question_set")
+    return {"message": "Question set deleted successfully"}
+
+
 @app.get("/api/history")
 def get_history(user_id: int = None, db: Session = Depends(get_db)):
     query = db.query(models.ActivityLog).order_by(models.ActivityLog.created_at.desc())
@@ -1526,6 +1753,8 @@ async def update_question(
     question: str = Form(...),
     correct_answer: str = Form(...),
     explanation: str = Form(...),
+    review_status: str = Form("needs_review"),
+    difficulty: str = Form("moderate"),
     db: Session = Depends(get_db)
 ):
     q = db.query(models.GeneratedQuestion).filter(
@@ -1533,11 +1762,80 @@ async def update_question(
     ).first()
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
+    db.add(models.QuestionVersion(snapshot={
+        "question": q.question,
+        "correct_answer": q.correct_answer,
+        "explanation": q.explanation,
+        "review_status": q.review_status,
+        "difficulty": q.difficulty,
+    }, question_id=q.id))
     q.question = question
     q.correct_answer = correct_answer
     q.explanation = explanation
+    if review_status not in {"needs_review", "in_review", "approved"}:
+        raise HTTPException(status_code=400, detail="Invalid review status")
+    if difficulty not in {"easy", "moderate", "hard"}:
+        raise HTTPException(status_code=400, detail="Invalid difficulty")
+    q.review_status = review_status
+    q.difficulty = difficulty
     db.commit()
+    log_activity(db, "Question Updated", f"Updated question #{question_id} and review metadata.", "question")
     return {"message": "Question updated successfully"}
+
+
+@app.get("/api/questions/{question_id}/versions")
+def get_question_versions(question_id: int, db: Session = Depends(get_db)):
+    return [
+        {"id": version.id, "snapshot": version.snapshot, "created_at": version.created_at.isoformat() if version.created_at else None}
+        for version in db.query(models.QuestionVersion).filter(models.QuestionVersion.question_id == question_id).order_by(models.QuestionVersion.created_at.desc()).all()
+    ]
+
+
+@app.post("/api/questions/{question_id}/versions/{version_id}/restore")
+def restore_question_version(question_id: int, version_id: int, db: Session = Depends(get_db)):
+    question = db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.id == question_id).first()
+    version = db.query(models.QuestionVersion).filter(models.QuestionVersion.id == version_id, models.QuestionVersion.question_id == question_id).first()
+    if not question or not version:
+        raise HTTPException(status_code=404, detail="Question version not found")
+    db.add(models.QuestionVersion(snapshot={
+        "question": question.question,
+        "correct_answer": question.correct_answer,
+        "explanation": question.explanation,
+        "review_status": question.review_status,
+        "difficulty": question.difficulty,
+    }, question_id=question.id))
+    for field in ("question", "correct_answer", "explanation", "review_status", "difficulty"):
+        setattr(question, field, version.snapshot.get(field))
+    db.commit()
+    log_activity(db, "Question Version Restored", f"Restored version {version_id} for question #{question_id}.", "question")
+    return {"message": "Question version restored"}
+
+
+@app.put("/api/questions/bulk")
+def bulk_update_questions(
+    question_ids: str = Form(...),
+    review_status: str = Form(None),
+    difficulty: str = Form(None),
+    db: Session = Depends(get_db),
+):
+    selected_ids = [int(item.strip()) for item in (question_ids or "").split(",") if item.strip().isdigit()]
+    if not selected_ids:
+        raise HTTPException(status_code=400, detail="No valid question IDs were provided")
+    if review_status is not None and review_status not in {"needs_review", "in_review", "approved"}:
+        raise HTTPException(status_code=400, detail="Invalid review status")
+    if difficulty is not None and difficulty not in {"easy", "moderate", "hard"}:
+        raise HTTPException(status_code=400, detail="Invalid difficulty")
+    questions = db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.id.in_(selected_ids)).all()
+    if not questions:
+        raise HTTPException(status_code=404, detail="No matching questions found")
+    for question in questions:
+        if review_status is not None:
+            question.review_status = review_status
+        if difficulty is not None:
+            question.difficulty = difficulty
+    db.commit()
+    log_activity(db, "Updated Questions", f"Bulk updated {len(questions)} question review records.", "review")
+    return {"updated": len(questions)}
 
 
 @app.delete("/api/questions/{question_id}")
@@ -1556,11 +1854,52 @@ def delete_question(question_id: int, db: Session = Depends(get_db)):
 
     return {"message": "Question deleted successfully"}
 
+@app.post("/api/question-sets/{set_id}/export")
+def export_question_set(
+    set_id: int,
+    export_format: str = Form("pdf"),
+    include_answer_key: bool = Form(True),
+    answer_mode: str = Form("with_key"),
+    db: Session = Depends(get_db),
+):
+    export_format = export_format.lower()
+    if export_format not in {"pdf", "docx"}:
+        raise HTTPException(status_code=400, detail="Export format must be pdf or docx")
+    question_set = db.query(models.QuestionSet).filter(models.QuestionSet.id == set_id).first()
+    if not question_set:
+        raise HTTPException(status_code=404, detail="Question set not found")
+    questions = [item.question for item in question_set.items if item.question]
+    if not questions:
+        raise HTTPException(status_code=400, detail="Add at least one question before exporting")
+    pythoncom.CoInitialize()
+    try:
+        normalized_questions = [type("QuestionLike", (), {
+            "question": question.question or "",
+            "question_type": question.question_type or "",
+            "options": question.options or [],
+            "correct_answer": question.correct_answer or "",
+        })() for question in questions]
+        content, filename = build_assessment_document(normalized_questions, question_set.subject.name, export_format, include_answer_key=include_answer_key, answer_mode=answer_mode)
+        question_set.status = "exported"
+        db.add(models.QuestionSetExport(question_set_id=question_set.id, export_format=export_format, filename=filename))
+        db.commit()
+        log_activity(db, "Exported Question Set", f"Exported '{question_set.name}' as {export_format.upper()}.", "export")
+        media_type = "application/pdf" if export_format == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        return Response(content=content, media_type=media_type, headers={"Content-Disposition": f"attachment; filename={filename}"})
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        pythoncom.CoUninitialize()
+
 @app.post("/api/questions/export")
 def export_assessment(
     subject_id: int = Form(...),
     question_ids: str = Form(...),
     export_format: str = Form("pdf"),
+    include_answer_key: bool = Form(True),
+    answer_mode: str = Form("with_key"),
     db: Session = Depends(get_db)
 ):
     pythoncom.CoInitialize()
@@ -1594,7 +1933,8 @@ def export_assessment(
                 "correct_answer": getattr(question, "correct_answer", "") or "",
             })())
 
-        content, filename = build_assessment_document(normalized_questions, subject.name, export_format.lower())
+        content, filename = build_assessment_document(normalized_questions, subject.name, export_format.lower(), include_answer_key=include_answer_key, answer_mode=answer_mode)
+        log_activity(db, "Assessment Exported", f"Exported {len(questions)} selected question(s) from '{subject.name}' as {export_format.upper()}.", "export")
         media_type = "application/pdf" if export_format.lower() == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         return Response(content=content, media_type=media_type, headers={"Content-Disposition": f"attachment; filename={filename}"})
     except HTTPException:

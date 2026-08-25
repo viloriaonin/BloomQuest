@@ -471,8 +471,8 @@ export const UserMgmtContent = () => {
       </div>
 
       {editingUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl relative">
+        <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="bq-modal-panel relative w-full max-w-md p-6">
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="text-xl font-bold text-gray-900">Manage User</h3>

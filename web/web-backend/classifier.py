@@ -1,14 +1,21 @@
 import os
 import logging
+from pathlib import Path
 from google import genai
 from dotenv import load_dotenv
 
-# Ensure environment variables are active before the client initializes
-load_dotenv()
 logger = logging.getLogger(__name__)
 
-# Official SDK initialization targeting the fresh credential token
-client = genai.Client()
+# Load the project-specific environment file that stores the Gemini key.
+load_dotenv(dotenv_path=str(Path(__file__).resolve().parent / "database.env"))
+
+api_key = os.getenv("GEMINI_API_KEY")
+if api_key:
+    client = genai.Client(api_key=api_key)
+else:
+    client = None
+    logger.warning("GEMINI_API_KEY is not set. Manual classification will fall back to 'Understand' instead of crashing.")
+
 MODEL_NAME = "gemini-flash-lite-latest"
 
 def classify_question(question_text: str, *args, **kwargs) -> str:
@@ -23,6 +30,10 @@ def classify_question(question_text: str, *args, **kwargs) -> str:
         f"Question: {question_text}"
     )
     
+    if client is None:
+        logger.warning("Skipping Gemini classification because no API key is configured.")
+        return "Understand"
+
     try:
         response = client.models.generate_content(
             model=MODEL_NAME,

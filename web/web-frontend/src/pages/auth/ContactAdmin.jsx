@@ -1,11 +1,20 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import LoadingSpinner from "../../components/LoadingSpinner";
-import logo from "../../assets/images/bloomquest-logo.png";
+import LegalModal from "../../components/LegalModal";
 
 // Connects directly to your local backend server environment
 const API_URL = "http://localhost:8000/api/contact-admin";
 const CHECK_STATUS_URL = "http://localhost:8000/api/contact-admin/check-status";
+
+const paper = '#F7F6F3';
+const surface = '#FFFFFF';
+const ink = '#14140F';
+const rule = 'rgba(20, 20, 15, 0.14)';
+const ruleSoft = 'rgba(20, 20, 15, 0.08)';
+const textMuted = '#6F6C64';
+const accent = '#B4454A';
+const accentHover = '#8F1C2B';
 
 const ContactAdmin = () => {
   const navigate = useNavigate();
@@ -18,6 +27,7 @@ const ContactAdmin = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [legalModal, setLegalModal] = useState(null); // "privacy" | "terms" | null
   const [existingRequestStatus, setExistingRequestStatus] = useState(null); // 'pending' | 'approved' | 'declined' | 'existing'
 
   const isValidEmail = (value) => {
@@ -139,188 +149,230 @@ const ContactAdmin = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col page-transition">
-      <div className="flex flex-col md:flex-row flex-1">
+    <div className="min-h-screen flex flex-col page-transition relative" style={{ minHeight: '100vh', overflow: 'hidden', backgroundColor: paper }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
 
-        {/* LEFT: Brand Panel */}
+        .bq-eyebrow {
+          font-family: 'Inter', sans-serif;
+          font-size: 11px;
+          font-weight: 600;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+          color: ${accent};
+        }
+        .bq-headline {
+          font-family: 'Fraunces', serif;
+          font-optical-sizing: auto;
+          font-weight: 500;
+          letter-spacing: -0.01em;
+        }
+        .bq-label {
+          font-family: 'Inter', sans-serif;
+          font-size: 11px;
+          font-weight: 600;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          color: ${textMuted};
+        }
+        .bq-field {
+          font-family: 'Inter', sans-serif;
+          background: transparent;
+          border: none;
+          border-bottom: 1px solid ${rule};
+          border-radius: 0;
+          padding: 10px 2px;
+          font-size: 15px;
+          color: ${ink};
+          width: 100%;
+          transition: border-color 0.2s ease;
+        }
+        .bq-field::placeholder { color: #A6A39A; }
+        .bq-field:focus {
+          outline: none;
+          border-bottom: 1.5px solid ${accent};
+        }
+        .bq-card {
+          position: relative;
+        }
+        .bq-corner {
+          position: absolute;
+          width: 22px;
+          height: 22px;
+          border-color: ${accent};
+        }
+        .bq-corner-tl { top: -10px; left: -10px; border-top: 1.5px solid; border-left: 1.5px solid; }
+        .bq-corner-tr { top: -10px; right: -10px; border-top: 1.5px solid; border-right: 1.5px solid; }
+        .bq-corner-bl { bottom: -10px; left: -10px; border-bottom: 1.5px solid; border-left: 1.5px solid; }
+        .bq-corner-br { bottom: -10px; right: -10px; border-bottom: 1.5px solid; border-right: 1.5px solid; }
+      `}</style>
+
+      <div className="absolute inset-0 -z-10" style={{ background: `linear-gradient(135deg, ${paper} 0%, #EEF2F8 100%)` }} />
+      <div className="absolute -top-20 -right-20 rounded-full opacity-20" style={{ width: 420, height: 420, background: `radial-gradient(circle, ${accent} 0%, transparent 70%)` }} />
+      <div className="absolute -bottom-28 -left-24 rounded-full opacity-15" style={{ width: 500, height: 500, background: `radial-gradient(circle, ${accent} 0%, transparent 70%)` }} />
+
+      {/* Quiet eyebrow, top of page */}
+      <div className="w-full flex justify-center pt-10 pb-2">
+        <span className="bq-eyebrow">BloomQuest &nbsp;·&nbsp; Request Access</span>
+      </div>
+
+      {/* Centered Contact Admin Card */}
+      <div className="flex-1 flex items-center justify-center px-4 py-6">
         <div
-          className="relative w-full md:w-1/2 flex flex-col items-center justify-center py-16 px-8 overflow-hidden"
-          style={{
-            background: "radial-gradient(circle at 50% 35%, #9c1c1f 0%, #7B1113 55%, #5c0d0f 100%)",
-          }}
+          className="bq-card w-full max-w-md p-8 md:p-10"
+          style={{ backgroundColor: surface, border: `1px solid ${rule}` }}
         >
-          <div
-            className="absolute rounded-full"
-            style={{
-              width: "640px",
-              height: "640px",
-              background: "radial-gradient(circle, rgba(212,175,55,0.25) 0%, rgba(212,175,55,0.08) 45%, rgba(212,175,55,0) 70%)",
-            }}
-          />
-          <div
-            className="absolute rounded-full border"
-            style={{
-              width: "440px",
-              height: "440px",
-              borderColor: "rgba(212,175,55,0.2)",
-            }}
-          />
-          <img
-            src={logo}
-            alt="BloomQuest Logo"
-            className="relative w-80 h-80 md:w-96 md:h-96 object-contain drop-shadow-2xl mb-6"
-          />
-          <h1 className="relative text-4xl font-bold tracking-wide text-white mb-2">
-            BloomQuest
-          </h1>
-          <div className="relative w-16 h-1 rounded-full mb-4" style={{ backgroundColor: "#D4AF37" }} />
-          <p className="relative text-base text-center max-w-xs" style={{ color: "#e8c97a" }}>
-            Empowering students to grow, learn, and lead.
-          </p>
-        </div>
+          <span className="bq-corner bq-corner-tl" />
+          <span className="bq-corner bq-corner-tr" />
+          <span className="bq-corner bq-corner-bl" />
+          <span className="bq-corner bq-corner-br" />
 
-        {/* RIGHT: Contact Admin Form Panel */}
-        <div className="w-full md:w-1/2 flex items-center justify-center bg-gray-50 py-16 px-6">
-          <div className="w-full max-w-sm">
-
-            {/* Back to Login Anchor Link */}
-            <div className="mb-6">
-              <a
-                href="#"
-                onClick={(e) => {
-                  e.preventDefault();
-                  navigate("/");
-                }}
-                className="inline-flex items-center gap-1 text-base font-medium transition hover:opacity-80"
-                style={{ color: "#7B1113", textDecoration: "none" }}
-              >
-                <span>‹</span> Back to Login
-              </a>
-            </div>
-
-            <div className="mb-8">
-              <h2 className="text-4xl font-bold" style={{ color: "#7B1113" }}>
-                Contact Admin
-              </h2>
-              <p className="text-base text-gray-500 mt-1">
-                Don't have an account? Message your administrator below.
-              </p>
-            </div>
-
-            {/* ALERT NOTIFICATIONS */}
-            {error && (
-              <div className="mb-4 text-base text-red-700 bg-red-50 border border-red-200 rounded-md px-4 py-2.5">
-                {error}
-              </div>
-            )}
-
-            {success && (
-              <div className="mb-4 text-base text-green-700 bg-green-50 border border-green-200 rounded-md px-4 py-2.5">
-                Your request has been submitted successfully!
-              </div>
-            )}
-
-            {/* DYNAMIC POSTGRESQL REQUEST STATUS DISPLAY BLOCKS */}
-            {existingRequestStatus === "pending" && (
-              <div className="mb-4 flex items-center gap-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-md px-4 py-3 text-sm font-medium">
-                <span className="flex h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-                Existing Request Status: <strong className="uppercase">Pending Review</strong>
-              </div>
-            )}
-
-            {existingRequestStatus === "approved" && (
-              <div className="mb-4 flex items-center gap-2 border border-emerald-200 bg-emerald-50 text-emerald-800 rounded-md px-4 py-3 text-sm font-medium">
-                <span className="flex h-2 w-2 rounded-full bg-emerald-500" />
-                Existing Request Status: <strong className="uppercase">Approved</strong>
-              </div>
-            )}
-
-            {existingRequestStatus === "declined" && (
-              <div className="mb-4 flex items-center gap-2 border border-gray-200 bg-gray-100 text-gray-700 rounded-md px-4 py-3 text-sm font-medium">
-                <span className="flex h-2 w-2 rounded-full bg-gray-400" />
-                Existing Request Status: <strong className="uppercase">Declined</strong>
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-base font-semibold text-gray-700 mb-1">
-                  Full Name
-                </label>
-                <input
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Enter your full name"
-                  className="w-full border border-gray-300 rounded-md px-4 py-2.5 text-base text-gray-700 focus:outline-none focus:ring-2 focus:border-transparent transition"
-                />
-              </div>
-
-              <div>
-                <label className="block text-base font-semibold text-gray-700 mb-1">
-                  Department / Section
-                </label>
-                <input
-                  type="text"
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                  placeholder="e.g. College of Engineering"
-                  className="w-full border border-gray-300 rounded-md px-4 py-2.5 text-base text-gray-700 focus:outline-none focus:ring-2 focus:border-transparent transition"
-                />
-              </div>
-
-              <div>
-                <label className="block text-base font-semibold text-gray-700 mb-1">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    setExistingRequestStatus(null); // Clear status when user changes input
-                    setError("");
-                  }}
-                  onBlur={handleEmailBlur}
-                  placeholder="Enter your email"
-                  className="w-full border border-gray-300 rounded-md px-4 py-2.5 text-base text-gray-700 focus:outline-none focus:ring-2 focus:border-transparent transition"
-                />
-              </div>
-
-              <button
-                type="submit"
-                // Disable if loading or if ANY existing status is found
-                disabled={loading || !!existingRequestStatus}
-                className={`w-full text-white font-semibold py-3 rounded-md transition duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${loading ? 'button-loading' : ''}`}
-                style={{ backgroundColor: "#B01C1C" }}
-                onMouseOver={(e) => !loading && !existingRequestStatus && (e.currentTarget.style.backgroundColor = "#931616")}
-                onMouseOut={(e) => !loading && !existingRequestStatus && (e.currentTarget.style.backgroundColor = "#B01C1C")}
-              >
-                {loading ? <LoadingSpinner label="Submitting..." spinnerColor="border-white" /> : "Submit Account Request"}
-              </button>
-            </form>
-
-            <p className="text-center text-base text-gray-400 mt-10">
-              Need help signing in? Contact the registrar's office.
+          <div className="mb-8">
+            <h2 className="bq-headline text-4xl" style={{ color: ink }}>
+              Contact Admin
+            </h2>
+            <div style={{ width: '36px', height: '2px', backgroundColor: accent, marginTop: '14px', marginBottom: '14px' }} />
+            <p className="text-base" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
+              Don't have an account? Message your administrator below.
             </p>
           </div>
+
+          {error && (
+            <div
+              className="mb-4 text-sm px-4 py-2.5"
+              style={{ color: accentHover, backgroundColor: 'rgba(180, 69, 74, 0.06)', border: `1px solid rgba(180, 69, 74, 0.25)`, fontFamily: 'Inter, sans-serif' }}
+            >
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div
+              className="mb-4 text-sm px-4 py-2.5"
+              style={{ color: '#15803D', backgroundColor: 'rgba(34, 197, 94, 0.06)', border: `1px solid rgba(34, 197, 94, 0.25)`, fontFamily: 'Inter, sans-serif' }}
+            >
+              Your request has been submitted successfully!
+            </div>
+          )}
+
+          {existingRequestStatus === "pending" && (
+            <div className="mb-4 flex items-center gap-2 border border-amber-200 bg-amber-50 text-amber-800 rounded-md px-4 py-3 text-sm font-medium" style={{ fontFamily: 'Inter, sans-serif' }}>
+              <span className="flex h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+              Existing Request Status: <strong className="uppercase">Pending Review</strong>
+            </div>
+          )}
+
+          {existingRequestStatus === "approved" && (
+            <div className="mb-4 flex items-center gap-2 border border-emerald-200 bg-emerald-50 text-emerald-800 rounded-md px-4 py-3 text-sm font-medium" style={{ fontFamily: 'Inter, sans-serif' }}>
+              <span className="flex h-2 w-2 rounded-full bg-emerald-500" />
+              Existing Request Status: <strong className="uppercase">Approved</strong>
+            </div>
+          )}
+
+          {existingRequestStatus === "declined" && (
+            <div className="mb-4 flex items-center gap-2 border border-gray-200 bg-gray-100 text-gray-700 rounded-md px-4 py-3 text-sm font-medium" style={{ fontFamily: 'Inter, sans-serif' }}>
+              <span className="flex h-2 w-2 rounded-full bg-gray-400" />
+              Existing Request Status: <strong className="uppercase">Declined</strong>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label className="bq-label block mb-2">
+                Full Name
+              </label>
+              <input
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="Enter your full name"
+                className="bq-field"
+              />
+            </div>
+
+            <div>
+              <label className="bq-label block mb-2">
+                Department / Section
+              </label>
+              <input
+                type="text"
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                placeholder="e.g. College of Engineering"
+                className="bq-field"
+              />
+            </div>
+
+            <div>
+              <label className="bq-label block mb-2">
+                Email Address
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setExistingRequestStatus(null);
+                  setError("");
+                }}
+                onBlur={handleEmailBlur}
+                placeholder="name@example.com"
+                className="bq-field"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || !!existingRequestStatus}
+              className="w-full text-white font-semibold py-3 transition duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+              style={{ backgroundColor: ink }}
+              onMouseOver={(e) => !loading && !existingRequestStatus && (e.currentTarget.style.backgroundColor = accent)}
+              onMouseOut={(e) => !loading && !existingRequestStatus && (e.currentTarget.style.backgroundColor = ink)}
+            >
+              {loading ? <LoadingSpinner label="Submitting..." spinnerColor="border-white" /> : "Submit Account Request"}
+            </button>
+          </form>
+
+          <div className="flex items-center gap-3 pt-1">
+            <hr className="flex-1" style={{ borderColor: ruleSoft }} />
+            <span className="bq-label">Or</span>
+            <hr className="flex-1" style={{ borderColor: ruleSoft }} />
+          </div>
+
+          <p className="text-center text-sm" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
+            Back to login? <button type="button" onClick={() => navigate("/")} className="font-semibold hover:underline" style={{ color: accent }}>Sign in here</button>
+          </p>
         </div>
       </div>
 
-      {/* FOOTER */}
       <footer
         className="w-full py-4 px-6 flex flex-col sm:flex-row items-center justify-between gap-2"
-        style={{ backgroundColor: "#5c0d0f" }}
+        style={{ backgroundColor: paper, borderTop: `1px solid ${ruleSoft}`, fontFamily: 'Inter, sans-serif' }}
       >
-        <p className="text-base" style={{ color: "#D4AF37" }}>
+        <p className="text-xs" style={{ color: textMuted }}>
           © 2026 BloomQuest. All rights reserved.
         </p>
-        <div className="flex gap-4 text-base" style={{ color: "#D4AF37" }}>
-          <a href="#" className="hover:text-white transition">Privacy Policy</a>
-          <a href="#" className="hover:text-white transition">Terms of Service</a>
-          <a href="#" className="hover:text-white transition">Help Center</a>
+        <div className="flex gap-4 text-xs" style={{ color: textMuted }}>
+          <button
+            type="button"
+            onClick={() => setLegalModal("privacy")}
+            className="hover:opacity-70 transition"
+            style={{ color: textMuted }}
+          >
+            Privacy Policy
+          </button>
+          <button
+            type="button"
+            onClick={() => setLegalModal("terms")}
+            className="hover:opacity-70 transition"
+            style={{ color: textMuted }}
+          >
+            Terms of Service
+          </button>
         </div>
       </footer>
+
+      <LegalModal type={legalModal} onClose={() => setLegalModal(null)} />
     </div>
   );
 };

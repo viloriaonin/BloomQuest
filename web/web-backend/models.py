@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, JSON, ForeignKey, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, Text, JSON, ForeignKey, DateTime, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -28,6 +28,7 @@ class Subject(Base):
     description = Column(Text, nullable=True)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+    archived = Column(Boolean, nullable=False, default=False, server_default="false")
     department = relationship("Department")
 
 class UploadedFile(Base):
@@ -62,6 +63,8 @@ class GeneratedQuestion(Base):
     correct_answer = Column(Text)
     explanation = Column(Text)
     topic_name = Column(String, nullable=True)  # 🌟 Added column to record topic origin metadata
+    review_status = Column(String(32), nullable=False, default="needs_review", server_default="needs_review")
+    difficulty = Column(String(32), nullable=False, default="moderate", server_default="moderate")
     created_at = Column(DateTime, server_default=func.now())
 
 class AccountRequest(Base):
@@ -82,4 +85,46 @@ class ActivityLog(Base):
     details = Column(Text)
     type = Column(String)       # "generate", "upload", "classify", "login"
     status = Column(String, default="success")   # "success", "error", "info"
+    created_at = Column(DateTime, server_default=func.now())
+
+class QuestionSet(Base):
+    __tablename__ = "question_sets"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    subject_id = Column(Integer, ForeignKey("subjects.id"), nullable=False)
+    status = Column(String(32), nullable=False, default="draft", server_default="draft")
+    exam_title = Column(String(255), nullable=True)
+    instructions = Column(Text, nullable=True)
+    total_points = Column(Integer, nullable=True)
+    time_limit = Column(String(64), nullable=True)
+    instructor_name = Column(String(255), nullable=True)
+    department = Column(String(255), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    subject = relationship("Subject")
+    items = relationship("QuestionSetItem", cascade="all, delete-orphan", order_by="QuestionSetItem.position")
+    exports = relationship("QuestionSetExport", cascade="all, delete-orphan", order_by="QuestionSetExport.created_at.desc()")
+
+class QuestionSetItem(Base):
+    __tablename__ = "question_set_items"
+    id = Column(Integer, primary_key=True, index=True)
+    question_set_id = Column(Integer, ForeignKey("question_sets.id"), nullable=False)
+    question_id = Column(Integer, ForeignKey("generated_questions.id"), nullable=False)
+    position = Column(Integer, nullable=False, default=0)
+    question = relationship("GeneratedQuestion")
+    __table_args__ = (UniqueConstraint("question_set_id", "question_id", name="uq_question_set_question"),)
+
+class QuestionSetExport(Base):
+    __tablename__ = "question_set_exports"
+    id = Column(Integer, primary_key=True, index=True)
+    question_set_id = Column(Integer, ForeignKey("question_sets.id"), nullable=False)
+    export_format = Column(String(16), nullable=False)
+    filename = Column(String(255), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+class QuestionVersion(Base):
+    __tablename__ = "question_versions"
+    id = Column(Integer, primary_key=True, index=True)
+    question_id = Column(Integer, ForeignKey("generated_questions.id"), nullable=False)
+    snapshot = Column(JSON, nullable=False)
     created_at = Column(DateTime, server_default=func.now())

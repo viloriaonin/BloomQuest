@@ -12,7 +12,10 @@ import InputQuestion from "./pages/users/InputQuestion";
 import QuestionBank from "./pages/users/QuestionBank";
 import History from "./pages/users/History";
 import Sidebar from "./pages/users/Sidebar";
+import UserWorkspacePage from "./pages/users/UserWorkspacePage";
+import UserToolsPage from "./pages/users/UserToolsPage";
 import PageContainer from "./components/PageContainer";
+import TopBar from "./components/TopBar";
 
 // Admin Pages
 import AdminDashboard from "./pages/admin/admindashboard";
@@ -23,11 +26,39 @@ import AdminDashboard from "./pages/admin/admindashboard";
 // 1. User Layout (Standard Sidebar)
 // ---------------------------------------------------------
 const MainLayout = ({ children }) => {
+  const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = React.useState(false);
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed(prev => !prev);
+    setMobileSidebarOpen(prev => !prev);
+  };
+
   return (
-    <div className="flex h-screen bg-gray-50 w-full overflow-hidden">
-      <Sidebar />
-      <div className="flex-1 h-full overflow-y-auto">
-        {children}
+    <div className="bq-shell flex h-screen w-full overflow-hidden">
+      {mobileSidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          className="fixed inset-0 z-30 bg-slate-950/30 md:hidden"
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+      )}
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        mobileOpen={mobileSidebarOpen}
+        onNavigate={() => setMobileSidebarOpen(false)}
+        onToggleCollapsed={toggleSidebar}
+      />
+      <div className="min-w-0 flex-1 h-full overflow-hidden">
+        <TopBar onToggleSidebar={toggleSidebar} />
+        <div className="h-[calc(100vh-52px)] overflow-y-auto">
+          {React.isValidElement(children)
+            ? React.cloneElement(children, {
+                onToggleSidebar: toggleSidebar,
+              })
+            : children}
+        </div>
       </div>
     </div>
   );
@@ -102,10 +133,46 @@ function App() {
                 </MainLayout>
               </PageContainer>
             </UserRoute>
-          } 
+          }
         />
-        <Route 
-          path="/history" 
+        <Route
+          path="/question-bank/:subjectId/set/:setId"
+          element={
+            <UserRoute>
+              <PageContainer>
+                <MainLayout>
+                  <QuestionBank />
+                </MainLayout>
+              </PageContainer>
+            </UserRoute>
+          }
+        />
+        <Route
+          path="/question-bank/:subjectId/create-set"
+          element={
+            <UserRoute>
+              <PageContainer>
+                <MainLayout>
+                  <QuestionBank />
+                </MainLayout>
+              </PageContainer>
+            </UserRoute>
+          }
+        />
+        <Route
+          path="/question-bank/:subjectId"
+          element={
+            <UserRoute>
+              <PageContainer>
+                <MainLayout>
+                  <QuestionBank />
+                </MainLayout>
+              </PageContainer>
+            </UserRoute>
+          }
+        />
+        <Route
+          path="/history"
           element={
             <UserRoute>
               <PageContainer>
@@ -116,6 +183,42 @@ function App() {
             </UserRoute>
           } 
         />
+        <Route
+          path="/settings"
+          element={
+            <UserRoute>
+              <PageContainer>
+                <MainLayout>
+                  <UserWorkspacePage section="settings" />
+                </MainLayout>
+              </PageContainer>
+            </UserRoute>
+          }
+        />
+        {[
+          ["/assessments", "assessments"],
+          ["/favorites", "favorites"],
+          ["/subjects", "subjects"],
+          ["/notifications", "notifications"],
+          ["/imports", "imports"],
+          ["/recycle-bin", "recycle"],
+          ["/system-status", "status"],
+          ["/help", "help"],
+        ].map(([path, section]) => (
+          <Route
+            key={path}
+            path={path}
+            element={
+              <UserRoute>
+                <PageContainer>
+                  <MainLayout>
+                    <UserToolsPage section={section} />
+                  </MainLayout>
+                </PageContainer>
+              </UserRoute>
+            }
+          />
+        ))}
 
         {/* ========================================= */}
         {/* ADMIN ROUTES                              */}

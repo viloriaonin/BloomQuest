@@ -1,9 +1,17 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import logo from "../../assets/images/bloomquest-logo.png";
 import LoadingSpinner from "../../components/LoadingSpinner";
 import LegalModal from "../../components/LegalModal";
 const API_URL = "http://localhost:8000/api/login";
+
+const paper = '#F7F6F3';
+const surface = '#FFFFFF';
+const ink = '#14140F';
+const rule = 'rgba(20, 20, 15, 0.14)';
+const ruleSoft = 'rgba(20, 20, 15, 0.08)';
+const textMuted = '#6F6C64';
+const accent = '#B4454A';
+const accentHover = '#8F1C2B';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -69,170 +77,223 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col page-transition">
-      <div className="flex flex-col md:flex-row flex-1">
+    <div className="min-h-screen flex flex-col page-transition relative" style={{ minHeight: '100vh', overflow: 'hidden', backgroundColor: paper }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
 
-        {/* LEFT: Brand Panel */}
+        .bq-eyebrow {
+          font-family: 'Inter', sans-serif;
+          font-size: 11px;
+          font-weight: 600;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+          color: ${accent};
+        }
+        .bq-headline {
+          font-family: 'Fraunces', serif;
+          font-optical-sizing: auto;
+          font-weight: 500;
+          letter-spacing: -0.01em;
+        }
+        .bq-label {
+          font-family: 'Inter', sans-serif;
+          font-size: 11px;
+          font-weight: 600;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          color: ${textMuted};
+        }
+        .bq-field {
+          font-family: 'Inter', sans-serif;
+          background: transparent;
+          border: none;
+          border-bottom: 1px solid ${rule};
+          border-radius: 0;
+          padding: 10px 2px;
+          font-size: 15px;
+          color: ${ink};
+          width: 100%;
+          transition: border-color 0.2s ease;
+        }
+        .bq-field::placeholder { color: #A6A39A; }
+        .bq-field:focus {
+          outline: none;
+          border-bottom: 1.5px solid ${accent};
+        }
+        .bq-card {
+          position: relative;
+        }
+        .bq-corner {
+          position: absolute;
+          width: 22px;
+          height: 22px;
+          border-color: ${accent};
+        }
+        .bq-corner-tl { top: -10px; left: -10px; border-top: 1.5px solid; border-left: 1.5px solid; }
+        .bq-corner-tr { top: -10px; right: -10px; border-top: 1.5px solid; border-right: 1.5px solid; }
+        .bq-corner-bl { bottom: -10px; left: -10px; border-bottom: 1.5px solid; border-left: 1.5px solid; }
+        .bq-corner-br { bottom: -10px; right: -10px; border-bottom: 1.5px solid; border-right: 1.5px solid; }
+        .bq-btn {
+          font-family: 'Inter', sans-serif;
+          font-size: 13px;
+          font-weight: 600;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          border-radius: 3px;
+        }
+        .bq-link {
+          font-family: 'Inter', sans-serif;
+          font-size: 13px;
+          font-weight: 600;
+          letter-spacing: 0.03em;
+        }
+      `}</style>
+
+      {/* Quiet eyebrow, top of page */}
+      <div className="w-full flex justify-center pt-10 pb-2">
+        <span className="bq-eyebrow">BloomQuest &nbsp;·&nbsp; Workspace Access</span>
+      </div>
+
+      {/* Centered Login Card */}
+      <div className="flex-1 flex items-center justify-center px-4 py-6">
         <div
-          className="relative w-full md:w-1/2 flex flex-col items-center justify-center py-16 px-8 overflow-hidden"
-          style={{
-            background: "radial-gradient(circle at 50% 35%, #9c1c1f 0%, #7B1113 55%, #5c0d0f 100%)",
-          }}
+          className="bq-card w-full max-w-md p-8 md:p-10"
+          style={{ backgroundColor: surface, border: `1px solid ${rule}` }}
         >
-          <div
-            className="absolute rounded-full"
-            style={{
-              width: "640px",
-              height: "640px",
-              background: "radial-gradient(circle, rgba(212,175,55,0.25) 0%, rgba(212,175,55,0.08) 45%, rgba(212,175,55,0) 70%)",
-            }}
-          />
-          <div
-            className="absolute rounded-full border"
-            style={{
-              width: "440px",
-              height: "440px",
-              borderColor: "rgba(212,175,55,0.2)",
-            }}
-          />
-          <img
-            src={logo}
-            alt="BloomQuest Logo"
-            className="relative w-80 h-80 md:w-96 md:h-96 object-contain drop-shadow-2xl mb-6"
-          />
-          <h1 className="relative text-4xl font-bold tracking-wide text-white mb-2">
-            BloomQuest
-          </h1>
-          <div className="relative w-16 h-1 rounded-full mb-4" style={{ backgroundColor: "#D4AF37" }} />
-          <p className="relative text-base text-center max-w-xs" style={{ color: "#e8c97a" }}>
-            Empowering students to grow, learn, and lead.
-          </p>
-        </div>
+          <span className="bq-corner bq-corner-tl" />
+          <span className="bq-corner bq-corner-tr" />
+          <span className="bq-corner bq-corner-bl" />
+          <span className="bq-corner bq-corner-br" />
 
-        {/* RIGHT: Login Panel */}
-        <div className="w-full md:w-1/2 flex items-center justify-center bg-gray-50 py-16 px-6">
-          <div className="w-full max-w-sm">
+          <div className="mb-8">
+            <h2 className="bq-headline text-4xl" style={{ color: ink }}>
+              Welcome back
+            </h2>
+            <div style={{ width: '36px', height: '2px', backgroundColor: accent, marginTop: '14px', marginBottom: '14px' }} />
+            <p className="text-base" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
+              Sign in to continue to your BloomQuest workspace.
+            </p>
+          </div>
 
-            <div className="mb-8">
-              <h2 className="text-4xl font-bold" style={{ color: "#7B1113" }}>
-                Welcome back
-              </h2>
+          {error && (
+            <div
+              className="mb-4 text-sm px-4 py-2.5"
+              style={{ color: accentHover, backgroundColor: 'rgba(180, 69, 74, 0.06)', border: `1px solid rgba(180, 69, 74, 0.25)`, fontFamily: 'Inter, sans-serif' }}
+            >
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-6">
+
+            <div>
+              <label className="bq-label block mb-2">
+                Email Address
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="name@example.com"
+                className="bq-field"
+              />
             </div>
 
-            {error && (
-              <div className="mb-4 text-base text-red-700 bg-red-50 border border-red-200 rounded-md px-4 py-2.5">
-                {error}
-              </div>
-            )}
-
-            <div className="space-y-4">
-
-              <div>
-                <label className="block text-base font-semibold text-gray-700 mb-1">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Enter your email"
-                  className="w-full border border-gray-300 rounded-md px-4 py-2.5 text-base text-gray-700 focus:outline-none focus:ring-2 focus:border-transparent transition"
-                />
-              </div>
-
-              <div>
-                <label className="block text-base font-semibold text-gray-700 mb-1">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="bq-label">
                   Password
                 </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Enter your password"
-                    className="w-full border border-gray-300 rounded-md px-4 py-2.5 text-base text-gray-700 focus:outline-none focus:ring-2 focus:border-transparent transition"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-2.5 text-base font-semibold text-gray-400 hover:text-gray-600"
-                  >
-                    {showPassword ? "Hide" : "Show"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between text-base">
-                <label className="flex items-center gap-2 text-gray-600 text-base">
-                  <input type="checkbox" className="accent-red-800" />
-                  Remember me
-                </label>
                 <button
                   type="button"
-                  onClick={() => navigate("/forgot-password")}
-                  className="hover:underline text-base font-medium transition"
-                  style={{ color: "#B01C1C" }}
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="bq-label"
+                  style={{ color: accent, letterSpacing: '0.08em' }}
                 >
-                  Forgot Password?
+                  {showPassword ? "Hide" : "Show"}
                 </button>
               </div>
-
-              <button
-                onClick={handleLogin}
-                disabled={loading}
-                className={`w-full text-white font-semibold py-3 rounded-md transition duration-200 shadow-md hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed ${loading ? 'button-loading' : ''}`}
-                style={{ backgroundColor: "#B01C1C" }}
-                onMouseOver={(e) => !loading && (e.currentTarget.style.backgroundColor = "#931616")}
-                onMouseOut={(e) => !loading && (e.currentTarget.style.backgroundColor = "#B01C1C")}
-              >
-                {loading ? <LoadingSpinner label="Signing in..." spinnerColor="border-white" /> : "Login"}
-              </button>
-
-              <div className="flex items-center gap-3 pt-2">
-                <hr className="flex-1 border-gray-200" />
-                <span className="text-base text-gray-400">OR</span>
-                <hr className="flex-1 border-gray-200" />
-              </div>
-
-              <p className="text-center text-base text-gray-500">
-                Don't have an account?{" "}
-                <button
-                  type="button"
-                  onClick={() => navigate("/contact-admin")}
-                  className="font-bold hover:underline"
-                  style={{ color: "#B01C1C" }}
-                >
-                  Contact your administrator
-                </button>
-              </p>
-
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Enter your password"
+                className="bq-field"
+              />
             </div>
 
+            <div className="flex items-center justify-between text-sm pt-1" style={{ fontFamily: 'Inter, sans-serif' }}>
+              <label className="flex items-center gap-2" style={{ color: textMuted }}>
+                <input type="checkbox" style={{ accentColor: accent }} />
+                Remember me
+              </label>
+              <button
+                type="button"
+                onClick={() => navigate("/forgot-password")}
+                className="bq-link hover:underline"
+                style={{ color: accent }}
+              >
+                Forgot Password?
+              </button>
+            </div>
+
+            <button
+              onClick={handleLogin}
+              disabled={loading}
+              className={`bq-btn w-full text-white py-3.5 transition duration-200 disabled:opacity-60 disabled:cursor-not-allowed ${loading ? 'button-loading' : ''}`}
+              style={{ backgroundColor: ink }}
+              onMouseOver={(e) => !loading && (e.currentTarget.style.backgroundColor = accent)}
+              onMouseOut={(e) => !loading && (e.currentTarget.style.backgroundColor = ink)}
+            >
+              {loading ? <LoadingSpinner label="Signing in..." spinnerColor="border-white" /> : "Log In"}
+            </button>
+
+            <div className="flex items-center gap-3 pt-1">
+              <hr className="flex-1" style={{ borderColor: ruleSoft }} />
+              <span className="bq-label">Or</span>
+              <hr className="flex-1" style={{ borderColor: ruleSoft }} />
+            </div>
+
+            <p className="text-center text-sm" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
+              Don't have an account?{" "}
+              <button
+                type="button"
+                onClick={() => navigate("/contact-admin")}
+                className="font-semibold hover:underline"
+                style={{ color: accent }}
+              >
+                Contact your administrator
+              </button>
+            </p>
+
           </div>
+
         </div>
       </div>
 
       <footer
         className="w-full py-4 px-6 flex flex-col sm:flex-row items-center justify-between gap-2"
-        style={{ backgroundColor: "#5c0d0f" }}
+        style={{ backgroundColor: paper, borderTop: `1px solid ${ruleSoft}`, fontFamily: 'Inter, sans-serif' }}
       >
-        <p className="text-base" style={{ color: "#D4AF37" }}>
+        <p className="text-xs" style={{ color: textMuted }}>
           © 2026 BloomQuest. All rights reserved.
         </p>
-        <div className="flex gap-4 text-base" style={{ color: "#D4AF37" }}>
+        <div className="flex gap-4 text-xs" style={{ color: textMuted }}>
           <button
             type="button"
             onClick={() => setLegalModal("privacy")}
-            className="hover:text-white transition"
+            className="hover:opacity-70 transition"
+            style={{ color: textMuted }}
           >
             Privacy Policy
           </button>
           <button
             type="button"
             onClick={() => setLegalModal("terms")}
-            className="hover:text-white transition"
+            className="hover:opacity-70 transition"
+            style={{ color: textMuted }}
           >
             Terms of Service
           </button>
