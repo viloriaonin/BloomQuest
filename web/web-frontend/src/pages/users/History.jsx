@@ -93,11 +93,11 @@ const getIcon = (type, status) => {
 };
 
 const History = () => {
-  const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [newActivityIds, setNewActivityIds] = useState([]);
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -114,6 +114,8 @@ const History = () => {
           date: formatDate(item.date),
         }));
         setHistory(formatted);
+        const seen = JSON.parse(localStorage.getItem('bloomquest-seen-history') || '[]');
+        setNewActivityIds(formatted.filter((item) => !seen.includes(item.id)).map((item) => item.id));
         setError(null);
       } catch (err) {
         console.error("Failed to load history:", err);
@@ -127,33 +129,35 @@ const History = () => {
   }, []);
 
   const tabs = [
-    { id: 'all', label: 'All Activity', types: null },
-    { id: 'content', label: 'Content', types: ['upload', 'analysis', 'generate', 'classify', 'question', 'delete'] },
-    { id: 'sets', label: 'Question Sets', types: ['question_set'] },
-    { id: 'exports', label: 'Exports', types: ['export', 'download'] },
+    { id: 'all', label: 'All activity', types: null },
+    { id: 'logins', label: 'Users logged', types: ['login'] },
+    { id: 'generated', label: 'Question generation', types: ['generate', 'question', 'question_set', 'classify'] },
+    { id: 'exports', label: 'Exports / downloads', types: ['export', 'download'] },
     { id: 'errors', label: 'Errors', types: null, status: 'error' },
   ];
 
   const activeTabConfig = tabs.find((tab) => tab.id === activeTab);
-  const countForTab = (tab) => tab.types
-    ? history.filter((item) => tab.types.includes(String(item.type).toLowerCase())).length
-    : tab.status === 'error' ? history.filter((item) => item.status === 'error').length
-    : history.length;
+  const hasNewActivity = (tab) => history.some((item) => newActivityIds.includes(item.id) && (tab.status ? item.status === tab.status : !tab.types || tab.types.includes(String(item.type).toLowerCase())));
 
-  // Filter history by the selected activity category and search input.
+  const activateTab = (tab) => {
+    setActiveTab(tab.id);
+    const matchingIds = history.filter((item) => tab.status ? item.status === tab.status : !tab.types || tab.types.includes(String(item.type).toLowerCase())).map((item) => item.id);
+    const seen = JSON.parse(localStorage.getItem('bloomquest-seen-history') || '[]');
+    const nextSeen = [...new Set([...seen, ...matchingIds])];
+    localStorage.setItem('bloomquest-seen-history', JSON.stringify(nextSeen));
+    setNewActivityIds((current) => current.filter((id) => !matchingIds.includes(id)));
+  };
+
   const filteredHistory = history.filter(item =>
     (!activeTabConfig.types ? (!activeTabConfig.status || item.status === activeTabConfig.status) : activeTabConfig.types.includes(String(item.type).toLowerCase())) &&
-    (
-      item.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.details.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+    true
   );
 
   return (
     <div className="bq-page">
       <div className="bq-page-inner">
 
-      {/* Header & Search Bar */}
+      {/* Header */}
       <div className="bq-page-header">
         <div>
           <p className="bq-eyebrow">Monitor workspace</p>
@@ -161,20 +165,6 @@ const History = () => {
           <p className="bq-page-description">Review your recent actions and system logs.</p>
         </div>
 
-        <div className="relative w-full sm:w-72">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-            </svg>
-          </div>
-          <input
-            type="text"
-            className="w-full border border-gray-200 rounded-md pl-10 pr-4 py-2.5 text-sm text-gray-600 focus:outline-none focus:border-red-400"
-            placeholder="Search activity..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
       </div>
 
       <div className="mb-6 overflow-x-auto rounded-lg border border-gray-100 bg-white px-3 shadow-sm">
@@ -187,13 +177,11 @@ const History = () => {
                 type="button"
                 role="tab"
                 aria-selected={isActive}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => activateTab(tab)}
                 className={`border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${isActive ? 'border-[#B4454A] text-[#B4454A]' : 'border-transparent text-gray-500 hover:border-gray-200 hover:text-gray-700'}`}
               >
                 {tab.label}
-                <span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] ${isActive ? 'bg-red-50 text-[#B4454A]' : 'bg-gray-100 text-gray-500'}`}>
-                  {countForTab(tab)}
-                </span>
+                {hasNewActivity(tab) && <span className="ml-2 inline-block h-2 w-2 rounded-full bg-[#B4454A]" aria-label="New activity" />}
               </button>
             );
           })}
@@ -247,7 +235,7 @@ const History = () => {
             <svg className="w-12 h-12 mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
             </svg>
-            <p>No activity found matching "{searchTerm}"</p>
+            <p>No activity found.</p>
           </div>
         )}
 

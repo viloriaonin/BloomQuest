@@ -1,14 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CheckSquare, ChevronRight, Copy, Download, FileText, Filter, FlaskConical, FolderPlus, Heart, Info, Pencil, Plus, Search, Shield, Sigma, Trash2, Sparkles, AlertCircle } from 'lucide-react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { CheckSquare, ChevronRight, Download, FileText, Filter, FlaskConical, Heart, Info, Plus, Search, Shield, Sigma, Trash2, Sparkles, AlertCircle } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { usePopup } from '../../components/PopupProvider';
 
 const API_URL = 'http://localhost:8000';
 const PRIMARY = '#8F1424';
 const PRIMARY_SOFT = '#FBEEEF';
-const border = 'rgba(15, 23, 42, 0.08)';
 
 const EXAM_TYPE_OPTIONS = ['Midterm Exam', 'Final Exam', 'Quiz', 'Long Exam'];
+const QUESTION_TYPE_OPTIONS = [
+  { label: 'All question types', value: '' },
+  { label: 'Multiple Choice', value: 'MCQ' },
+  { label: 'True or False', value: 'True or False' },
+  { label: 'Identification', value: 'Identification' },
+  { label: 'Matching Type', value: 'Matching Type' },
+  { label: 'Enumeration', value: 'Enumeration' },
+  { label: 'Essay', value: 'Essay' },
+];
 const SEMESTER_OPTIONS = ['First Semester', 'Second Semester', 'Summer'];
 
 const BLOOMS_LEVELS = [
@@ -29,14 +37,11 @@ const SUBJECT_THEMES = [
 const QuestionBank = () => {
   const { showConfirm } = usePopup();
   const navigate = useNavigate();
-  const location = useLocation();
-  const { subjectId, setId } = useParams();
-  const isCreatingSet = location.pathname.endsWith('/create-set');
+  const { subjectId } = useParams();
   const [activeTab, setActiveTab]             = useState('All');
   const [subjects, setSubjects]               = useState([]);
   const [selectedSubject, setSelectedSubject] = useState('');
   const [showAllQuestions, setShowAllQuestions] = useState(false);
-  const [questionSelectionOpen, setQuestionSelectionOpen] = useState(false);
   const [questions, setQuestions]             = useState([]);
   const [loading, setLoading]                 = useState(false);
   const [loadingSubjects, setLoadingSubjects] = useState(true);
@@ -48,19 +53,13 @@ const QuestionBank = () => {
   const [exporting, setExporting]             = useState(false);
   const [exportFormat, setExportFormat]       = useState('pdf');
   const [searchTerm, setSearchTerm]           = useState('');
-  const [questionTypeFilter, setQuestionTypeFilter] = useState('All types');
+  const [selectedQuestionType, setSelectedQuestionType] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
   const [assessmentSettingsOpen, setAssessmentSettingsOpen] = useState(false);
   const [answerMode, setAnswerMode] = useState('with_key');
   const [favoriteIds, setFavoriteIds] = useState(() => {
     try { return JSON.parse(localStorage.getItem('bloomquest-favorite-questions') || '[]'); } catch { return []; }
   });
-  const [savedSets, setSavedSets] = useState([]);
-  const [activeSetId, setActiveSetId] = useState(() => Number(localStorage.getItem('bloomquest-question-bank-set')) || null);
-  const [newSetOpen, setNewSetOpen] = useState(false);
-  const [newSetName, setNewSetName] = useState('');
-  const [setsQuery, setSetsQuery] = useState('');
-  const [, setSetSaving] = useState(false);
   const [bankView, setBankView] = useState(() => localStorage.getItem('bloomquest-question-bank-view') || 'questions');
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [versionQuestion, setVersionQuestion] = useState(null);
@@ -78,32 +77,15 @@ const QuestionBank = () => {
   const [subcolumnAValues, setSubcolumnAValues] = useState({});
   const [generatingTos, setGeneratingTos] = useState(false);
   const undoTimerRef = useRef(null);
-  const skipSetSaveRef = useRef(false);
 
   useEffect(() => {
     setSelectedSubject(subjectId === 'all' ? '' : subjectId || '');
     setShowAllQuestions(subjectId === 'all');
-    setQuestionSelectionOpen(Boolean(setId));
-  }, [subjectId, setId]);
+  }, [subjectId]);
 
   useEffect(() => () => {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
   }, []);
-
-  useEffect(() => {
-    if (!isCreatingSet || !subjectId || !subjects.length) return;
-    const subject = subjects.find((item) => String(item.id) === String(subjectId));
-    if (subject && !newSetName) setNewSetName(`${subject.code || subject.name} Assessment - ${new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}`);
-  }, [isCreatingSet, subjectId, subjects, newSetName]);
-
-  useEffect(() => {
-    if (!setId || !savedSets.length) return;
-    const questionSet = savedSets.find((item) => String(item.id) === String(setId));
-    if (questionSet && activeSetId !== questionSet.id) {
-      setActiveSetId(questionSet.id);
-      setSelectedQuestions(questionSet.question_ids || []);
-    }
-  }, [setId, savedSets, activeSetId]);
 
   useEffect(() => {
     const fetchSubjects = async () => {
@@ -128,40 +110,13 @@ const QuestionBank = () => {
       return;
     }
     fetchQuestions(selectedSubject || null);
-    setActiveSetId(null);
-    if (!selectedSubject) {
-      setSavedSets([]);
-      return;
-    }
-    fetch(`${API_URL}/api/question-sets?subject_id=${selectedSubject}`)
-      .then((res) => res.ok ? res.json() : [])
-      .then((data) => setSavedSets(Array.isArray(data) ? data : []))
-      .catch(() => setSavedSets([]));
+    if (!selectedSubject) return;
   }, [selectedSubject, showAllQuestions]);
 
   useEffect(() => {
-    if (!activeSetId || skipSetSaveRef.current) {
-      skipSetSaveRef.current = false;
-      return;
-    }
-    setSetSaving(true);
-    fetch(`${API_URL}/api/question-sets/${activeSetId}/items`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question_ids: selectedQuestions }),
-    })
-      .then((res) => res.ok ? res.json() : Promise.reject(new Error('Could not save question set')))
-      .then((updated) => setSavedSets((current) => current.map((item) => item.id === updated.id ? updated : item)))
-      .catch((err) => setError(err.message))
-      .finally(() => setSetSaving(false));
-  }, [selectedQuestions, activeSetId]);
-
-  useEffect(() => {
     if (selectedSubject) localStorage.setItem('bloomquest-question-bank-subject', selectedSubject);
-    if (activeSetId) localStorage.setItem('bloomquest-question-bank-set', String(activeSetId));
-    else localStorage.removeItem('bloomquest-question-bank-set');
     localStorage.setItem('bloomquest-question-bank-view', bankView);
-  }, [selectedSubject, activeSetId, bankView]);
+  }, [selectedSubject, bankView]);
 
   const fetchQuestions = async (subjectId, preserveSelection = false) => {
     setLoading(true);
@@ -310,50 +265,6 @@ const QuestionBank = () => {
     fetchQuestions(selectedSubject, true);
   };
 
-  const createQuestionSet = async (event) => {
-    event.preventDefault();
-    if (!newSetName.trim() || !selectedSubject) return;
-    try {
-      const res = await fetch(`${API_URL}/api/question-sets`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newSetName.trim(), subject_id: Number(selectedSubject), exam_title: newSetName.trim() }),
-      });
-      if (!res.ok) throw new Error('Could not create question set');
-      const created = await res.json();
-      setSavedSets((current) => [created, ...current]);
-      setActiveSetId(created.id);
-      setSelectedQuestions([]);
-      setNewSetName('');
-      setNewSetOpen(false);
-      setQuestionSelectionOpen(false);
-      navigate(`/question-bank/${selectedSubject}`);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const renameQuestionSet = async (event, questionSet) => {
-    event.stopPropagation();
-    const name = window.prompt('Rename question set', questionSet.name);
-    if (!name?.trim() || name.trim() === questionSet.name) return;
-    try {
-      const res = await fetch(`${API_URL}/api/question-sets/${questionSet.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim() }) });
-      if (!res.ok) throw new Error('Could not rename question set');
-      const updated = await res.json();
-      setSavedSets((current) => current.map((item) => item.id === updated.id ? updated : item));
-    } catch (err) { setError(err.message); }
-  };
-
-  const duplicateQuestionSet = async (event, questionSet) => {
-    event.stopPropagation();
-    try {
-      const res = await fetch(`${API_URL}/api/question-sets/${questionSet.id}/duplicate`, { method: 'POST' });
-      if (!res.ok) throw new Error('Could not duplicate question set');
-      const duplicate = await res.json();
-      setSavedSets((current) => [duplicate, ...current]);
-    } catch (err) { setError(err.message); }
-  };
-
   const moveSelectedQuestion = (index, direction) => {
     const nextIndex = index + direction;
     if (nextIndex < 0 || nextIndex >= selectedQuestions.length) return;
@@ -364,40 +275,14 @@ const QuestionBank = () => {
     });
   };
 
-  const openQuestionSet = (questionSet) => {
-    skipSetSaveRef.current = true;
-    setActiveSetId(questionSet.id);
-    setSelectedQuestions(questionSet.question_ids || []);
-    setQuestionSelectionOpen(true);
-    navigate(`/question-bank/${selectedSubject}/set/${questionSet.id}`);
-  };
-
-  const deleteQuestionSet = async (event, questionSet) => {
-    event.stopPropagation();
-    const confirmed = await showConfirm(`Delete "${questionSet.name}" and its saved selection?`, 'Delete Question Set');
-    if (!confirmed) return;
-    try {
-      const res = await fetch(`${API_URL}/api/question-sets/${questionSet.id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Could not delete question set');
-      setSavedSets((current) => current.filter((item) => item.id !== questionSet.id));
-      if (activeSetId === questionSet.id) {
-        setActiveSetId(null);
-        setSelectedQuestions([]);
-      }
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const countByLevel = (level) => questions.filter(q => q.bloom_level === level).length;
+  const countByLevel = (level) => questions.filter(q => q.bloom_level === level && (!selectedQuestionType || q.question_type === selectedQuestionType)).length;
   const displayedQuestions = questions.filter(q => {
     const matchesLevel = activeTab === 'All' || q.bloom_level === activeTab;
-    const matchesType = questionTypeFilter === 'All types' || q.question_type === questionTypeFilter;
+    const matchesType = !selectedQuestionType || q.question_type === selectedQuestionType;
     const normalizedSearch = searchTerm.trim().toLowerCase();
     const matchesSearch = !normalizedSearch || [q.question, q.topic_name, q.correct_answer].filter(Boolean).join(' ').toLowerCase().includes(normalizedSearch);
     return matchesLevel && matchesType && matchesSearch;
   });
-  const questionTypes = ['All types', ...new Set(questions.map((question) => question.question_type).filter(Boolean))];
   const allDisplayedSelected = displayedQuestions.length > 0 && displayedQuestions.every((question) => selectedQuestions.includes(question.id));
 
   const toggleDisplayedSelection = () => {
@@ -408,7 +293,9 @@ const QuestionBank = () => {
     }
   };
   const selectedSubjectName = subjects.find(s => s.id === parseInt(selectedSubject))?.name || '';
-  const activeQuestionSetName = savedSets.find((questionSet) => String(questionSet.id) === String(setId))?.name || 'Question set';
+  const selectedSubjectCode = subjects.find(s => s.id === parseInt(selectedSubject))?.code || selectedSubjectName || 'assessment';
+  const fileSubjectCode = selectedSubjectCode.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
+  const fileExamType = examType.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
   const questionScope = selectedSubject || showAllQuestions;
   const highOrderCount = questions.filter((question) => ['Analyze', 'Evaluate', 'Create'].includes(question.bloom_level)).length;
   const highOrderCoverage = questions.length ? Math.round((highOrderCount / questions.length) * 100) : 0;
@@ -420,7 +307,8 @@ const QuestionBank = () => {
     ? displayedQuestions.filter((question) => favoriteIds.includes(question.id))
     : displayedQuestions;
   const selectedQuestionRecords = questions.filter((q) => selectedQuestions.includes(q.id));
-  const summaryQuestionRecords = selectedQuestionRecords.length > 0 ? selectedQuestionRecords : questions;
+  const filteredQuestionRecords = questions.filter((question) => !selectedQuestionType || question.question_type === selectedQuestionType);
+  const summaryQuestionRecords = selectedQuestionRecords.length > 0 ? selectedQuestionRecords : filteredQuestionRecords;
   const countValues = (field) => Object.entries(summaryQuestionRecords.reduce((counts, question) => {
     const value = question[field] || 'Not specified';
     counts[value] = (counts[value] || 0) + 1;
@@ -468,6 +356,7 @@ const QuestionBank = () => {
       formData.append('subject_id', selectedSubject);
       formData.append('question_ids', selectedQuestions.join(','));
       formData.append('export_format', format);
+      formData.append('exam_type', examType);
       formData.append('answer_mode', 'with_key');
       formData.append('include_answer_key', 'true');
       const userId = localStorage.getItem('user_id');
@@ -483,7 +372,7 @@ const QuestionBank = () => {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `assessment-export.${format}`;
+      link.download = `${fileSubjectCode}-${fileExamType}-Test.${format}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -538,7 +427,7 @@ const QuestionBank = () => {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${selectedSubjectName || 'question-bank'}-TOS-${examType.replace(/\s+/g, '-')}.xlsx`;
+      link.download = `${fileSubjectCode}-${fileExamType}-TOS.xlsx`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -555,39 +444,6 @@ const QuestionBank = () => {
     }
   };
 
-  const handleGenerateAssessment = async () => {
-    if (selectedQuestions.length === 0) return;
-    setExporting(true);
-    setError('');
-    try {
-      const formData = new FormData();
-      formData.append('subject_id', selectedSubject);
-      formData.append('question_ids', selectedQuestions.join(','));
-      formData.append('export_format', exportFormat);
-      formData.append('answer_mode', answerMode);
-      formData.append('include_answer_key', String(answerMode !== 'questions_only'));
-      formData.append('user_id', localStorage.getItem('user_id') || '');
-      const res = await fetch(`${API_URL}/api/questions/export`, {
-        method: 'POST',
-        body: formData,
-      });
-      if (!res.ok) throw new Error('Assessment export failed');
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `compiled_assessment.${exportFormat === 'pdf' ? 'pdf' : 'docx'}`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setExporting(false);
-    }
-  };
-
   return (
     <div className="bq-page">
       <div className="bq-page-inner">
@@ -599,16 +455,12 @@ const QuestionBank = () => {
           <button type="button" onClick={() => navigate('/question-bank')} className={`transition-colors hover:text-[#B4454A] ${!subjectId ? 'text-slate-700' : ''}`}>Subjects</button>
           {subjectId && <>
             <ChevronRight className="h-3.5 w-3.5 text-slate-300" aria-hidden="true" />
-            {setId ? <>
-              <button type="button" onClick={() => navigate(`/question-bank/${selectedSubject}`)} className="max-w-full break-words text-left transition-colors hover:text-[#B4454A]">{selectedSubjectName || 'Subject'}</button>
-              <ChevronRight className="h-3.5 w-3.5 text-slate-300" aria-hidden="true" />
-              <span className="max-w-full break-words text-slate-700">{activeQuestionSetName}</span>
-            </> : <span className="max-w-full break-words text-slate-700">{selectedSubjectName || 'Subject'}</span>}
+            <span className="max-w-full break-words text-slate-700">{selectedSubjectName || 'Subject'}</span>
           </>}
         </nav>
         <p className="bq-eyebrow">Build and manage</p>
         <h1 className="bq-page-title">Question Bank</h1>
-        <p className="bq-page-description">Organize generated questions, saved sets, and assessment exports.</p>
+        <p className="bq-page-description">Browse questions by subject and prepare assessment exports.</p>
         </div>
       </div>
 
@@ -709,165 +561,16 @@ const QuestionBank = () => {
 
       {deletedSubject && <div className="fixed bottom-5 right-5 z-40 flex items-center gap-4 rounded-lg bg-slate-900 px-4 py-3 text-sm text-white shadow-xl"><span>Subject deleted</span><button type="button" onClick={undoDeleteSubject} className="font-bold text-emerald-300 hover:text-emerald-200">Undo</button></div>}
 
-      {subjectId && <button type="button" onClick={() => navigate(questionSelectionOpen ? `/question-bank/${selectedSubject}` : '/question-bank')} className="mb-4 text-sm font-semibold text-[#B4454A] hover:text-[#8f3439]">&larr; {questionSelectionOpen ? 'Back to question set' : 'Back to subjects'}</button>}
+      {subjectId && <button type="button" onClick={() => navigate('/question-bank')} className="mb-4 text-sm font-semibold text-[#B4454A] hover:text-[#8f3439]">&larr; Back to subjects</button>}
 
-      {isCreatingSet && (
-        <section className="bq-panel mb-4 max-w-2xl p-6">
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#B4454A]">New question set</p>
-          <h2 className="mt-1 text-2xl font-bold text-slate-900">Create a set for {selectedSubjectName || 'this subject'}</h2>
-          <p className="mt-2 text-sm text-slate-500">Create the set first, then choose the questions you want to include.</p>
-          <form onSubmit={createQuestionSet} className="mt-6 space-y-4">
-            <label className="block text-sm font-semibold text-slate-700">Set name<input autoFocus value={newSetName} onChange={(event) => setNewSetName(event.target.value)} placeholder="e.g. Midterm Exam" className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2.5 font-normal outline-none focus:border-[#B4454A]" /></label>
-            <div className="flex justify-end gap-2"><button type="button" onClick={() => navigate('/question-bank')} className="bq-secondary-button">Cancel</button><button type="submit" disabled={!newSetName.trim()} className="bq-primary-button disabled:cursor-not-allowed disabled:bg-slate-300">Create Set</button></div>
-          </form>
-        </section>
-      )}
-
-      {!isCreatingSet && selectedSubject && !questionSelectionOpen && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-xs text-slate-500">
-                <button type="button" onClick={() => navigate('/question-bank')} className="hover:text-slate-700">Subjects</button>
-                <span className="mx-1.5">›</span>
-                <span>{selectedSubjectName}</span>
-              </p>
-              <h2 className="mt-2 text-3xl font-extrabold text-slate-900">Saved question sets</h2>
-              <p className="mt-1 text-sm text-slate-500">Selections save automatically inside the active set.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate(`/question-bank/${selectedSubject}/create-set`)}
-              className="shrink-0 rounded-lg bg-[#B4454A] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#963a3e]"
-            >
-              + Create set
-            </button>
-          </div>
-
-          <div className="relative mt-5 max-w-sm">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              value={setsQuery}
-              onChange={(event) => setSetsQuery(event.target.value)}
-              placeholder="Search sets"
-              className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-700 outline-none placeholder:text-slate-400 focus:border-[#B4454A]"
-            />
-          </div>
-
-          {savedSets.length > 0 ? (
-            <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {savedSets
-                .filter((questionSet) => questionSet.name.toLowerCase().includes(setsQuery.toLowerCase()))
-                .map((questionSet) => (
-                  <div
-                    key={questionSet.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => openQuestionSet(questionSet)}
-                    onKeyDown={(event) => { if (event.key === 'Enter') openQuestionSet(questionSet); }}
-                    className={`rounded-2xl border p-4 text-left transition-colors ${
-                      activeSetId === questionSet.id
-                        ? 'border-[#B4454A]/60 bg-red-50/40'
-                        : 'border-slate-200 bg-slate-50/60 hover:border-[#B4454A]/40'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="font-semibold text-slate-900">{questionSet.name}</span>
-                      <span
-                        className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${
-                          questionSet.status === 'exported'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-amber-100 text-amber-700'
-                        }`}
-                      >
-                        {questionSet.status === 'exported' ? 'Exported' : 'Draft'}
-                      </span>
-                    </div>
-
-                    <p className="mt-3 text-xs text-slate-500">
-                      {questionSet.question_count} question{questionSet.question_count === 1 ? '' : 's'} · {Object.keys(questionSet.statistics?.bloom || {}).length} Bloom levels
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Updated {questionSet.updated_at ? new Date(questionSet.updated_at).toLocaleDateString() : 'today'} · {questionSet.export_history?.length || 0} export{questionSet.export_history?.length === 1 ? '' : 's'}
-                    </p>
-
-                    <div className="mt-4 flex items-center gap-4 border-t border-slate-200 pt-3">
-                      <button
-                        type="button"
-                        onClick={(event) => renameQuestionSet(event, questionSet)}
-                        className="flex items-center gap-1.5 text-xs font-semibold text-sky-600 hover:text-sky-700"
-                      >
-                        <Pencil className="h-3.5 w-3.5" /> Rename
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(event) => duplicateQuestionSet(event, questionSet)}
-                        className="flex items-center gap-1.5 text-xs font-semibold text-sky-600 hover:text-sky-700"
-                      >
-                        <Copy className="h-3.5 w-3.5" /> Duplicate
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(event) => deleteQuestionSet(event, questionSet)}
-                        aria-label={`Delete ${questionSet.name}`}
-                        className="ml-auto flex items-center gap-1.5 text-xs font-semibold text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" /> Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
-
-              <button
-                type="button"
-                onClick={() => navigate(`/question-bank/${selectedSubject}/create-set`)}
-                className="flex min-h-[176px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center transition-colors hover:border-[#B4454A]/50 hover:bg-red-50/20"
-              >
-                <FolderPlus className="h-6 w-6 text-slate-500" />
-                <span className="text-sm text-slate-500">Start another set for this subject.</span>
-                <span className="rounded-lg bg-[#B4454A] px-4 py-2 text-sm font-semibold text-white">Create set</span>
-              </button>
-            </div>
-          ) : (
-            <div className="mt-5 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white">
-                <FolderPlus className="h-6 w-6 text-slate-500" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-slate-700">No saved sets for this subject yet</p>
-                <p className="mt-1 text-sm text-slate-500">Create one before selecting questions.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => navigate(`/question-bank/${selectedSubject}/create-set`)}
-                className="mt-1 rounded-lg bg-[#B4454A] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#963a3e]"
-              >
-                Create your first set
-              </button>
-            </div>
-          )}
-        </section>
-      )}
-
-      {newSetOpen && (
-        <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setNewSetOpen(false); }}>
-          <form onSubmit={createQuestionSet} className="bq-panel w-full max-w-md p-6">
-            <h2 className="text-lg font-bold text-slate-900">Create question set</h2>
-            <p className="mt-1 text-sm text-slate-500">Save a named selection for {selectedSubjectName || 'this subject'}.</p>
-            <label className="mt-5 block text-sm font-semibold text-slate-700">Set name<input autoFocus value={newSetName} onChange={(event) => setNewSetName(event.target.value)} placeholder="e.g. Midterm Exam" className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2.5 font-normal outline-none focus:border-[#B4454A]" /></label>
-            <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setNewSetOpen(false)} className="bq-secondary-button">Cancel</button><button type="submit" disabled={!newSetName.trim()} className="bq-primary-button disabled:cursor-not-allowed disabled:bg-slate-300">Create set</button></div>
-          </form>
-        </div>
-      )}
-
-      {!isCreatingSet && selectedSubject && questionSelectionOpen && questions.length > 0 && (
+      {selectedSubject && questions.length > 0 && (
           <div className="mb-4 grid gap-3 sm:grid-cols-2">
           <div className="bq-panel p-4"><p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Higher-order items</p><p className="mt-1 text-2xl font-bold text-slate-900">{highOrderCoverage}%</p><p className="mt-1 text-xs text-slate-500">Analyze, Evaluate, or Create</p></div>
         </div>
       )}
 
       {/* Subject selected — show tabs and questions */}
-      {!isCreatingSet && questionScope && questionSelectionOpen && (
+      {questionScope && (
         <div className="mb-20 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="overflow-visible rounded-xl border border-gray-100 bg-white shadow-sm">
             {selectedQuestionRecords.length > 0 && (
@@ -911,7 +614,7 @@ const QuestionBank = () => {
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                   <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search questions, topics, or answers" className="w-full rounded-md border border-gray-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-red-400" />
                 </div>
-                <label className="flex items-center gap-2 text-sm text-gray-600"><Filter className="h-4 w-4" /><select value={questionTypeFilter} onChange={(event) => setQuestionTypeFilter(event.target.value)} className="rounded-md border border-gray-200 px-3 py-2 text-sm outline-none focus:border-red-400">{questionTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
+                <label className="flex items-center gap-2 text-sm text-gray-600"><Filter className="h-4 w-4 text-slate-400" />Question type<select value={selectedQuestionType} onChange={(event) => setSelectedQuestionType(event.target.value)} className="rounded-md border border-gray-200 px-3 py-2 text-sm outline-none focus:border-red-400">{QUESTION_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
                 <button type="button" onClick={toggleDisplayedSelection} className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"><CheckSquare className="h-4 w-4" />{allDisplayedSelected ? 'Clear visible' : 'Select visible'}</button>
               </div>
 
@@ -1061,7 +764,7 @@ const QuestionBank = () => {
           </div>
 
           <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="max-h-[calc(100vh-7rem)] overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Saved</p>
@@ -1153,6 +856,11 @@ const QuestionBank = () => {
                 <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Downloads</h3>
               </div>
               <div className="mt-3 space-y-2">
+                <label className="block text-xs font-semibold text-slate-500">Exam type
+                  <select value={examType} onChange={(event) => setExamType(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-[#B4454A]">
+                    {EXAM_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
                 {[
                   { key: 'tos', label: 'Download TOS (.xlsx)' },
                   { key: 'docx', label: 'Download test (.docx)' },
@@ -1176,7 +884,7 @@ const QuestionBank = () => {
       )}
 
       {/* Sticky Bottom Footer — only show when subject is selected */}
-      {!isCreatingSet && selectedSubject && questionSelectionOpen && (
+      {selectedSubject && (
         <div className="sticky bottom-0 left-0 right-0 mt-auto bg-white border-t border-gray-200 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] rounded-b-lg flex justify-between items-center z-20 gap-3">
           <div className="flex items-center gap-3">
             <div className="text-gray-700 font-medium">

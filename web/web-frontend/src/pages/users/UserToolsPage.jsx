@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Archive, ArrowRight, Bell, BookOpen, CheckCircle2, Download, FileQuestion, Search, Server, ShieldCheck, Wifi } from "lucide-react";
+import { createRoot } from "react-dom/client";
+import { Archive, ArrowRight, Bell, BookOpen, CheckCircle2, Download, FileQuestion, FileSpreadsheet, Search, Server, ShieldCheck, Trash2, Wifi } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 const API_URL = "/api";
 
 const CONFIG = {
   assessments: { eyebrow: "Assessment workspace", title: "Assessments", description: "Track generated assessment sets and continue unfinished review work." },
-  favorites: { eyebrow: "Saved items", title: "Favorites", description: "Keep frequently reused questions close at hand." },
+  favorites: { eyebrow: "File library", title: "Downloads", description: "Find every test and Table of Specifications you have downloaded." },
   subjects: { eyebrow: "Course structure", title: "Subjects & Topics", description: "Browse the subjects and topic areas available to your workspace." },
   notifications: { eyebrow: "Workspace updates", title: "Notifications", description: "Review important analysis, export, and account updates." },
   imports: { eyebrow: "File operations", title: "Import / Export", description: "Start an analysis or find the files created by your assessment workflow." },
@@ -14,6 +15,8 @@ const CONFIG = {
   status: { eyebrow: "Service health", title: "System Status", description: "Check the services BloomQuest uses to process and export assessments." },
   help: { eyebrow: "Guidance", title: "Help & Documentation", description: "Find quick answers for the most common BloomQuest workflows." },
 };
+
+const getDownloadName = (item) => item.filename || item.file_name || item.details?.match(/'([^']+\.(?:pdf|docx|xlsx))'/i)?.[1] || item.action || "Downloaded file";
 
 const UserToolsPage = ({ section }) => {
   const navigate = useNavigate();
@@ -24,7 +27,13 @@ const UserToolsPage = ({ section }) => {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("Checking service...");
   const [notifications, setNotifications] = useState([]);
+  const [downloads, setDownloads] = useState([]);
+  const [downloadTab, setDownloadTab] = useState("tests");
+  const [downloadError, setDownloadError] = useState("");
+  const [preview, setPreview] = useState(null);
   const userId = localStorage.getItem("user_id");
+  const email = localStorage.getItem("email");
+  const activityQuery = userId ? `user_id=${encodeURIComponent(userId)}` : `email=${encodeURIComponent(email || "")}`;
 
   useEffect(() => {
     if (section === "recycle") {
@@ -35,13 +44,20 @@ const UserToolsPage = ({ section }) => {
       return;
     }
     if (section === "notifications") {
-      fetch(`${API_URL}/history?user_id=${encodeURIComponent(userId || "")}`)
+      fetch(`${API_URL}/history?${activityQuery}`)
         .then((response) => response.ok ? response.json() : Promise.reject(new Error("Failed to load notifications")))
         .then((data) => setNotifications(Array.isArray(data) ? data : []))
         .catch(() => setNotifications([]));
       return;
     }
-    if (section !== "subjects" && section !== "review" && section !== "favorites") return;
+    if (section === "favorites") {
+      fetch(`${API_URL}/history?${activityQuery}`)
+        .then((response) => response.ok ? response.json() : Promise.reject(new Error("Failed to load downloads")))
+        .then((data) => setDownloads(Array.isArray(data) ? data.filter((item) => String(item.type).toLowerCase() === "download") : []))
+        .catch(() => setDownloads([]));
+      return;
+    }
+    if (section !== "subjects" && section !== "review") return;
     Promise.all([
       fetch(`${API_URL}/subjects`).then((response) => response.ok ? response.json() : []),
       fetch(`${API_URL}/questions`).then((response) => response.ok ? response.json() : []),
@@ -64,6 +80,78 @@ const UserToolsPage = ({ section }) => {
     if (response.ok) setArchivedItems((current) => current.filter((item) => !(item.id === question.id && item.itemType === "question")));
   };
 
+  const retrieveDownload = async (item, viewOnly = false) => {
+    if (viewOnly) {
+      await previewDownload(item);
+      return;
+    }
+    const viewer = viewOnly ? window.open("about:blank", "_blank") : null;
+    setDownloadError("");
+    try {
+      const response = await fetch(`${API_URL}/downloads/${item.id}?user_id=${encodeURIComponent(userId || "")}`);
+      if (!response.ok) throw new Error(response.status === 404 ? "This older activity has no saved file to retrieve." : "The file could not be retrieved.");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      if (viewOnly && viewer) viewer.location.href = url;
+      else if (!viewOnly) {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = getDownloadName(item);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (error) {
+      if (viewer) viewer.close();
+      setDownloadError(error.message);
+    }
+  };
+
+  const previewDownload = async (item) => {
+    setDownloadError("");
+    try {
+      const response = await fetch(`${API_URL}/downloads/${item.id}/preview?user_id=${encodeURIComponent(userId || "")}`);
+      if (!response.ok) throw new Error("This saved file cannot be previewed.");
+      setPreview(await response.json());
+    } catch (error) {
+      setDownloadError(error.message);
+    }
+  };
+
+  const deleteDownload = async (item) => {
+    if (!window.confirm(`Delete ${getDownloadName(item)} from Downloads?`)) return;
+    const response = await fetch(`${API_URL}/downloads/${item.id}?user_id=${encodeURIComponent(userId || "")}`, { method: "DELETE" });
+    if (!response.ok) {
+      setDownloadError("The downloaded file could not be deleted.");
+      return;
+    }
+    setDownloads((current) => current.filter((download) => download.id !== item.id));
+  };
+
+  useEffect(() => {
+    if (section !== "favorites") return undefined;
+    const mounted = [];
+    document.querySelectorAll("article.bq-panel h3").forEach((heading) => {
+      const item = downloads.find((download) => getDownloadName(download) === heading.textContent);
+      const card = heading.closest("article");
+      if (!item || !card || card.querySelector("[data-download-delete]")) return;
+      card.classList.add("relative");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.downloadDelete = "true";
+      button.className = "absolute right-3 top-3 rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600";
+      button.title = "Delete downloaded file";
+      button.setAttribute("aria-label", `Delete ${getDownloadName(item)}`);
+      button.addEventListener("click", () => deleteDownload(item));
+      card.appendChild(button);
+      const root = createRoot(button);
+      root.render(<Trash2 size={16} />);
+      mounted.push({ button, root });
+    });
+    return () => mounted.forEach(({ button, root }) => { root.unmount(); button.remove(); });
+  }, [section, downloads, downloadTab]);
+
   useEffect(() => {
     if (section !== "status") return;
     fetch(`${API_URL}/subjects`).then((response) => setStatus(response.ok ? "All core services operational" : "The API needs attention")).catch(() => setStatus("The API is unavailable"));
@@ -72,11 +160,14 @@ const UserToolsPage = ({ section }) => {
   const filteredQuestions = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return questions.filter((question) => {
-      const isFavorite = section === "favorites" && JSON.parse(localStorage.getItem("bloomquest-favorite-questions") || "[]").includes(question.id);
-      const matchesSection = section === "favorites" ? isFavorite : true;
-      return matchesSection && (!normalized || [question.question, question.topic_name, question.bloom_level].filter(Boolean).join(" ").toLowerCase().includes(normalized));
+      return !normalized || [question.question, question.topic_name, question.bloom_level].filter(Boolean).join(" ").toLowerCase().includes(normalized);
     });
   }, [questions, query, section]);
+
+  const groupedDownloads = useMemo(() => ({
+    tests: downloads.filter((item) => !/tos|table of specifications/i.test(`${item.action} ${item.details}`)),
+    tos: downloads.filter((item) => /tos|table of specifications/i.test(`${item.action} ${item.details}`)),
+  }), [downloads]);
 
   const archivedGroups = useMemo(() => {
     return archivedItems.reduce((groups, item) => {
@@ -105,23 +196,27 @@ const UserToolsPage = ({ section }) => {
   };
 
   return (
+    <>
+    {preview?.kind === "pdf" && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/50 p-4"><div className="flex h-[90vh] w-full max-w-4xl flex-col rounded-xl bg-white p-4"><div className="flex items-center justify-between pb-3"><h2 className="font-semibold text-slate-900">{preview.filename}</h2><button type="button" onClick={() => setPreview(null)} className="bq-secondary-button">Close</button></div><iframe title={preview.filename} src={`data:application/pdf;base64,${preview.content}`} className="min-h-0 flex-1 rounded-lg border border-slate-200" /></div></div>}
     <div className="bq-page">
       <div className="bq-page-inner">
+        {preview && <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreview(null); }}><section role="dialog" aria-modal="true" className="bq-panel flex max-h-[calc(100vh-2rem)] w-full max-w-4xl flex-col overflow-hidden p-6"><div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4"><div><p className="bq-eyebrow">File preview</p><h2 className="text-lg font-bold text-slate-900">{preview.filename}</h2></div><button type="button" onClick={() => setPreview(null)} className="bq-secondary-button">Close</button></div><div className="min-h-0 flex-1 overflow-auto pt-4">{preview.kind === "html" ? <article className="mx-auto max-w-3xl bg-white p-8 text-slate-800 shadow-sm [&_h1]:mb-5 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:text-lg [&_h2]:font-bold [&_p]:mb-3 [&_p]:leading-7 [&_table]:my-5 [&_table]:w-full [&_td]:border [&_td]:border-slate-300 [&_td]:p-2" dangerouslySetInnerHTML={{ __html: preview.content }} /> : preview.kind === "text" ? <pre className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{preview.content || "No readable text found."}</pre> : <div className="space-y-6">{preview.sheets?.map((sheet) => <div key={sheet.name}><h3 className="mb-2 font-semibold text-slate-800">{sheet.name}</h3><div className="overflow-auto rounded-lg border border-slate-200"><table className="min-w-full text-left text-xs"><tbody>{sheet.rows.map((row, index) => <tr key={index} className="border-b border-slate-100 last:border-0">{row.map((cell, cellIndex) => <td key={cellIndex} className="whitespace-nowrap px-3 py-2 text-slate-700">{cell}</td>)}</tr>)}</tbody></table></div></div>)}</div>}</div></section></div>}
         <div className="mb-6">
           <p className="bq-eyebrow">{config.eyebrow}</p>
           <h1 className="bq-page-title">{config.title}</h1>
           <p className="bq-page-description">{config.description}</p>
         </div>
 
-        {(section === "favorites" || section === "subjects") && (
+        {section === "subjects" && (
           <div className="bq-panel mb-4 flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
             <div className="relative min-w-0 flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={section === "subjects" ? "Search subjects" : "Search questions, topics, or Bloom levels"} className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-[#B4454A]" /></div>
             <span className="text-xs font-semibold text-slate-500">{section === "subjects" ? `${subjects.length} subjects` : `${filteredQuestions.length} items`}</span>
           </div>
         )}
 
+        {section === "favorites" && downloads.length > 0 && <button type="button" onClick={() => groupedDownloads[downloadTab].forEach((item) => deleteDownload(item))} className="mb-4 text-sm font-semibold text-red-600 hover:text-red-800">Delete files in this tab</button>}
         {section === "favorites" ? (
-          filteredQuestions.length ? <div className="space-y-3">{filteredQuestions.map((question) => <article key={question.id} className="bq-panel p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="font-semibold text-slate-900">{question.question}</p><div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500"><span>{question.bloom_level}</span><span>{question.question_type}</span><span>{question.difficulty || "moderate"}</span><span>{question.review_status === "approved" ? "Approved" : "Needs review"}</span></div></div><button type="button" onClick={() => navigate(`/question-bank?question=${question.id}`)} className="inline-flex items-center gap-2 text-sm font-semibold text-[#B4454A]">Open <ArrowRight size={14} /></button></div></article>)}</div> : <EmptyState title="No favorites yet" detail="Save questions from the Question Bank to find them here." action="Open Question Bank" onClick={() => navigate("/question-bank")} />
+          downloads.length ? <div>{downloadError && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{downloadError}</div>}<div className="mb-5 flex overflow-x-auto border-b border-slate-200" role="tablist" aria-label="Downloaded files"><button type="button" role="tab" aria-selected={downloadTab === "tests"} onClick={() => setDownloadTab("tests")} className={`flex min-w-max items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${downloadTab === "tests" ? "border-[#B4454A] text-[#B4454A]" : "border-transparent text-slate-500"}`}><FileQuestion size={16} />Tests <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{groupedDownloads.tests.length}</span></button><button type="button" role="tab" aria-selected={downloadTab === "tos"} onClick={() => setDownloadTab("tos")} className={`flex min-w-max items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${downloadTab === "tos" ? "border-[#B4454A] text-[#B4454A]" : "border-transparent text-slate-500"}`}><FileSpreadsheet size={16} />Tables of Specification <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{groupedDownloads.tos.length}</span></button></div>{groupedDownloads[downloadTab].length ? <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">{groupedDownloads[downloadTab].map((item) => <article key={item.id} className="bq-panel p-5"><div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#B4454A]/10 text-[#B4454A]"><Download size={18} /></span><div className="min-w-0"><h3 className="break-words font-semibold text-slate-900">{getDownloadName(item)}</h3><p className="mt-2 text-sm leading-6 text-slate-500">{item.details || "Downloaded file"}</p><p className="mt-3 text-xs text-slate-400">{item.date || ""}</p><div className="mt-4 flex gap-2"><button type="button" onClick={() => retrieveDownload(item, true)} className="text-sm font-semibold text-[#B4454A] hover:text-[#8F1424]">View</button><button type="button" onClick={() => retrieveDownload(item)} className="text-sm font-semibold text-[#B4454A] hover:text-[#8F1424]">Download again</button></div></div></div></article>)}</div> : <EmptyState title={`No ${downloadTab === "tests" ? "tests" : "Tables of Specifications"} yet`} detail="Downloaded files will appear here." />}</div> : <EmptyState title="No downloads yet" detail="Downloaded tests and Tables of Specifications will appear here." action="Open Question Bank" onClick={() => navigate("/question-bank")} />
         ) : section === "subjects" ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">{subjects.filter((subject) => `${subject.name} ${subject.code || ""}`.toLowerCase().includes(query.toLowerCase())).map((subject) => <div key={subject.id} className="bq-panel p-5"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#B4454A]/10 text-[#B4454A]"><BookOpen size={18} /></div><h2 className="mt-4 font-semibold text-slate-900">{subject.name}</h2><p className="mt-1 text-sm text-slate-500">{subject.code || "No course code"}</p><button type="button" onClick={() => navigate("/question-bank")} className="mt-4 text-sm font-semibold text-[#B4454A]">Open question bank <ArrowRight className="ml-1 inline" size={14} /></button></div>)}</div>
         ) : section === "notifications" ? <NotificationView notifications={notifications} />
@@ -130,6 +225,7 @@ const UserToolsPage = ({ section }) => {
           : <div className="grid gap-4 md:grid-cols-3">{(cards[section] || cards.assessments).map(([title, detail, path, action]) => <div key={title} className="bq-panel p-5"><h2 className="font-semibold text-slate-900">{title}</h2><p className="mt-2 min-h-12 text-sm leading-6 text-slate-500">{detail}</p><button type="button" onClick={() => navigate(path)} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[#B4454A]">{action} <ArrowRight size={14} /></button></div>)}</div>}
       </div>
     </div>
+    </>
   );
 };
 

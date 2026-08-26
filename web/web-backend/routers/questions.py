@@ -60,6 +60,11 @@ def record_activity(db, action, details, activity_type, status="success", user_i
     ))
     db.commit()
 
+
+def record_download(db, action, details, filename, media_type, content, user_id=None):
+    db.add(models.ActivityLog(user_id=user_id, action=action, details=details, type="download", status="success", filename=filename, media_type=media_type, file_content=content))
+    db.commit()
+
 # Pydantic schema for Table of Specifications payload
 class TOSGenerationPayload(BaseModel):
     upload_id: str = Field(..., min_length=1, max_length=128)
@@ -733,13 +738,17 @@ async def export_institutional_tos(upload_id: str, user_id: int | None = None, d
             detail="TOS file not found or the session has expired."
         )
 
-    record_activity(db, "Downloaded TOS", "Downloaded the generated Table of Specifications.", "download", user_id=user_id)
+    subject = meta["subject"]
+    subject_code = re.sub(r"[^A-Za-z0-9]+", "-", subject.get("code") or subject.get("name") or "assessment").strip("-")
+    exam_type = re.sub(r"[^A-Za-z0-9]+", "-", meta.get("exam_type") or "Final Exam").strip("-")
+    filename = f"{subject_code}-{exam_type}-TOS.xlsx"
+    record_download(db, "Downloaded TOS", f"Downloaded '{filename}'.", filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", tos_binary, user_id=user_id)
 
     return StreamingResponse(
         io.BytesIO(tos_binary),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
-            "Content-Disposition": f"attachment; filename=Institutional_TOS_{upload_id[:8]}.xlsx",
+            "Content-Disposition": f"attachment; filename={filename}",
             "Access-Control-Expose-Headers": "Content-Disposition"
         }
     )
@@ -753,12 +762,16 @@ async def export_assessment_docx(upload_id: str, user_id: int | None = None, db:
         raise HTTPException(status_code=404, detail="Generated assessment not found or session expired.")
 
     data = _build_assessment_docx(questions, meta["subject"]["name"], meta["subject"]["code"])
-    record_activity(db, "Downloaded Test", "Downloaded the generated DOCX test.", "download", user_id=user_id)
+    subject = meta["subject"]
+    subject_code = re.sub(r"[^A-Za-z0-9]+", "-", subject.get("code") or subject.get("name") or "assessment").strip("-")
+    exam_type = re.sub(r"[^A-Za-z0-9]+", "-", meta.get("exam_type") or "Final Exam").strip("-")
+    filename = f"{subject_code}-{exam_type}-Test.docx"
+    record_download(db, "Downloaded Test", f"Downloaded '{filename}'.", filename, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", data, user_id=user_id)
     return StreamingResponse(
         io.BytesIO(data),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={
-            "Content-Disposition": "attachment; filename=Exam_Paper_With_Keys.docx",
+            "Content-Disposition": f"attachment; filename={filename}",
             "Access-Control-Expose-Headers": "Content-Disposition",
         },
     )
@@ -772,12 +785,16 @@ async def export_assessment_pdf(upload_id: str, user_id: int | None = None, db: 
         raise HTTPException(status_code=404, detail="Generated assessment not found or session expired.")
 
     data = _build_assessment_pdf(questions, meta["subject"]["name"], meta["subject"]["code"])
-    record_activity(db, "Downloaded Test", "Downloaded the generated PDF test.", "download", user_id=user_id)
+    subject = meta["subject"]
+    subject_code = re.sub(r"[^A-Za-z0-9]+", "-", subject.get("code") or subject.get("name") or "assessment").strip("-")
+    exam_type = re.sub(r"[^A-Za-z0-9]+", "-", meta.get("exam_type") or "Final Exam").strip("-")
+    filename = f"{subject_code}-{exam_type}-Test.pdf"
+    record_download(db, "Downloaded Test", f"Downloaded '{filename}'.", filename, "application/pdf", data, user_id=user_id)
     return StreamingResponse(
         io.BytesIO(data),
         media_type="application/pdf",
         headers={
-            "Content-Disposition": "attachment; filename=Exam_Paper_With_Keys.pdf",
+            "Content-Disposition": f"attachment; filename={filename}",
             "Access-Control-Expose-Headers": "Content-Disposition",
         },
     )

@@ -136,30 +136,6 @@ function App() {
           }
         />
         <Route
-          path="/question-bank/:subjectId/set/:setId"
-          element={
-            <UserRoute>
-              <PageContainer>
-                <MainLayout>
-                  <QuestionBank />
-                </MainLayout>
-              </PageContainer>
-            </UserRoute>
-          }
-        />
-        <Route
-          path="/question-bank/:subjectId/create-set"
-          element={
-            <UserRoute>
-              <PageContainer>
-                <MainLayout>
-                  <QuestionBank />
-                </MainLayout>
-              </PageContainer>
-            </UserRoute>
-          }
-        />
-        <Route
           path="/question-bank/:subjectId"
           element={
             <UserRoute>

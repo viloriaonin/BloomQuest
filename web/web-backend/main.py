@@ -1,6 +1,8 @@
 from typing import Optional
 import io
 import json
+import base64
+import openpyxl
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, status, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -60,6 +62,12 @@ models.Base.metadata.create_all(bind=engine)
 with engine.begin() as connection:
     connection.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"))
     connection.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS user_id INTEGER"))
+    binary_definition = "BYTEA" if connection.dialect.name == "postgresql" else "BLOB"
+    for column, definition in (("filename", "VARCHAR(255)"), ("media_type", "VARCHAR(255)"), ("file_content", binary_definition)):
+        try:
+            connection.execute(text(f"ALTER TABLE activity_logs ADD COLUMN {column} {definition}"))
+        except Exception:
+            pass
 
 
 def log_activity(db: Session, action: str, details: str, type: str, status: str = "success", user_id: int = None):
@@ -72,6 +80,13 @@ def log_activity(db: Session, action: str, details: str, type: str, status: str 
     )
     db.add(entry)
     db.commit()
+
+
+def log_download(db: Session, action: str, details: str, filename: str, media_type: str, content: bytes, user_id: int = None):
+    entry = models.ActivityLog(user_id=user_id, action=action, details=details, type="download", status="success", filename=filename, media_type=media_type, file_content=content)
+    db.add(entry)
+    db.commit()
+    return entry
 
 
 def detect_subject(syllabus_text: str):
@@ -1890,9 +1905,80 @@ def get_history(user_id: int = None, email: str = None, db: Session = Depends(ge
             "date": log.created_at.isoformat() if log.created_at else None,
             "type": log.type,
             "status": log.status,
+            "filename": getattr(log, "filename", None),
+            "downloadable": bool(getattr(log, "file_content", None)),
         }
         for log in logs
     ]
+
+
+@app.get("/api/downloads/{activity_id}")
+def download_saved_file(activity_id: int, user_id: int = None, db: Session = Depends(get_db)):
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User identification is required")
+    query = db.query(models.ActivityLog).filter(models.ActivityLog.id == activity_id, models.ActivityLog.type == "download")
+    query = query.filter(models.ActivityLog.user_id == user_id)
+    log = query.first()
+    if not log or not log.file_content:
+        raise HTTPException(status_code=404, detail="Saved download not found")
+    return Response(content=log.file_content, media_type=log.media_type or "application/octet-stream", headers={"Content-Disposition": f"attachment; filename={log.filename or 'downloaded-file'}"})
+
+
+@app.get("/api/downloads/{activity_id}/preview")
+def preview_saved_file(activity_id: int, user_id: int = None, db: Session = Depends(get_db)):
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User identification is required")
+    log = db.query(models.ActivityLog).filter(
+        models.ActivityLog.id == activity_id,
+        models.ActivityLog.user_id == user_id,
+        models.ActivityLog.type == "download",
+    ).first()
+    if not log or not log.file_content:
+        raise HTTPException(status_code=404, detail="Saved download not found")
+
+    media_type = log.media_type or "application/octet-stream"
+    if media_type == "application/pdf":
+        return {"kind": "pdf", "filename": log.filename, "content": base64.b64encode(log.file_content).decode("ascii")}
+    if media_type.endswith("wordprocessingml.document"):
+        from docx import Document
+        document = Document(io.BytesIO(log.file_content))
+        blocks = []
+        for paragraph in document.paragraphs:
+            if paragraph.text.strip():
+                style = paragraph.style.name.lower() if paragraph.style else ""
+                tag = "h1" if "title" in style else "h2" if "heading" in style else "p"
+                blocks.append(f"<{tag}>{paragraph.text}</{tag}>")
+        for table in document.tables:
+            rows = []
+            for row in table.rows:
+                cells = "".join(f"<td>{cell.text}</td>" for cell in row.cells)
+                rows.append(f"<tr>{cells}</tr>")
+            blocks.append(f"<table><tbody>{''.join(rows)}</tbody></table>")
+        return {"kind": "html", "filename": log.filename, "content": "".join(blocks)}
+    if media_type.endswith("spreadsheetml.sheet"):
+        workbook = openpyxl.load_workbook(io.BytesIO(log.file_content), read_only=True, data_only=True)
+        sheets = []
+        for sheet in workbook.worksheets:
+            rows = [["" if value is None else str(value) for value in row] for row in sheet.iter_rows(values_only=True)]
+            sheets.append({"name": sheet.title, "rows": rows})
+        return {"kind": "spreadsheet", "filename": log.filename, "sheets": sheets}
+    return {"kind": "text", "filename": log.filename, "content": log.file_content.decode("utf-8", errors="replace")}
+
+
+@app.delete("/api/downloads/{activity_id}")
+def delete_saved_file(activity_id: int, user_id: int = None, db: Session = Depends(get_db)):
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User identification is required")
+    log = db.query(models.ActivityLog).filter(
+        models.ActivityLog.id == activity_id,
+        models.ActivityLog.user_id == user_id,
+        models.ActivityLog.type == "download",
+    ).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Saved download not found")
+    db.delete(log)
+    db.commit()
+    return {"message": "Download deleted"}
 
 
 @app.put("/api/questions/{question_id}")
@@ -2051,17 +2137,21 @@ def export_question_bank_tos(
     )
     stream = io.BytesIO()
     workbook.save(stream)
-    log_activity(db, "Downloaded TOS", f"Downloaded a TOS for {len(questions)} selected question(s) from '{subject.name}'.", "download", user_id=user_id)
+    filename_subject = re.sub(r"[^A-Za-z0-9]+", "-", subject.code or subject.name or "assessment").strip("-")
+    filename_exam = re.sub(r"[^A-Za-z0-9]+", "-", exam_type).strip("-")
+    filename = f"{filename_subject}-{filename_exam}-TOS.xlsx"
+    log_download(db, "Downloaded TOS", f"Downloaded '{filename}' for '{subject.name}'.", filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", stream.getvalue(), user_id=user_id)
     return Response(
         content=stream.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={subject.name.replace(' ', '_')}_TOS.xlsx"},
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 @app.post("/api/question-sets/{set_id}/export")
 def export_question_set(
     set_id: int,
     export_format: str = Form("pdf"),
+    exam_type: str = Form("Final Exam"),
     include_answer_key: bool = Form(True),
     answer_mode: str = Form("with_key"),
     user_id: int | None = Form(None),
@@ -2107,6 +2197,7 @@ def export_assessment(
     subject_id: int = Form(...),
     question_ids: str = Form(...),
     export_format: str = Form("pdf"),
+    exam_type: str = Form("Final Exam"),
     include_answer_key: bool = Form(True),
     answer_mode: str = Form("with_key"),
     user_id: int | None = Form(None),
@@ -2146,8 +2237,12 @@ def export_assessment(
             })())
 
         content, filename = build_assessment_document(normalized_questions, subject.name, export_format.lower(), include_answer_key=include_answer_key, answer_mode=answer_mode)
-        log_activity(db, "Assessment Exported", f"Exported {len(questions)} selected question(s) from '{subject.name}' as {export_format.upper()}.", "export", user_id=user_id)
         media_type = "application/pdf" if export_format.lower() == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        filename_subject = subject.code or subject.name
+        filename_subject = re.sub(r"[^A-Za-z0-9]+", "-", filename_subject).strip("-")
+        filename_exam = re.sub(r"[^A-Za-z0-9]+", "-", exam_type).strip("-")
+        filename = f"{filename_subject}-{filename_exam}-Test.{export_format.lower()}"
+        log_download(db, "Downloaded Test", f"Downloaded '{filename}' for '{subject.name}'.", filename, media_type, content, user_id=user_id)
         return Response(content=content, media_type=media_type, headers={"Content-Disposition": f"attachment; filename={filename}"})
     except HTTPException as exc:
         log_activity(db, "Assessment Export Failed", str(exc.detail), "export", status="error", user_id=user_id)

@@ -884,6 +884,9 @@ const InputQuestion = () => {
     }
   };
 
+  const downloadSubjectCode = (uploadResult?.subject?.code || uploadResult?.subject?.name || 'assessment').trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
+  const downloadExamType = examType.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
+
   return (
     <div className="min-h-screen w-full" style={{ backgroundColor: pageBg, fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" }}>
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
@@ -1239,9 +1242,9 @@ const InputQuestion = () => {
                     <button onClick={resetAssessmentProgress} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition-colors hover:border-[#B4454A]/40 hover:text-[#B4454A]">
                       <Plus className="h-4 w-4" /> Create new
                     </button>
-                    <button onClick={() => downloadFile('tos', 'BatStateU_Standard_TOS.xlsx')} className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Institutional TOS (.xlsx)</button>
-                    <button onClick={() => downloadFile('assessment/docx', 'Exam_Paper_With_Keys.docx')} className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.docx)</button>
-                    <button onClick={() => downloadFile('assessment/pdf', 'Exam_Paper_With_Keys.pdf')} className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.pdf)</button>
+                    <button onClick={() => downloadFile('tos', `${downloadSubjectCode}-${downloadExamType}-TOS.xlsx`)} className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Institutional TOS (.xlsx)</button>
+                    <button onClick={() => downloadFile('assessment/docx', `${downloadSubjectCode}-${downloadExamType}-Test.docx`)} className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.docx)</button>
+                    <button onClick={() => downloadFile('assessment/pdf', `${downloadSubjectCode}-${downloadExamType}-Test.pdf`)} className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.pdf)</button>
                   </div>
                 </div>
 

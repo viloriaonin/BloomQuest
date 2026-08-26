@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, JSON, ForeignKey, DateTime, Boolean, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, JSON, LargeBinary, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -88,6 +88,9 @@ class ActivityLog(Base):
     details = Column(Text)
     type = Column(String)       # "generate", "upload", "classify", "login"
     status = Column(String, default="success")   # "success", "error", "info"
+    filename = Column(String(255), nullable=True)
+    media_type = Column(String(255), nullable=True)
+    file_content = Column(LargeBinary, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
 class QuestionSet(Base):
@@ -130,4 +133,7 @@ class QuestionVersion(Base):
     id = Column(Integer, primary_key=True, index=True)
     question_id = Column(Integer, ForeignKey("generated_questions.id"), nullable=False)
     snapshot = Column(JSON, nullable=False)
+    filename = Column(String(255), nullable=True)
+    media_type = Column(String(255), nullable=True)
+    file_content = Column(LargeBinary, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
