@@ -23,33 +23,6 @@ const textMuted = "#64748B";
 const accent = "#B4454A";
 const accentSoft = "rgba(180, 69, 74, 0.12)";
 
-const initialNotifications = [
-  {
-    id: "analysis-ready",
-    title: "Analysis completed",
-    detail: "Your CC103 Midterm Exam report is ready to review.",
-    time: "12 min ago",
-    tone: "success",
-    path: "/question-bank",
-  },
-  {
-    id: "report-ready",
-    title: "Report ready to download",
-    detail: "The quality overview export finished successfully.",
-    time: "1 hr ago",
-    tone: "info",
-    path: "/history",
-  },
-  {
-    id: "upload-warning",
-    title: "Upload needs attention",
-    detail: "One source file could not be read. Try uploading it again.",
-    time: "Yesterday",
-    tone: "warning",
-    path: "/input",
-  },
-];
-
 const pageTitles = {
   "/dashboard": "Dashboard",
   "/input": "Input Questions",
@@ -74,6 +47,7 @@ const TopBar = ({ onToggleSidebar }) => {
   const menuRef = useRef(null);
   const [openMenu, setOpenMenu] = useState(null);
   const [notificationsCenterOpen, setNotificationsCenterOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState("");
   const [readNotifications, setReadNotifications] = useState(() => {
@@ -88,7 +62,7 @@ const TopBar = ({ onToggleSidebar }) => {
   const role = localStorage.getItem("role") || "Faculty";
   const displayName = localStorage.getItem("name") || "Dr. Reyes";
   const initials = displayName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
-  const unreadCount = initialNotifications.filter(({ id }) => !readNotifications.includes(id)).length;
+  const unreadCount = notifications.filter(({ id }) => !readNotifications.includes(id)).length;
   const commands = [
     ["Dashboard", "/dashboard"], ["New Analysis", "/input"],
     ["Assessments", "/assessments"], ["Question Bank", "/question-bank"], ["Favorites", "/favorites"],
@@ -96,6 +70,25 @@ const TopBar = ({ onToggleSidebar }) => {
     ["System Status", "/system-status"], ["Settings", "/settings"], ["Help & Documentation", "/help"],
   ];
   const filteredCommands = commands.filter(([label]) => label.toLowerCase().includes(commandQuery.trim().toLowerCase()));
+
+  useEffect(() => {
+    const userId = localStorage.getItem("user_id");
+    if (!userId) return;
+    fetch(`/api/history?user_id=${encodeURIComponent(userId)}`)
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Failed to load notifications")))
+      .then((history) => {
+        const items = history.slice(0, 10).map((item) => ({
+          id: `activity-${item.id}`,
+          title: item.action || "Workspace activity",
+          detail: item.details || "An activity was recorded in your workspace.",
+          time: item.date || "",
+          tone: item.type === "generate" ? "success" : item.type === "error" ? "warning" : "info",
+          path: item.type === "generate" ? "/question-bank" : "/history",
+        }));
+        if (items.length) setNotifications(items);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const handleOutsideClick = (event) => {
@@ -131,7 +124,7 @@ const TopBar = ({ onToggleSidebar }) => {
   };
 
   const markAllRead = () => {
-    const allIds = initialNotifications.map(({ id }) => id);
+    const allIds = notifications.map(({ id }) => id);
     setReadNotifications(allIds);
     localStorage.setItem("bloomquest-read-notifications", JSON.stringify(allIds));
   };
@@ -218,7 +211,7 @@ const TopBar = ({ onToggleSidebar }) => {
               </button>
             </div>
             <div className="max-h-80 overflow-y-auto">
-              {initialNotifications.map((notification) => {
+              {notifications.map((notification) => {
                 const isRead = readNotifications.includes(notification.id);
                 return (
                   <button
@@ -329,7 +322,7 @@ const TopBar = ({ onToggleSidebar }) => {
             </div>
 
             <div className="overflow-y-auto">
-              {initialNotifications.map((notification) => {
+              {notifications.map((notification) => {
                 const isRead = readNotifications.includes(notification.id);
                 return (
                   <button

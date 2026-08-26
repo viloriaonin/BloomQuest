@@ -59,6 +59,7 @@ RATE_LIMIT_BUCKETS = defaultdict(list)
 models.Base.metadata.create_all(bind=engine)
 with engine.begin() as connection:
     connection.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"))
+    connection.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS user_id INTEGER"))
 
 
 def log_activity(db: Session, action: str, details: str, type: str, status: str = "success", user_id: int = None):
@@ -162,6 +163,8 @@ with engine.begin() as conn:
     conn.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS department_id INTEGER"))
     conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS review_status VARCHAR(32) NOT NULL DEFAULT 'needs_review'"))
     conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS difficulty VARCHAR(32) NOT NULL DEFAULT 'moderate'"))
+    conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"))
+    conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS user_id INTEGER"))
     conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS exam_title VARCHAR(255)"))
     conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS instructions TEXT"))
     conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS total_points INTEGER"))
@@ -1119,6 +1122,7 @@ async def upload_files(
     module_file: UploadFile = File(...),
     syllabus_file: UploadFile = File(...),
     subject_id: Optional[int] = Form(None),
+    user_id: Optional[int] = Form(None),
     db: Session = Depends(get_db)
 ):
     try:
@@ -1149,7 +1153,8 @@ async def upload_files(
                 subject = models.Subject(
                     name=subject_info["name"],
                     code=subject_info.get("code"),
-                    description=subject_info.get("description")
+                    description=subject_info.get("description"),
+                    user_id=user_id,
                 )
                 db.add(subject)
                 db.commit()
@@ -1158,7 +1163,7 @@ async def upload_files(
         topics_data = detect_topics(syllabus_text, module_text)
 
         upload = models.UploadedFile(
-            user_id=1,
+            user_id=user_id,
             subject_id=subject.id,
             module_filename=module_file.filename,
             syllabus_filename=syllabus_file.filename,
@@ -1274,6 +1279,7 @@ class SubjectCreateRequest(BaseModel):
     name: str
     code: str = None
     department_id: int | None = None
+    user_id: int | None = None
 
 class DepartmentCreateRequest(BaseModel):
     name: str
@@ -1453,6 +1459,7 @@ def create_subject_manually(payload: SubjectCreateRequest, db: Session = Depends
         code=payload.code.strip() if payload.code else None,
         description="Manually added subject area.",
         department_id=department_id,
+        user_id=payload.user_id,
     )
     db.add(new_subject)
     db.commit()
@@ -1506,22 +1513,70 @@ def update_subject(subject_id: int, payload: SubjectCreateRequest, db: Session =
 
 
 @app.delete("/api/subjects/{subject_id}")
-def delete_subject(subject_id: int, db: Session = Depends(get_db)):
+def delete_subject(subject_id: int, user_id: int = None, db: Session = Depends(get_db)):
     subject = db.query(models.Subject).filter(models.Subject.id == subject_id).first()
     if not subject:
         raise HTTPException(status_code=404, detail="Subject not found.")
+    if user_id and subject.user_id is None:
+        subject.user_id = user_id
     subject.archived = True
     db.commit()
-    log_activity(db, "Subject Deleted", f"Deleted subject '{subject.name}'.", "academic")
+    log_activity(db, "Subject Deleted", f"Deleted subject '{subject.name}'.", "academic", user_id=user_id)
     return {"message": "Subject deleted successfully."}
 
 @app.get("/api/recycle-bin/subjects")
-def get_archived_subjects(db: Session = Depends(get_db)):
-    return db.query(models.Subject).filter(models.Subject.archived.is_(True)).order_by(models.Subject.created_at.desc()).all()
+def get_archived_subjects(user_id: int = None, db: Session = Depends(get_db)):
+    query = db.query(models.Subject).filter(models.Subject.archived.is_(True))
+    if user_id:
+        query = query.outerjoin(
+            models.UploadedFile,
+            models.UploadedFile.subject_id == models.Subject.id,
+        ).filter(
+            (models.Subject.user_id == user_id)
+            | (models.UploadedFile.user_id == user_id)
+            | (models.Subject.user_id.is_(None) & models.UploadedFile.id.is_(None))
+        ).distinct()
+    return query.order_by(models.Subject.created_at.desc()).all()
+
+@app.get("/api/recycle-bin")
+def get_recycle_bin(user_id: int = None, db: Session = Depends(get_db)):
+    subjects = get_archived_subjects(user_id=user_id, db=db)
+    question_query = db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.archived.is_(True))
+    if user_id:
+        question_query = question_query.outerjoin(
+            models.TableOfSpecification,
+            models.TableOfSpecification.id == models.GeneratedQuestion.tos_id,
+        ).outerjoin(
+            models.UploadedFile,
+            models.UploadedFile.id == models.TableOfSpecification.upload_id,
+        ).filter(
+            (models.GeneratedQuestion.user_id == user_id)
+            | (models.UploadedFile.user_id == user_id)
+            | (models.GeneratedQuestion.tos_id.is_(None) & models.GeneratedQuestion.user_id.is_(None))
+        )
+    questions = question_query.order_by(models.GeneratedQuestion.created_at.desc()).all()
+    subject_names = dict(db.query(models.Subject.id, models.Subject.name).all())
+    return {
+        "subjects": subjects,
+        "questions": [
+            {**serialize_question(question), "subject_name": subject_names.get(question.subject_id, "Unassigned subject")}
+            for question in questions
+        ],
+    }
 
 @app.post("/api/recycle-bin/subjects/{subject_id}/restore")
-def restore_subject(subject_id: int, db: Session = Depends(get_db)):
-    subject = db.query(models.Subject).filter(models.Subject.id == subject_id).first()
+def restore_subject(subject_id: int, user_id: int = None, db: Session = Depends(get_db)):
+    query = db.query(models.Subject).filter(models.Subject.id == subject_id)
+    if user_id:
+        query = query.outerjoin(
+            models.UploadedFile,
+            models.UploadedFile.subject_id == models.Subject.id,
+        ).filter(
+            (models.Subject.user_id == user_id)
+            | (models.UploadedFile.user_id == user_id)
+            | (models.Subject.user_id.is_(None) & models.UploadedFile.id.is_(None))
+        )
+    subject = query.first()
     if not subject:
         raise HTTPException(status_code=404, detail="Subject not found.")
     subject.archived = False
@@ -1529,6 +1584,31 @@ def restore_subject(subject_id: int, db: Session = Depends(get_db)):
     db.refresh(subject)
     log_activity(db, "Subject Restored", f"Restored subject '{subject.name}'.", "academic")
     return subject
+
+@app.post("/api/recycle-bin/questions/{question_id}/restore")
+def restore_archived_question(question_id: int, user_id: int = None, db: Session = Depends(get_db)):
+    query = db.query(models.GeneratedQuestion).filter(
+        models.GeneratedQuestion.id == question_id,
+        models.GeneratedQuestion.archived.is_(True),
+    )
+    if user_id:
+        query = query.outerjoin(
+            models.TableOfSpecification,
+            models.TableOfSpecification.id == models.GeneratedQuestion.tos_id,
+        ).outerjoin(
+            models.UploadedFile,
+            models.UploadedFile.id == models.TableOfSpecification.upload_id,
+        ).filter(
+            (models.GeneratedQuestion.user_id == user_id)
+            | (models.UploadedFile.user_id == user_id)
+        )
+    question = query.first()
+    if not question:
+        raise HTTPException(status_code=404, detail="Archived question not found.")
+    question.archived = False
+    db.commit()
+    log_activity(db, "Question Restored", f"Restored question #{question_id}.", "academic")
+    return {"message": "Question restored successfully."}
 
 # --- NEW ROUTE: SINGLE QUESTION MANUAL CLASSIFICATION ---
 @app.post("/api/questions/manual", status_code=201)
@@ -1552,6 +1632,7 @@ def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Sessio
     # 3. Save entry directly to database row structures
     new_question = models.GeneratedQuestion(
         subject_id=payload.subject_id,
+        user_id=payload.user_id,
         bloom_level=bloom_level,
         question_type=payload.question_type,
         question=payload.question.strip(),
@@ -1572,8 +1653,17 @@ def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Sessio
     }
 
 @app.get("/api/subjects")
-def get_subjects(db: Session = Depends(get_db)):
-    subjects = db.query(models.Subject).filter(models.Subject.archived.is_(False)).all()
+def get_subjects(user_id: int = None, db: Session = Depends(get_db)):
+    query = db.query(models.Subject).filter(models.Subject.archived.is_(False))
+    if user_id:
+        query = query.outerjoin(
+            models.UploadedFile,
+            models.UploadedFile.subject_id == models.Subject.id,
+        ).filter(
+            (models.Subject.user_id == user_id)
+            | (models.UploadedFile.user_id == user_id)
+        ).distinct()
+    subjects = query.all()
     question_counts = dict(
         db.query(models.GeneratedQuestion.subject_id, func.count(models.GeneratedQuestion.id))
         .group_by(models.GeneratedQuestion.subject_id)
@@ -1595,8 +1685,8 @@ def get_subjects(db: Session = Depends(get_db)):
 
 # Backwards-compatible subject endpoints without the '/api' prefix
 @app.get("/subjects")
-def get_subjects_noapi(db: Session = Depends(get_db)):
-    return get_subjects(db)
+def get_subjects_noapi(user_id: int = None, db: Session = Depends(get_db)):
+    return get_subjects(user_id=user_id, db=db)
 
 
 @app.post("/subjects", status_code=201)
@@ -1618,9 +1708,18 @@ def delete_subject_noapi(subject_id: int, db: Session = Depends(get_db)):
 def get_questions(
     subject_id: int = None,
     bloom_level: str = None,
+    user_id: int = None,
     db: Session = Depends(get_db)
 ):
-    query = db.query(models.GeneratedQuestion)
+    query = db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.archived.is_(False))
+    if user_id:
+        query = query.join(
+            models.TableOfSpecification,
+            models.TableOfSpecification.id == models.GeneratedQuestion.tos_id,
+        ).join(
+            models.UploadedFile,
+            models.UploadedFile.id == models.TableOfSpecification.upload_id,
+        ).filter(models.UploadedFile.user_id == user_id)
     if subject_id:
         query = query.filter(models.GeneratedQuestion.subject_id == subject_id)
     if bloom_level:
@@ -1888,7 +1987,7 @@ def bulk_update_questions(
 
 
 @app.delete("/api/questions/{question_id}")
-def delete_question(question_id: int, db: Session = Depends(get_db)):
+def delete_question(question_id: int, user_id: int = None, db: Session = Depends(get_db)):
     q = db.query(models.GeneratedQuestion).filter(
         models.GeneratedQuestion.id == question_id
     ).first()
@@ -1896,10 +1995,10 @@ def delete_question(question_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Question not found")
 
     question_preview = q.question[:60] if q.question else f"Question #{question_id}"
-    db.delete(q)
+    q.archived = True
     db.commit()
 
-    log_activity(db, "Deleted Question", f"Removed question: '{question_preview}'.", "delete")
+    log_activity(db, "Deleted Question", f"Removed question: '{question_preview}'.", "delete", user_id=user_id)
 
     return {"message": "Question deleted successfully"}
 

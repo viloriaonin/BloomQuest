@@ -5,51 +5,37 @@ import AcademicMgmtBtn from "./AcademicMgmt";
 import UserMgmtBtn from "./UserMgmt";
 import ReportsBtn from "./Reports";
 import LogoutBtn from "./Logout";
+import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
 
 const Sidebar = ({ activeTab, setActiveTab }) => {
   return (
     <aside
-      className="bq-admin-sidebar fixed left-0 top-0 z-40 flex h-screen w-64 flex-col"
+      className="bq-admin-sidebar sticky left-0 top-0 z-40 flex h-screen w-56 self-start flex-col"
       style={{
-        background: "linear-gradient(180deg, #7B1113 0%, #8F1C2B 100%)",
-        boxShadow: "8px 0 24px rgba(15,23,42,0.16)",
+        backgroundColor: "#FCFCFD",
+        borderRight: "1px solid rgba(15, 23, 42, 0.08)",
       }}
     >
-      {/* Logo Section */}
-      <div className="px-6 py-5" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+      <div className="flex items-center gap-3 px-3 py-4 border-b" style={{ borderColor: "rgba(15, 23, 42, 0.08)" }}>
         <div className="flex items-center gap-3">
           <div
-            className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{
-              background: "rgba(255,255,255,0.15)",
-              backdropFilter: "blur(8px)",
-              border: "1px solid rgba(255,255,255,0.2)",
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.2)",
-            }}
+            className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ backgroundColor: "rgba(180, 69, 74, 0.12)" }}
           >
-            <span className="text-white font-bold text-sm tracking-wide">B</span>
+            <img src={bloomquestLogo} alt="BloomQuest" className="w-5 h-5 object-contain" />
           </div>
           <div>
-            <h1 className="text-white font-bold text-base tracking-wide leading-none">BloomQuest</h1>
-            <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.45)", letterSpacing: "0.05em" }}>
-              Admin Portal
-            </p>
+            <h1 className="font-bold text-[1.05rem] tracking-wide leading-none" style={{ color: "#0F172A" }}>BloomQuest</h1>
+            <p className="text-xs mt-1" style={{ color: "#64748B" }}>Admin workspace</p>
           </div>
         </div>
       </div>
 
-      {/* Nav Label */}
-      <div className="px-6 pt-4 pb-1">
-        <span
-          className="text-xs font-semibold tracking-widest uppercase"
-          style={{ color: "rgba(255,255,255,0.35)" }}
-        >
-          Navigation
-        </span>
+      <div className="px-3 pt-4 pb-2">
+        <span className="px-2.5 text-[10px] font-bold tracking-[0.16em] uppercase text-slate-400">Administration</span>
       </div>
 
-      {/* Navigation Buttons */}
-      <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto pb-4">
+      <nav className="flex-1 px-2.5 space-y-1 overflow-y-auto pb-4">
         <DashboardBtn activeTab={activeTab} setActiveTab={setActiveTab} />
         <QuestionBankBtn activeTab={activeTab} setActiveTab={setActiveTab} />
         <AcademicMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -57,11 +43,7 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
         <ReportsBtn activeTab={activeTab} setActiveTab={setActiveTab} />
       </nav>
 
-      {/* Bottom Section */}
-      <div
-        className="px-3 py-4"
-        style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}
-      >
+      <div className="px-3 py-4" style={{ borderTop: "1px solid rgba(15, 23, 42, 0.08)" }}>
         <LogoutBtn />
       </div>
     </aside>

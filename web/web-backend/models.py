@@ -27,6 +27,7 @@ class Subject(Base):
     code = Column(String, nullable=True)
     description = Column(Text, nullable=True)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     archived = Column(Boolean, nullable=False, default=False, server_default="false")
     department = relationship("Department")
@@ -56,6 +57,7 @@ class GeneratedQuestion(Base):
     id = Column(Integer, primary_key=True, index=True)
     tos_id = Column(Integer, ForeignKey("table_of_specification.id"))
     subject_id = Column(Integer, ForeignKey("subjects.id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     bloom_level = Column(String)
     question_type = Column(String)
     question = Column(Text)
@@ -65,6 +67,7 @@ class GeneratedQuestion(Base):
     topic_name = Column(String, nullable=True)  # 🌟 Added column to record topic origin metadata
     review_status = Column(String(32), nullable=False, default="needs_review", server_default="needs_review")
     difficulty = Column(String(32), nullable=False, default="moderate", server_default="moderate")
+    archived = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime, server_default=func.now())
 
 class AccountRequest(Base):

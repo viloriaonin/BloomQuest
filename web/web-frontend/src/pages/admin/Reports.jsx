@@ -87,6 +87,8 @@ export const ReportsContent = () => {
   const [period, setPeriod] = useState(PERIODS[1].label); // Last 30 Days
   const [department, setDepartment] = useState("All Departments");
   const [faculty, setFaculty] = useState("All Faculty");
+  const [activeTab, setActiveTab] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
 
   const [activityLog, setActivityLog] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -137,9 +139,27 @@ export const ReportsContent = () => {
       const matchesPeriod = withinPeriod(row.date, selectedPeriod.days);
       const matchesDept = department === "All Departments" || row.dept === department;
       const matchesFaculty = effectiveFaculty === "All Faculty" || row.name === effectiveFaculty;
-      return !isAdminRow && matchesPeriod && matchesDept && matchesFaculty;
+      const categories = {
+        logins: ["login"],
+        generated: ["generate", "question", "question_set", "classify"],
+        exports: ["export", "download"],
+      };
+      const rowType = String(row.type || "").toLowerCase();
+      const matchesTab = activeTab === "all" ? true : activeTab === "errors" ? row.status === "error" : categories[activeTab].includes(rowType);
+      const text = `${row.name || ""} ${row.action || ""} ${row.detail || ""}`.toLowerCase();
+      return !isAdminRow && matchesPeriod && matchesDept && matchesFaculty && matchesTab && text.includes(searchTerm.toLowerCase());
     }).sort((a, b) => new Date(`${b.date} ${b.time}`) - new Date(`${a.date} ${a.time}`));
-  }, [activityLog, period, department, effectiveFaculty]);
+  }, [activityLog, period, department, effectiveFaculty, activeTab, searchTerm]);
+
+  const reportTabs = [
+    { id: "all", label: "All activity", types: null },
+    { id: "logins", label: "Users logged", types: ["login"] },
+    { id: "generated", label: "Question generation", types: ["generate", "question", "question_set", "classify"] },
+    { id: "exports", label: "Exports / downloads", types: ["export", "download"] },
+    { id: "errors", label: "Errors", status: "error" },
+  ];
+
+  const countForTab = (tab) => activityLog.filter((row) => tab.status ? row.status === tab.status : !tab.types || tab.types.includes(String(row.type || "").toLowerCase())).length;
 
   const handleExport = () => {
     const header = ["Faculty Name", "Dept", "Action", "Detail", "Type", "Status", "Date", "Time"];
@@ -200,8 +220,11 @@ export const ReportsContent = () => {
         </div>
       </div>
 
+      <div className="flex items-center gap-3"><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search activity..." className="bq-field w-full px-4 sm:max-w-sm" /></div>
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white px-3 shadow-sm"><div className="flex min-w-max items-center gap-1" role="tablist" aria-label="Report categories">{reportTabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} onClick={() => setActiveTab(tab.id)} className={`border-b-2 px-4 py-3 text-sm font-semibold ${activeTab === tab.id ? "border-[#B4454A] text-[#B4454A]" : "border-transparent text-slate-500 hover:border-slate-200 hover:text-slate-700"}`}>{tab.label}<span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] ${activeTab === tab.id ? "bg-red-50 text-[#B4454A]" : "bg-slate-100 text-slate-500"}`}>{countForTab(tab)}</span></button>)}</div></div>
+
       {/* Activity Log */}
-      <div className="rounded-3xl bg-white border border-gray-200 p-6 shadow-sm">
+      <div className="bq-panel p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900">User Activity Log</h3>
           {!isLoading && !error && (
@@ -231,69 +254,12 @@ export const ReportsContent = () => {
             No activity matches these filters. Try widening the date range or department.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm text-gray-700">
-              <thead className="border-b border-gray-200 text-gray-500">
-                <tr>
-                  {["Faculty Name", "Dept", "Action", "Detail", "Type", "Status", "Date", "Time"].map((heading) => (
-                    <th key={heading} className="py-4 pr-6 font-medium">{heading}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {filteredLog.map((row) => (
-                  <tr key={row.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="py-4 pr-6 font-semibold text-gray-900">{row.name}</td>
-                    <td className="py-4 pr-6">{row.dept}</td>
-                    <td className="py-4 pr-6 text-gray-900">{row.action}</td>
-                    <td className="py-4 pr-6 text-gray-600">{row.detail}</td>
-                    <td className="py-4 pr-6">
-                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${typeStyle(row.type)}`}>
-                        {row.type}
-                      </span>
-                    </td>
-                    <td className="py-4 pr-6">
-                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusStyle(row.status)}`}>
-                        {row.status}
-                      </span>
-                    </td>
-                    <td className="py-4 pr-6">{row.date}</td>
-                    <td className="py-4 pr-6">{row.time}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="relative ml-3 space-y-6 border-l-2 border-slate-100 pb-4 md:ml-6">
+            {filteredLog.map((row) => <div key={row.id} className="relative pl-8 md:pl-10"><div className={`absolute -left-[17px] top-1 flex h-8 w-8 items-center justify-center rounded-full border-4 border-white shadow-sm ${row.status === "error" ? "bg-red-50" : "bg-slate-50"}`}><span className={`h-2.5 w-2.5 rounded-full ${row.status === "error" ? "bg-red-500" : "bg-[#B4454A]"}`} /></div><div className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm hover:shadow-md"><div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><h3 className={`font-semibold ${row.status === "error" ? "text-red-600" : "text-slate-800"}`}>{row.action}</h3><span className="whitespace-nowrap rounded-full bg-slate-50 px-2.5 py-1 text-xs text-slate-400">{row.date} {row.time}</span></div><div className="flex flex-wrap items-center gap-2 text-sm text-slate-600"><span className="font-semibold text-slate-800">{row.name}</span><span>{row.dept}</span><span>{row.detail}</span><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${typeStyle(row.type)}`}>{row.type || "system"}</span><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${statusStyle(row.status)}`}>{row.status || "info"}</span></div></div></div>)}
           </div>
         )}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <div className="rounded-3xl bg-white border border-gray-200 p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Question Submission Trend</h3>
-          <div className="h-48 rounded-3xl bg-red-50 p-4 text-sm text-red-700">[Chart placeholder]</div>
-        </div>
-        <div className="rounded-3xl bg-white border border-gray-200 p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Assessment Generation by Department</h3>
-          <div className="space-y-4">
-            {[
-              { label: "CICS", value: "38%" },
-              { label: "COE", value: "24%" },
-              { label: "CAS", value: "18%" },
-              { label: "CBA", value: "20%" },
-            ].map((item) => (
-              <div key={item.label}>
-                <div className="flex items-center justify-between text-sm text-gray-700 mb-2">
-                  <span>{item.label}</span>
-                  <span className="font-semibold">{item.value}</span>
-                </div>
-                <div className="h-2 rounded-full bg-gray-100">
-                  <div className="h-2 rounded-full bg-red-600" style={{ width: item.value }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
     </div>
   );
 };
@@ -324,11 +290,11 @@ const ReportsBtn = ({ activeTab, setActiveTab }) => {
       style={
         isActive
           ? {
-              background: "rgba(255,255,255,0.15)",
+              background: "var(--bq-accent)",
               color: "#ffffff",
               boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1)",
             }
-          : { color: "rgba(255,255,255,0.65)", background: "transparent" }
+          : { color: "var(--bq-muted)", background: "transparent" }
       }
     >
       {isActive && (
@@ -338,7 +304,7 @@ const ReportsBtn = ({ activeTab, setActiveTab }) => {
         />
       )}
       <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"
-        style={{ color: isActive ? "#ffffff" : "rgba(255,255,255,0.5)" }}>
+        style={{ color: isActive ? "#ffffff" : "var(--bq-accent)" }}>
         <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
       </svg>
       <span className="text-sm font-medium tracking-wide">Reports</span>

@@ -20,6 +20,7 @@ const API_URL = "http://localhost:8000";
 // ─── Design tokens ───
 const surface = "#FFFFFF";
 const border = "rgba(15, 23, 42, 0.08)";
+
 const textPrimary = "#0F172A";
 const textMuted = "#64748B";
 const accent = "#B4454A";
@@ -30,45 +31,109 @@ const Dashboard = ({ onToggleSidebar }) => {
   const [stats, setStats] = useState({
     totalSubjects: 0,
     totalQuestions: 0,
-    assessmentsGenerated: 12,
+    assessmentsGenerated: 0,
   });
   const [loading, setLoading] = useState(true);
 
-  const bloomsData = {
-    Remember: 45,
-    Understand: 30,
-    Apply: 22,
-    Analyze: 28,
-    Evaluate: 15,
-    Create: 10
-  };
+  const [bloomsData, setBloomsData] = useState({
+    Remember: 0,
+    Understand: 0,
+    Apply: 0,
+    Analyze: 0,
+    Evaluate: 0,
+    Create: 0
+  });
 
-  const typeData = {
-    MCQ: 65,
-    "True/False": 28,
-    Identification: 32,
-    Essay: 15,
-    Situational: 10
-  };
+  const [typeData, setTypeData] = useState({
+    MCQ: 0,
+    "True/False": 0,
+    Identification: 0,
+    Essay: 0,
+    Situational: 0
+  });
+
+  const [recentActivity, setRecentActivity] = useState([]);
 
   useEffect(() => {
     const fetchDashboardAnalytics = async () => {
       try {
-        const subjectsRes = await fetch(`${API_URL}/api/subjects`);
-        const questionsRes = await fetch(`${API_URL}/api/questions`);
+        const userId = localStorage.getItem('user_id');
+        if (!userId) {
+          console.error('User ID not found in localStorage');
+          setLoading(false);
+          return;
+        }
 
-        if (subjectsRes.ok && questionsRes.ok) {
+        const subjectsRes = await fetch(`${API_URL}/api/subjects?user_id=${userId}`);
+        const questionsRes = await fetch(`${API_URL}/api/questions?user_id=${userId}`);
+        const historyRes = await fetch(`${API_URL}/api/history?user_id=${userId}`);
+
+        if (subjectsRes.ok && questionsRes.ok && historyRes.ok) {
           const subjectsData = await subjectsRes.json();
           const questionsData = await questionsRes.json();
+          const historyData = await historyRes.json();
 
+          // Calculate Bloom's taxonomy distribution
+          const bloomsDistribution = {
+            Remember: 0,
+            Understand: 0,
+            Apply: 0,
+            Analyze: 0,
+            Evaluate: 0,
+            Create: 0
+          };
+
+          // Calculate question type distribution
+          const typeDistribution = {
+            MCQ: 0,
+            "True/False": 0,
+            Identification: 0,
+            Essay: 0,
+            Situational: 0
+          };
+
+          questionsData.forEach(q => {
+            // Count Bloom's level
+            const bloomLevel = q.bloom_level || 'Remember';
+            if (bloomsDistribution.hasOwnProperty(bloomLevel)) {
+              bloomsDistribution[bloomLevel]++;
+            }
+
+            // Count question type
+            const qType = q.question_type === 'Multiple Choice' ? 'MCQ' : q.question_type || 'MCQ';
+            if (typeDistribution.hasOwnProperty(qType)) {
+              typeDistribution[qType]++;
+            }
+
+          });
+
+          setBloomsData(bloomsDistribution);
+          setTypeData(typeDistribution);
           setStats(prev => ({
             ...prev,
             totalSubjects: subjectsData.length,
-            totalQuestions: questionsData.length
+            totalQuestions: questionsData.length,
+            assessmentsGenerated: historyData.filter(item => /export|assessment/i.test(item.action || '')).length
           }));
+
+          // Build recent activity from the current user's activity log.
+          const activity = historyData
+            .slice(0, 5)
+            .map((item) => {
+              const tagColor = item.type === 'generate' ? '#22C55E' : item.type === 'classify' ? '#3B82F6' : '#F59E0B';
+              return {
+                id: item.id,
+                tag: (item.type || 'INFO').toUpperCase(),
+                tagColor,
+                text: item.action || 'Account activity',
+                meta: `${item.details || ''} • ${getTimeAgo(new Date(item.created_at))}`
+              };
+            });
+          setRecentActivity(activity.length > 0 ? activity : getDefaultActivity());
         }
       } catch (err) {
         console.error("Dashboard analytics fetch failed:", err);
+        setRecentActivity(getDefaultActivity());
       } finally {
         setLoading(false);
       }
@@ -76,6 +141,23 @@ const Dashboard = ({ onToggleSidebar }) => {
 
     fetchDashboardAnalytics();
   }, []);
+
+  const getTimeAgo = (date) => {
+    const seconds = Math.floor((new Date() - date) / 1000);
+    if (seconds < 60) return 'just now';
+    if (seconds < 3600) return Math.floor(seconds / 60) + ' minutes ago';
+    if (seconds < 86400) return Math.floor(seconds / 3600) + ' hours ago';
+    return Math.floor(seconds / 86400) + ' days ago';
+  };
+
+  const getDefaultActivity = () => [
+    {
+      tag: "INFO",
+      tagColor: "#64748B",
+      text: "No recent activity",
+      meta: "Start by creating or uploading questions",
+    },
+  ];
 
   const barPalette = ["#FDE2E2", "#FCA5A5", "#F87171", "#EF4444", "#DC2626", "#B91C1C"];
   const donutPalette = ["#F87171", "#EF4444", "#DC2626", "#B91C1C", "#7F1D1D"];
@@ -149,7 +231,6 @@ const Dashboard = ({ onToggleSidebar }) => {
           </p>
           </div>
         </div>
-
         {loading ? (
           <div className="flex items-center gap-3 py-12" style={{ color: textMuted }}>
             <svg className="animate-spin h-5 w-5" style={{ color: accent }} fill="none" viewBox="0 0 24 24">
@@ -217,7 +298,7 @@ const Dashboard = ({ onToggleSidebar }) => {
               ))}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
               <div
                 className="p-5 rounded-2xl lg:col-span-2"
                 style={{ backgroundColor: surface, border: `1px solid ${border}` }}
@@ -239,6 +320,7 @@ const Dashboard = ({ onToggleSidebar }) => {
                 </h3>
                 <div className="h-56 w-full relative">
                   <Doughnut data={doughnutChartData} options={doughnutChartOptions} />
+
                 </div>
               </div>
             </div>
@@ -251,22 +333,9 @@ const Dashboard = ({ onToggleSidebar }) => {
                 Recent Account Activity
               </h3>
               <div className="space-y-2">
-                {[
-                  {
-                    tag: "TOS",
-                    tagColor: "#22C55E",
-                    text: "Generated an automated exam matrix via Module PDF analysis",
-                    meta: "Subject Framework: System Administration • 45 minutes ago",
-                  },
-                  {
-                    tag: "MAN",
-                    tagColor: "#3B82F6",
-                    text: 'Manually classified single query and appended to cloud storage',
-                    meta: 'Assigned Taxonomy Level: "Evaluate" • 3 hours ago',
-                  },
-                ].map((item, i) => (
+                {recentActivity.map((item) => (
                   <div
-                    key={i}
+                    key={item.id}
                     className="flex items-start gap-3 p-3 rounded-xl text-xs"
                     style={{ backgroundColor: "rgba(255,255,255,0.02)" }}
                   >

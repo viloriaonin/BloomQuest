@@ -45,7 +45,9 @@
 }
 
 .bq-modal-panel {
-  background: #fffdfc;
+  background: #fffdfc !important;
+  opacity: 1;
+  isolation: isolate;
   border: 1px solid rgba(180, 69, 74, 0.16);
   border-radius: var(--bq-radius);
   box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18);
@@ -91,7 +93,82 @@
 }
 
 .bq-admin-main {
-  margin-left: 16rem;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  width: auto;
+  visibility: visible;
+}
+
+.bq-admin-shell {
+  display: flex;
+  align-items: stretch;
+}
+
+.bq-admin-sidebar {
+  flex: 0 0 14rem;
+  width: 14rem;
+  background: #fcfcfd !important;
+  border-right: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.bq-admin-main > .bq-page {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  visibility: visible;
+}
+
+.bq-admin-main .bq-page-inner {
+  display: block;
+  min-width: 0;
+  visibility: visible;
+}
+
+.bq-admin-sidebar button {
+  color: var(--bq-muted) !important;
+  transition: background-color 150ms ease, color 150ms ease, transform 150ms ease;
+}
+
+.bq-admin-sidebar nav button,
+.bq-admin-sidebar nav button span,
+.bq-admin-sidebar nav button svg {
+  color: var(--bq-muted) !important;
+}
+
+.bq-admin-sidebar nav button[style*="background: var(--bq-accent)"] {
+  background: var(--bq-accent) !important;
+  color: #fff !important;
+  box-shadow: 0 8px 20px rgba(180, 69, 74, 0.14) !important;
+}
+
+.bq-admin-sidebar nav button[style*="background: var(--bq-accent)"] span,
+.bq-admin-sidebar nav button[style*="background: var(--bq-accent)"] svg {
+  color: #fff !important;
+}
+
+.bq-admin-sidebar nav button > span:last-child,
+.bq-admin-sidebar > div:last-child button > span:last-child {
+  display: inline-flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  min-width: 0;
+  white-space: normal;
+}
+
+.bq-admin-sidebar button:hover {
+  background: var(--bq-accent-soft) !important;
+  color: var(--bq-accent) !important;
+  transform: translateX(3px);
+}
+
+.bq-admin-sidebar button[style*="background: var(--bq-accent)"]:hover {
+  background: var(--bq-accent) !important;
+  color: #fff !important;
+  transform: none;
 }
 
 @media (max-width: 767px) {
@@ -105,17 +182,12 @@
   }
 
   .bq-admin-main {
-    margin-left: 4.5rem;
+    flex: 1 1 auto;
   }
 
   .bq-admin-sidebar {
-    width: 4.5rem;
-  }
-
-  .bq-admin-sidebar h1,
-  .bq-admin-sidebar p,
-  .bq-admin-sidebar nav button span:not(:first-child) {
-    display: none;
+    flex-basis: 14rem;
+    width: 14rem;
   }
 
   .bq-mobile-scroll {

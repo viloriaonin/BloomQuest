@@ -1,6 +1,6 @@
 import React from "react";
 
-export const AcademicMgmtContent = () => (
+const LegacyAcademicMgmtContent = () => (
   <div className="grid gap-6 xl:grid-cols-[1.3fr_1fr_1fr]">
     <div className="rounded-[32px] bg-white p-6 shadow-sm border border-gray-200">
       <div className="flex items-center justify-between gap-4 mb-6">
@@ -165,6 +165,63 @@ export const AcademicMgmtContent = () => (
   </div>
 );
 
+const ACADEMIC_API = "/api";
+
+export const AcademicMgmtContent = () => {
+  const [departments, setDepartments] = React.useState([]);
+  const [subjects, setSubjects] = React.useState([]);
+  const [modal, setModal] = React.useState(null);
+  const [editingItem, setEditingItem] = React.useState(null);
+  const [form, setForm] = React.useState({ name: "", code: "", department_id: "" });
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState("");
+
+  const loadData = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const [departmentsRes, subjectsRes] = await Promise.all([fetch(`${ACADEMIC_API}/departments`), fetch(`${ACADEMIC_API}/subjects`)]);
+      if (!departmentsRes.ok || !subjectsRes.ok) throw new Error("Could not load academic data.");
+      setDepartments(await departmentsRes.json());
+      setSubjects(await subjectsRes.json());
+      setError("");
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
+  }, []);
+
+  React.useEffect(() => { loadData(); }, [loadData]);
+
+  const openModal = (type, item = null) => {
+    setEditingItem(item);
+    setForm(item ? { name: item.name, code: item.code, department_id: item.department_id || "" } : { name: "", code: "", department_id: departments[0]?.id || "" });
+    setModal(type);
+  };
+
+  const submit = async (event) => {
+    event.preventDefault();
+    const isSubject = modal === "subject";
+    const endpoint = `${isSubject ? "/subjects" : "/departments"}${editingItem ? `/${editingItem.id}` : ""}`;
+    const payload = isSubject ? { name: form.name, code: form.code, department_id: Number(form.department_id), user_id: localStorage.getItem("user_id") } : { name: form.name, code: form.code };
+    try {
+      const response = await fetch(`${ACADEMIC_API}${endpoint}`, { method: editingItem ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (!response.ok) throw new Error("Could not save this item.");
+      setModal(null); setEditingItem(null); setForm({ name: "", code: "", department_id: "" }); loadData();
+    } catch (err) { setError(err.message); }
+  };
+
+  const remove = async (type, id) => {
+    if (!window.confirm("Delete this item?")) return;
+    const response = await fetch(`${ACADEMIC_API}/${type}/${id}`, { method: "DELETE" });
+    if (!response.ok) setError("Could not delete this item."); else loadData();
+  };
+
+  return <div className="grid gap-6 xl:grid-cols-2">
+    {error && <div className="xl:col-span-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+    <section className="bq-panel rounded-3xl p-6"><div className="mb-6 flex items-start justify-between gap-4"><div><p className="text-sm font-semibold text-slate-500">Departments</p><p className="mt-1 text-xs text-slate-400">Manage academic units and schools</p></div><button className="bq-primary-button" onClick={() => openModal("department")}>Add department</button></div>{loading ? <p className="text-sm text-slate-400">Loading departments...</p> : <div className="space-y-3">{departments.map((department) => <div key={department.id} className="flex items-center justify-between gap-4 rounded-3xl border border-red-100 bg-[#faf7f7] p-5"><div><p className="font-semibold text-slate-900">{department.name}</p><p className="mt-1 text-sm text-slate-500">{department.code}</p></div><div className="flex gap-3"><button className="text-sm font-semibold text-slate-500 hover:text-[#B4454A]" onClick={() => openModal("department", department)}>Edit</button><button className="text-sm font-semibold text-red-600" onClick={() => remove("departments", department.id)}>Delete</button></div></div>)}</div>}</section>
+    <section className="bq-panel rounded-3xl p-6"><div className="mb-6 flex items-start justify-between gap-4"><div><p className="text-sm font-semibold text-slate-500">Subjects</p><p className="mt-1 text-xs text-slate-400">Assign subjects to departments</p></div><button className="bq-primary-button" onClick={() => openModal("subject")}>Add subject</button></div>{loading ? <p className="text-sm text-slate-400">Loading subjects...</p> : <div className="space-y-3">{subjects.map((subject) => <div key={subject.id} className="flex items-center justify-between gap-4 rounded-3xl border border-red-100 bg-[#faf7f7] p-5"><div><p className="font-semibold text-slate-900">{subject.name}</p><p className="mt-1 text-sm text-slate-500">{subject.code} <span className="mx-1 text-slate-300">|</span> {departments.find((item) => item.id === subject.department_id)?.name || "Unassigned"}</p></div><div className="flex gap-3"><button className="text-sm font-semibold text-slate-500 hover:text-[#B4454A]" onClick={() => openModal("subject", subject)}>Edit</button><button className="text-sm font-semibold text-red-600" onClick={() => remove("subjects", subject.id)}>Delete</button></div></div>)}</div>}</section>
+    {modal && <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4"><form onSubmit={submit} className="bq-modal-panel w-full max-w-md p-6"><div className="mb-5 flex items-center justify-between"><h3 className="text-lg font-bold text-slate-900">{editingItem ? "Edit" : "Add"} {modal}</h3><button type="button" className="text-slate-400" onClick={() => setModal(null)}>Close</button></div><label className="mb-4 block text-sm font-semibold text-slate-700">Name<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bq-field mt-1 w-full px-3" /></label><label className="mb-4 block text-sm font-semibold text-slate-700">Code<input required value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} className="bq-field mt-1 w-full px-3" /></label>{modal === "subject" && <label className="mb-5 block text-sm font-semibold text-slate-700">Department<select required value={form.department_id} onChange={(e) => setForm({ ...form, department_id: e.target.value })} className="bq-field mt-1 w-full px-3"><option value="">Select department</option>{departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></label>}<div className="flex justify-end gap-2"><button type="button" className="bq-secondary-button" onClick={() => setModal(null)}>Cancel</button><button className="bq-primary-button">Save</button></div></form></div>}
+  </div>;
+};
+
 const AcademicMgmtBtn = ({ activeTab, setActiveTab }) => {
   const isActive = activeTab === "academic";
 
@@ -175,11 +232,11 @@ const AcademicMgmtBtn = ({ activeTab, setActiveTab }) => {
       style={
         isActive
           ? {
-              background: "rgba(255,255,255,0.15)",
+              background: "var(--bq-accent)",
               color: "#ffffff",
               boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1)",
             }
-          : { color: "rgba(255,255,255,0.65)", background: "transparent" }
+          : { color: "var(--bq-muted)", background: "transparent" }
       }
     >
       {isActive && (
@@ -189,7 +246,7 @@ const AcademicMgmtBtn = ({ activeTab, setActiveTab }) => {
         />
       )}
       <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"
-        style={{ color: isActive ? "#ffffff" : "rgba(255,255,255,0.5)" }}>
+        style={{ color: isActive ? "#ffffff" : "var(--bq-accent)" }}>
         <path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z" />
       </svg>
       <span className="text-sm font-medium tracking-wide">Academic Management</span>

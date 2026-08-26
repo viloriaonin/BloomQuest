@@ -1,11 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CheckSquare, ChevronRight, Copy, Download, FileText, Filter, FlaskConical, FolderPlus, Heart, Info, Pencil, Plus, Search, Shield, Sigma, Trash2 } from 'lucide-react';
+import { CheckSquare, ChevronRight, Copy, Download, FileText, Filter, FlaskConical, FolderPlus, Heart, Info, Pencil, Plus, Search, Shield, Sigma, Trash2, Sparkles, AlertCircle } from 'lucide-react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { usePopup } from '../../components/PopupProvider';
 
 const API_URL = 'http://localhost:8000';
 const PRIMARY = '#8F1424';
 const PRIMARY_SOFT = '#FBEEEF';
+const border = 'rgba(15, 23, 42, 0.08)';
+
+const EXAM_TYPE_OPTIONS = ['Midterm Exam', 'Final Exam', 'Quiz', 'Long Exam'];
+const SEMESTER_OPTIONS = ['First Semester', 'Second Semester', 'Summer'];
 
 const BLOOMS_LEVELS = [
   { name: 'Remember',   dotColor: 'bg-red-400' },
@@ -67,6 +71,12 @@ const QuestionBank = () => {
   const [newSubjectCode, setNewSubjectCode] = useState('');
   const [addingSubject, setAddingSubject] = useState(false);
   const [showSidebarInfo, setShowSidebarInfo] = useState(true);
+  const [tosModalOpen, setTosModalOpen] = useState(false);
+  const [examType, setExamType] = useState('Final Exam');
+  const [semester, setSemester] = useState('First Semester');
+  const [selectedTopics, setSelectedTopics] = useState([]);
+  const [subcolumnAValues, setSubcolumnAValues] = useState({});
+  const [generatingTos, setGeneratingTos] = useState(false);
   const undoTimerRef = useRef(null);
   const skipSetSaveRef = useRef(false);
 
@@ -174,7 +184,7 @@ const QuestionBank = () => {
     event.stopPropagation();
     if (!(await showConfirm(`Delete the subject "${subject.name}"?`, 'Delete Subject'))) return;
     try {
-      const res = await fetch(`${API_URL}/api/subjects/${subject.id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_URL}/api/subjects/${subject.id}?user_id=${encodeURIComponent(localStorage.getItem('user_id') || '')}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Could not delete subject');
       setSubjects((current) => current.filter((item) => item.id !== subject.id));
       if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
@@ -208,7 +218,7 @@ const QuestionBank = () => {
       const res = await fetch(`${API_URL}/api/subjects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newSubjectName.trim(), code: newSubjectCode.trim() || null }),
+        body: JSON.stringify({ name: newSubjectName.trim(), code: newSubjectCode.trim() || null, user_id: Number(localStorage.getItem('user_id')) || null }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || 'Could not add subject');
@@ -228,7 +238,7 @@ const QuestionBank = () => {
     if (!confirmed) return;
     setDeletingId(id);
     try {
-      const res = await fetch(`${API_URL}/api/questions/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_URL}/api/questions/${id}?user_id=${encodeURIComponent(localStorage.getItem('user_id') || '')}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Delete failed');
       setQuestions(prev => prev.filter(q => q.id !== id));
       setSelectedQuestions(prev => prev.filter(qId => qId !== id));
@@ -444,22 +454,8 @@ const QuestionBank = () => {
     if (!selectedSubject || selectedQuestions.length === 0) return;
 
     if (mode === 'tos') {
-      const formData = new FormData();
-      formData.append('subject_id', selectedSubject);
-      formData.append('question_ids', selectedQuestions.join(','));
-      const userId = localStorage.getItem('user_id');
-      if (userId) formData.append('user_id', userId);
-      const res = await fetch(`${API_URL}/api/questions/export/tos`, { method: 'POST', body: formData });
-      if (!res.ok) throw new Error('TOS download failed');
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${selectedSubjectName || 'question-bank'}-TOS.xlsx`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      // Open TOS modal instead of direct download
+      setTosModalOpen(true);
       return;
     }
 
@@ -496,6 +492,66 @@ const QuestionBank = () => {
       setError(err.message || 'Download failed.');
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleTosGeneration = async () => {
+    if (!selectedSubject || selectedQuestions.length === 0) {
+      setError('Please select questions before generating TOS.');
+      return;
+    }
+
+    if (selectedTopics.length === 0) {
+      setError('Please select at least one topic to include in the TOS.');
+      return;
+    }
+
+    const invalidHours = Object.entries(subcolumnAValues).some(([, value]) => {
+      const num = parseFloat(value);
+      return Number.isNaN(num) || num <= 0;
+    });
+
+    if (invalidHours) {
+      setError('Please enter valid positive hours for each selected topic.');
+      return;
+    }
+
+    setGeneratingTos(true);
+    setError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('subject_id', selectedSubject);
+      formData.append('question_ids', selectedQuestions.join(','));
+      formData.append('exam_type', examType);
+      formData.append('semester', semester);
+      const userId = localStorage.getItem('user_id');
+      if (userId) formData.append('user_id', userId);
+
+      const res = await fetch(`${API_URL}/api/questions/export/tos`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error('TOS generation failed');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${selectedSubjectName || 'question-bank'}-TOS-${examType.replace(/\s+/g, '-')}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      // Reset modal
+      setTosModalOpen(false);
+      setSelectedTopics([]);
+      setSubcolumnAValues({});
+    } catch (err) {
+      setError(err.message || 'TOS generation failed.');
+    } finally {
+      setGeneratingTos(false);
     }
   };
 
@@ -955,15 +1011,18 @@ const QuestionBank = () => {
                             </div>
                           )}
 
-                          {q.question_type === 'Matching Type' && q.options && !Array.isArray(q.options) && (
+                          {q.question_type === 'Matching Type' && (
+                            (q.options && !Array.isArray(q.options) && (q.options.left_items || q.options.right_items)) ||
+                            (q.left_items && q.right_items && Array.isArray(q.left_items) && Array.isArray(q.right_items))
+                          ) && (
                             <div className="mb-3 grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
                               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                                 <p className="mb-1 font-bold text-slate-600">Column A</p>
-                                {(q.options.left_items || []).map((item, index) => <p key={index} className="py-1">{index + 1}. {item}</p>)}
+                                {((q.options?.left_items || q.left_items) || []).map((item, index) => <p key={index} className="py-1">{index + 1}. {item}</p>)}
                               </div>
                               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                                 <p className="mb-1 font-bold text-slate-600">Column B</p>
-                                {(q.options.right_items || []).map((item, index) => <p key={index} className="py-1">{String.fromCharCode(65 + index)}. {item}</p>)}
+                                {((q.options?.right_items || q.right_items) || []).map((item, index) => <p key={index} className="py-1">{String.fromCharCode(65 + index)}. {item}</p>)}
                               </div>
                             </div>
                           )}
@@ -1156,6 +1215,128 @@ const QuestionBank = () => {
             <div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-bold text-slate-900">Question version history</h2><p className="mt-1 text-sm text-slate-500">Previous snapshots for this question.</p></div><button type="button" onClick={() => setVersionsOpen(false)} className="text-sm font-semibold text-red-700">Close</button></div>
             <div className="mt-5 space-y-3">{versions.length ? versions.map((version) => <article key={version.id} className="rounded-lg border border-slate-200 p-4"><p className="text-sm font-semibold text-slate-900">{version.snapshot.question}</p><p className="mt-2 text-xs text-slate-500">Saved {version.created_at ? new Date(version.created_at).toLocaleString() : 'previously'}</p><button type="button" onClick={() => restoreVersion(version)} className="mt-3 text-xs font-semibold text-[#B4454A]">Restore this version</button></article>) : <p className="text-sm text-slate-500">No previous versions have been saved yet.</p>}</div>
           </section>
+        </div>
+      )}
+
+      {tosModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f172a]/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setTosModalOpen(false); }}>
+          <div className="bq-panel w-full max-w-2xl border-[#ead8d5] bg-[#fffdfc] p-7 shadow-[0_20px_50px_rgba(15,23,42,0.18)] rounded-2xl">
+            <div className="flex items-start gap-3 mb-6">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white" style={{ backgroundColor: PRIMARY }}>
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em]" style={{ color: PRIMARY }}>Generate Assessment</p>
+                <h2 className="mt-1 text-xl font-bold text-slate-900">Table of Specifications (TOS)</h2>
+                <p className="mt-1 text-sm text-slate-500">Configure your assessment details before generating the TOS.</p>
+              </div>
+            </div>
+
+            {error && (
+              <div className="mb-5 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-3">
+                <AlertCircle className="h-4 w-4 mt-0.5 text-red-600 shrink-0" />
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
+            )}
+
+            <div className="space-y-5 max-h-[calc(100vh-400px)] overflow-y-auto">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Semester</label>
+                <select value={semester} onChange={(e) => setSemester(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#B4454A] focus:ring-2 focus:ring-[#B4454A]/15">
+                  {SEMESTER_OPTIONS.map((sem) => (
+                    <option key={sem} value={sem}>{sem}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Exam Type</label>
+                <select value={examType} onChange={(e) => setExamType(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#B4454A] focus:ring-2 focus:ring-[#B4454A]/15">
+                  {EXAM_TYPE_OPTIONS.map((type) => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <p className="text-sm font-semibold text-slate-700 mb-3">Topics Included ({selectedQuestions.length} questions selected)</p>
+                <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 max-h-64 overflow-y-auto">
+                  {selectedQuestionRecords.length > 0 ? (
+                    <>
+                      {[...new Map(selectedQuestionRecords.map((q) => [q.topic_name || 'Uncategorized', q])).entries()].map(([topic, q]) => (
+                        <div key={topic} className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedTopics.includes(topic)}
+                            onChange={() => {
+                              setSelectedTopics((prev) =>
+                                prev.includes(topic)
+                                  ? prev.filter((t) => t !== topic)
+                                  : [...prev, topic]
+                              );
+                            }}
+                            className="h-4 w-4 rounded border-slate-300"
+                            style={{ accentColor: PRIMARY }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-800 truncate">{topic}</p>
+                          </div>
+                          {selectedTopics.includes(topic) && (
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-[10px] font-semibold uppercase text-slate-400">Hours</span>
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="0"
+                                value={subcolumnAValues[topic] || ''}
+                                onChange={(e) => setSubcolumnAValues((prev) => ({ ...prev, [topic]: e.target.value }))}
+                                className="w-14 rounded-md border border-slate-300 px-2 py-1 text-center text-sm outline-none focus:border-[#B4454A]"
+                                placeholder="0"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <p className="text-sm text-slate-500">No questions selected</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2 border-t border-slate-100 pt-5">
+              <button
+                type="button"
+                onClick={() => setTosModalOpen(false)}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleTosGeneration}
+                disabled={generatingTos || selectedTopics.length === 0}
+                className="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-slate-300"
+                style={{ backgroundColor: PRIMARY }}
+              >
+                {generatingTos ? (
+                  <>
+                    <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                    </svg>
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4" />
+                    Generate & Download TOS
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
       </div>

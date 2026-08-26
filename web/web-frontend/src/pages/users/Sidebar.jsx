@@ -6,14 +6,12 @@ import {
   FileClock,
   FolderArchive,
   Heart,
-  HelpCircle,
   LayoutDashboard,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
   Sparkles,
-  Wifi,
 } from "lucide-react";
 
 const icons = {
@@ -25,8 +23,6 @@ const icons = {
   favorites: Heart,
   notifications: Bell,
   recycle: FolderArchive,
-  status: Wifi,
-  help: HelpCircle,
   logout: LogOut,
   collapse: PanelLeftClose,
   expand: PanelLeftOpen,
@@ -36,9 +32,7 @@ const Sidebar = ({ collapsed, mobileOpen, onToggleCollapsed, onNavigate }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const role = localStorage.getItem("role")?.toLowerCase();
-  const [helpOpen, setHelpOpen] = useState(false);
   const [appearance, setAppearance] = useState(() => localStorage.getItem("bloomquest-appearance") || "light");
-  const notificationCount = 3;
 
   const menuItems = role === "admin"
     ? [{ label: "Admin Dashboard", path: "/admin", icon: icons.dashboard }]
@@ -50,20 +44,17 @@ const Sidebar = ({ collapsed, mobileOpen, onToggleCollapsed, onNavigate }) => {
         { label: "Favorites", path: "/favorites", icon: icons.favorites },
         { label: "Notifications", path: "/notifications", icon: icons.notifications },
         { label: "Recycle Bin", path: "/recycle-bin", icon: icons.recycle },
-        { label: "System Status", path: "/system-status", icon: icons.status },
         { label: "Settings", path: "/settings", icon: icons.settings },
-        { label: "Help & Documentation", path: "/help", icon: icons.help },
       ];
 
   const menuGroups = role === "admin" ? [{ label: "Administration", items: menuItems }] : [
     { label: "Create", items: menuItems.filter((item) => ["/dashboard", "/input"].includes(item.path)) },
     { label: "Build & Manage", items: menuItems.filter((item) => ["/question-bank", "/favorites", "/recycle-bin"].includes(item.path)) },
-    { label: "Monitor", items: menuItems.filter((item) => ["/history", "/notifications", "/system-status"].includes(item.path)) },
-    { label: "Support", items: menuItems.filter((item) => ["/settings", "/help"].includes(item.path)) },
+    { label: "Monitor", items: menuItems.filter((item) => ["/history", "/notifications"].includes(item.path)) },
+    { label: "Support", items: menuItems.filter((item) => ["/settings"].includes(item.path)) },
   ];
 
   const badgeFor = (path) => {
-    if (path === "/notifications" && notificationCount > 0) return notificationCount;
     return null;
   };
 
@@ -133,27 +124,6 @@ const Sidebar = ({ collapsed, mobileOpen, onToggleCollapsed, onNavigate }) => {
           </div>
         ))}
       </nav>
-
-      {!collapsed && (
-        <div className="mx-3 mb-3 rounded-xl border border-red-100 bg-red-50/60 p-3">
-          <div className="flex items-start gap-2">
-            <icons.help size={16} style={{ color: "#B4454A" }} />
-            <div>
-              <p className="text-xs font-semibold text-slate-800">Quick Help</p>
-              <p className="mt-1 text-[11px] leading-4 text-slate-500">Need a hand with your next analysis?</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setHelpOpen((current) => !current)}
-            className="mt-2 w-full rounded-lg border bg-white px-2 py-1.5 text-xs font-semibold"
-            style={{ borderColor: "#E8B8BA", color: "#B4454A" }}
-          >
-            {helpOpen ? "Hide guide" : "View guide"}
-          </button>
-          {helpOpen && <p className="mt-2 text-[11px] leading-4 text-slate-500">Start with New Analysis, then review questions in Question Bank.</p>}
-        </div>
-      )}
 
       <div className="px-3 pb-5 border-t pt-3" style={{ borderColor: "rgba(15, 23, 42, 0.08)" }}>
         {!collapsed && (
