@@ -136,15 +136,6 @@ const Sidebar = ({ collapsed, mobileOpen, onToggleCollapsed, onNavigate }) => {
           </label>
         )}
         <button
-          type="button"
-          onClick={onToggleCollapsed}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="mb-2 flex w-full items-center justify-center rounded-xl py-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
-        >
-          {collapsed ? <icons.expand size={18} /> : <icons.collapse size={18} />}
-        </button>
-        <button
           onClick={handleLogout}
           title={collapsed ? "Logout" : undefined}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors duration-150"

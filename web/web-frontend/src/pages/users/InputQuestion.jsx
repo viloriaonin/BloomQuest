@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { UploadCloud, FileText, FileSpreadsheet, Presentation, X, CheckCircle2, AlertCircle, Sparkles, PencilLine, FolderUp, RotateCcw, Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const API_URL = '/api';
 const EXAM_TYPE_OPTIONS = ['Midterm Exam', 'Final Exam', 'Quiz', 'Long Exam'];
@@ -262,6 +263,7 @@ const UploadSlot = ({ policyKey, file, onFileSelected, onRemove, stepBadge, lock
 };
 
 const InputQuestion = () => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('upload');
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -625,6 +627,10 @@ const InputQuestion = () => {
     setError('');
     setSuccessMessage('');
     sessionStorage.removeItem(INPUT_QUESTION_SESSION_KEY);
+  };
+
+  const handleCreateTest = () => {
+    navigate(selectedSubject ? `/question-bank/${selectedSubject}` : '/question-bank');
   };
 
   const handleFileRemove = (policyKey) => {
@@ -1210,8 +1216,8 @@ const InputQuestion = () => {
                         <button type="button" onClick={() => setWizardStep(3)} disabled={generating} className="flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700">&larr; Back</button>
                         <div className="flex flex-wrap items-center justify-end gap-2">
                           {generationResult && (
-                            <button type="button" onClick={resetAssessmentProgress} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition-colors hover:border-[#B4454A]/40 hover:text-[#B4454A]">
-                              <Plus className="h-4 w-4" /> Create new
+                            <button type="button" onClick={handleCreateTest} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition-colors hover:border-[#B4454A]/40 hover:text-[#B4454A]">
+                              <Plus className="h-4 w-4" /> Create Test
                             </button>
                           )}
                           <button
@@ -1239,8 +1245,8 @@ const InputQuestion = () => {
                     <p className="text-xs text-gray-500">Items successfully saved inside the primary Question Bank registry rows.</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button onClick={resetAssessmentProgress} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition-colors hover:border-[#B4454A]/40 hover:text-[#B4454A]">
-                      <Plus className="h-4 w-4" /> Create new
+                    <button onClick={handleCreateTest} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition-colors hover:border-[#B4454A]/40 hover:text-[#B4454A]">
+                      <Plus className="h-4 w-4" /> Create Test
                     </button>
                     <button onClick={() => downloadFile('tos', `${downloadSubjectCode}-${downloadExamType}-TOS.xlsx`)} className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Institutional TOS (.xlsx)</button>
                     <button onClick={() => downloadFile('assessment/docx', `${downloadSubjectCode}-${downloadExamType}-Test.docx`)} className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.docx)</button>
