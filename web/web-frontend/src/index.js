@@ -6,6 +6,22 @@ import App from './App';
 import { PopupProvider } from './components/PopupProvider';
 import reportWebVitals from './reportWebVitals';
 
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (input, init = {}) => {
+  const requestUrl = typeof input === 'string' ? input : input.url;
+  const headers = new Headers(init.headers || (typeof input !== 'string' ? input.headers : undefined));
+  const token = localStorage.getItem('token');
+  if (token && !requestUrl.includes('/api/login')) headers.set('Authorization', `Bearer ${token}`);
+  return nativeFetch(input, { ...init, headers }).then((response) => {
+    if (response.status === 401 && !requestUrl.includes('/api/login')) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('role');
+      window.location.assign('/');
+    }
+    return response;
+  });
+};
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>

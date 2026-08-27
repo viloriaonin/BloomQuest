@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { usePopup } from '../../components/PopupProvider';
-import { FlaskConical, Shield, Sigma } from 'lucide-react';
+import { FlaskConical, Shield, Sigma, Upload, FileText } from 'lucide-react';
 
 const API_URL = 'http://localhost:8000';
 
@@ -28,6 +28,13 @@ const QUESTION_TYPE_OPTIONS = [
   { label: 'Essay', value: 'Essay' },
   { label: 'Situational', value: 'Situational' },
 ];
+const LIFECYCLE_OPTIONS = [
+  ["draft", "Draft"],
+  ["review", "Review"],
+  ["approved", "Approved"],
+  ["published", "Published"],
+  ["deprecated", "Deprecated"],
+];
 
 export const QuestionBankContent = () => {
   const { showConfirm, showAlert } = usePopup();
@@ -51,6 +58,12 @@ export const QuestionBankContent = () => {
   const [questionType, setQuestionType]       = useState('All types');
   const [totalQuestionCount, setTotalQuestionCount] = useState(0);
   const [totalExportCount, setTotalExportCount] = useState(0);
+  const [showImportPanel, setShowImportPanel] = useState(false);
+  const [moduleFile, setModuleFile] = useState(null);
+  const [syllabusFile, setSyllabusFile] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const moduleInputRef = useRef(null);
+  const syllabusInputRef = useRef(null);
 
   // Fetch subjects on mount
   useEffect(() => {
@@ -133,6 +146,7 @@ export const QuestionBankContent = () => {
       question: q.question,
       correct_answer: q.correct_answer || '',
       explanation: q.explanation || '',
+      lifecycle_status: q.lifecycle_status || 'draft',
     });
   };
 
@@ -142,6 +156,7 @@ export const QuestionBankContent = () => {
       formData.append('question', editForm.question);
       formData.append('correct_answer', editForm.correct_answer);
       formData.append('explanation', editForm.explanation);
+      formData.append('lifecycle_status', editForm.lifecycle_status || 'draft');
       const res = await fetch(`${API_URL}/api/questions/${editingQuestion}`, {
         method: 'PUT',
         body: formData,
@@ -246,6 +261,38 @@ export const QuestionBankContent = () => {
     }
   };
 
+  const handleImportBank = async () => {
+    if (!selectedSubject) {
+      await showAlert('Please select a subject before importing the bank files.', 'Missing Subject');
+      return;
+    }
+    if (!moduleFile || !syllabusFile) {
+      await showAlert('Please select both a module and syllabus file.', 'Missing Files');
+      return;
+    }
+
+    setImporting(true);
+    try {
+      const form = new FormData();
+      form.append('subject_id', selectedSubject);
+      form.append('module_file', moduleFile);
+      form.append('syllabus_file', syllabusFile);
+      const res = await fetch(`${API_URL}/api/upload`, { method: 'POST', body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Import failed.');
+
+      await showAlert('Bank files uploaded successfully.', 'Import Complete');
+      setShowImportPanel(false);
+      setModuleFile(null);
+      setSyllabusFile(null);
+      await fetchQuestions(selectedSubject);
+    } catch (err) {
+      await showAlert(err.message || 'Failed to import bank files.', 'Import Error');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const countByLevel = (level) => questions.filter(q => q.bloom_level === level).length;
   const displayedQuestions = questions.filter((q) => {
     const matchesBloom = activeTab === 'All' || q.bloom_level === activeTab;
@@ -255,6 +302,12 @@ export const QuestionBankContent = () => {
   });
   const selectedSubjectName = subjects.find(s => s.id === parseInt(selectedSubject))?.name || '';
   const questionScope = selectedSubject || showAllQuestions;
+  const subjectsByDepartment = subjects.reduce((groups, subject) => {
+    const department = subject.department_name || 'Unassigned department';
+    if (!groups[department]) groups[department] = [];
+    groups[department].push(subject);
+    return groups;
+  }, {});
 
   // ── Analytics (computed from currently loaded questions) ──
   const totalQuestions = questions.length;
@@ -274,12 +327,32 @@ export const QuestionBankContent = () => {
               Browse, create, and manage exam questions by subject and level.
             </p>
           </div>
-          <div className="flex gap-2">
-            <button onClick={() => setShowAddModal(true)} className="bq-primary-button whitespace-nowrap">
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => setShowAddModal(true)} disabled={!selectedSubject} className="bq-primary-button whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50">
               Add Question
+            </button>
+            <button onClick={() => setShowImportPanel((current) => !current)} disabled={!selectedSubject} className="bq-secondary-button inline-flex items-center gap-2 whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50">
+              <Upload size={16} /> Import Bank
             </button>
           </div>
         </div>
+
+        {showImportPanel && selectedSubject && (
+          <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              {[['Module File', moduleFile, setModuleFile, moduleInputRef, '.pdf,.docx,.pptx'], ['Syllabus File', syllabusFile, setSyllabusFile, syllabusInputRef, '.xlsx,.pdf,.docx']].map(([label, file, setFile, inputRef, accept]) => (
+                <button key={label} type="button" onClick={() => inputRef.current?.click()} className="flex items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-white p-4 text-left hover:border-[#B4454A]">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-[#B4454A]"><FileText size={18} /></span>
+                  <span className="min-w-0"><span className="block text-sm font-semibold text-slate-800">{label}</span><span className="block truncate text-xs text-slate-500">{file?.name || 'Choose a file'}</span></span>
+                  <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 flex justify-end">
+              <button type="button" onClick={handleImportBank} disabled={importing || !moduleFile || !syllabusFile} className="bq-primary-button disabled:cursor-not-allowed disabled:opacity-50">{importing ? 'Importing...' : 'Upload Bank Files'}</button>
+            </div>
+          </div>
+        )}
 
         {/* ── Analytics Cards ── */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
@@ -313,7 +386,7 @@ export const QuestionBankContent = () => {
 
       <section className="mb-4">
         <div className="mb-3 flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#B4454A]">Choose a subject</p><h2 className="mt-1 text-lg font-bold text-slate-900">Question collections</h2></div><button type="button" onClick={() => { setSelectedSubject(''); setShowAllQuestions(true); fetchQuestions(null); }} className={`rounded-lg border px-4 py-2 text-sm font-semibold transition-colors ${showAllQuestions ? 'border-[#B4454A] bg-[#B4454A] text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:text-[#B4454A]'}`}>All Questions</button></div>
-        {loadingSubjects ? <div className="bg-white p-6 text-sm text-slate-500">Loading subjects...</div> : <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{subjects.map((subject, index) => { const theme = SUBJECT_THEMES[index % SUBJECT_THEMES.length]; const Icon = theme.icon; return <button key={subject.id} type="button" onClick={() => { setSelectedSubject(String(subject.id)); setShowAllQuestions(false); }} className={`group overflow-hidden rounded-2xl border bg-white text-left shadow-sm transition-colors hover:border-[#B4454A]/50 hover:shadow-md ${String(subject.id) === String(selectedSubject) ? 'border-[#B4454A] ring-1 ring-[#B4454A]' : 'border-slate-200'}`}><div className="relative flex h-24 items-center justify-center" style={{ backgroundColor: theme.bg }}><Icon className="h-8 w-8" style={{ color: theme.iconColor }} /></div><div className="p-4"><div className="flex items-start justify-between gap-2"><span className="font-bold text-slate-900">{subject.name}</span>{subject.code && <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-600">{subject.code}</span>}</div><p className="mt-1 text-xs text-slate-500">{subject.description || 'Manually added subject area'}</p><div className="mt-3 flex items-center justify-between gap-2 text-xs"><span className="text-slate-500">Generated {subject.created_at ? new Date(subject.created_at).toLocaleDateString() : 'Date unavailable'}</span><span className="shrink-0 whitespace-nowrap rounded-md bg-slate-100 px-2 py-1 font-semibold text-slate-600">{subject.question_count ?? 0} question{(subject.question_count ?? 0) === 1 ? '' : 's'}</span></div></div></button>; })}</div>}
+        {loadingSubjects ? <div className="bg-white p-6 text-sm text-slate-500">Loading subjects...</div> : <div className="space-y-6">{Object.entries(subjectsByDepartment).map(([department, departmentSubjects], departmentIndex) => <section key={department}><div className="mb-3 flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-[#C4485A]" /><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#C4485A]">Department</p><h3 className="text-base font-bold text-slate-900">{department}</h3></div></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{departmentSubjects.map((subject, index) => { const theme = SUBJECT_THEMES[(departmentIndex + index) % SUBJECT_THEMES.length]; const Icon = theme.icon; return <button key={subject.id} type="button" onClick={() => { setSelectedSubject(String(subject.id)); setShowAllQuestions(false); }} className={`group overflow-hidden rounded-2xl border bg-white text-left shadow-sm transition-colors hover:border-[#B4454A]/50 hover:shadow-md ${String(subject.id) === String(selectedSubject) ? 'border-[#B4454A] ring-1 ring-[#B4454A]' : 'border-slate-200'}`}><div className="relative flex h-24 items-center justify-center" style={{ backgroundColor: theme.bg }}><Icon className="h-8 w-8" style={{ color: theme.iconColor }} /></div><div className="p-4"><div className="flex items-start justify-between gap-2"><span className="font-bold text-slate-900">{subject.name}</span>{subject.code && <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-600">{subject.code}</span>}</div><p className="mt-1 text-xs text-slate-500">{subject.description || 'Manually added subject area'}</p><p className="mt-2 text-xs text-slate-500">Created by <span className="font-semibold text-slate-700">{subject.faculty_name || 'System or unassigned'}</span></p><div className="mt-3 flex items-center justify-between gap-2 text-xs"><span className="text-slate-500">Generated {subject.created_at ? new Date(subject.created_at).toLocaleDateString() : 'Date unavailable'}</span><span className="shrink-0 whitespace-nowrap rounded-md bg-slate-100 px-2 py-1 font-semibold text-slate-600">{subject.question_count ?? 0} question{(subject.question_count ?? 0) === 1 ? '' : 's'}</span></div></div></button>; })}</div></section>)}</div>}
       </section>
 
       {questionScope && <div className="relative z-20 mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4"><span className="text-sm font-semibold text-slate-700">{showAllQuestions ? 'All questions' : selectedSubjectName}</span><span className="text-sm text-gray-400">{questions.length} question{questions.length !== 1 ? 's' : ''} found</span><div className="ml-auto flex flex-wrap items-center gap-2"><input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search questions..." className="bq-field px-3 py-2 text-sm" /><select value={questionType} onChange={(e) => setQuestionType(e.target.value)} className="bq-field px-3 py-2 text-sm"><option>All types</option>{QUESTION_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><button onClick={() => setSelectedQuestions(displayedQuestions.map((q) => q.id))} className="bq-secondary-button text-xs">Select visible</button><button onClick={() => setSelectedQuestions([])} className="bq-secondary-button text-xs">Clear</button><button onClick={() => fetchQuestions(selectedSubject || null)} className="bq-secondary-button text-xs">Refresh</button></div></div>}
@@ -409,6 +482,13 @@ export const QuestionBankContent = () => {
                       value={editForm.explanation}
                       onChange={(e) => setEditForm(prev => ({ ...prev, explanation: e.target.value }))}
                     />
+                    <select
+                      className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-red-400"
+                      value={editForm.lifecycle_status}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, lifecycle_status: e.target.value }))}
+                    >
+                      {LIFECYCLE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
                     <div className="flex gap-2">
                       <button onClick={handleEditSave} className="bg-red-600 hover:bg-red-700 text-white text-xs font-medium px-4 py-2 rounded-md">Save</button>
                       <button onClick={() => setEditingQuestion(null)} className="bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium px-4 py-2 rounded-md">Cancel</button>
@@ -458,6 +538,7 @@ export const QuestionBankContent = () => {
                       <div className="flex items-center justify-between">
                         <div className="flex flex-wrap gap-2 text-xs font-medium">
                           <span className="bg-red-100 text-red-700 px-3 py-1 rounded-md">{q.bloom_level}</span>
+                          <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-md">{q.lifecycle_status || 'draft'}</span>
                           <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-md">{q.question_type}</span>
                         </div>
                         <div className="flex gap-2">

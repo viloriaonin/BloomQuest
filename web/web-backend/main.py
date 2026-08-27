@@ -3,7 +3,7 @@ import io
 import json
 import base64
 import openpyxl
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, status, BackgroundTasks, Request
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, status, BackgroundTasks, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
@@ -165,9 +165,11 @@ def serialize_question(question):
         "correct_answer": question.correct_answer,
         "explanation": question.explanation,
         "review_status": question.review_status,
+        "lifecycle_status": "archived" if question.archived else (question.lifecycle_status or "draft"),
         "difficulty": question.difficulty,
         "created_at": question.created_at,
     }
+
 
 # Ensure the new archive, name, and department columns exist in the users table.
 # SQLAlchemy's create_all does not alter existing tables, so we add missing columns explicitly.
@@ -175,10 +177,13 @@ with engine.begin() as conn:
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"))
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR"))
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR"))
+    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
     conn.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS department_id INTEGER"))
     conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS review_status VARCHAR(32) NOT NULL DEFAULT 'needs_review'"))
     conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS difficulty VARCHAR(32) NOT NULL DEFAULT 'moderate'"))
     conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"))
+    conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS lifecycle_status VARCHAR(32) NOT NULL DEFAULT 'draft'"))
+    conn.execute(text("UPDATE generated_questions SET lifecycle_status = CASE review_status WHEN 'approved' THEN 'approved' WHEN 'in_review' THEN 'review' ELSE 'draft' END WHERE lifecycle_status IS NULL OR lifecycle_status = 'draft'"))
     conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS user_id INTEGER"))
     conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS exam_title VARCHAR(255)"))
     conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS instructions TEXT"))
@@ -202,6 +207,103 @@ with SessionLocal() as db:
         db.commit()
 
 app = FastAPI()
+
+
+def get_current_user(authorization: str = Header(None), db: Session = Depends(get_db)):
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Authentication required")
+    token_hash = hashlib.sha256(authorization.split(" ", 1)[1].strip().encode()).hexdigest()
+    session = db.query(models.UserSession).filter(
+        models.UserSession.token_hash == token_hash,
+        models.UserSession.revoked_at.is_(None),
+        models.UserSession.expires_at > datetime.utcnow(),
+    ).first()
+    if not session:
+        raise HTTPException(status_code=401, detail="Session expired or replaced by another login")
+    user = db.query(models.User).filter(models.User.id == session.user_id, models.User.archived == False).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Account is inactive")
+    session.last_used_at = datetime.utcnow()
+    db.commit()
+    return user
+
+
+def require_admin(user: models.User = Depends(get_current_user)):
+    if str(user.role).lower() != "admin":
+        raise HTTPException(status_code=403, detail="Administrator access required")
+    return user
+
+
+@app.post("/api/logout")
+def logout(authorization: str = Header(None), db: Session = Depends(get_db)):
+    if authorization and authorization.lower().startswith("bearer "):
+        token_hash = hashlib.sha256(authorization.split(" ", 1)[1].strip().encode()).hexdigest()
+        db.query(models.UserSession).filter(models.UserSession.token_hash == token_hash).update({"revoked_at": datetime.utcnow()})
+        db.commit()
+    return {"message": "Logged out"}
+
+
+def question_quality_score(question):
+    checks = {
+        "content_complete": bool((question.question or "").strip()),
+        "answer_present": bool((question.correct_answer or "").strip()) if isinstance(question.correct_answer, str) else bool(question.correct_answer),
+        "explanation_present": bool((question.explanation or "").strip()),
+        "bloom_classified": bool((question.bloom_level or "").strip()),
+        "difficulty_set": question.difficulty in {"easy", "moderate", "hard"},
+        "reviewed": (question.lifecycle_status or "draft") in {"approved", "published"},
+    }
+    return round(sum(checks.values()) / len(checks) * 100), checks
+
+
+@app.get("/api/admin/insights")
+def get_admin_insights(db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
+    faculty = db.query(models.User).filter(models.User.role.ilike("faculty"), models.User.archived == False).all()
+    questions = db.query(models.GeneratedQuestion).all()
+    metrics = []
+    for member in faculty:
+        owned = [question for question in questions if question.user_id == member.id]
+        active = [question for question in owned if not question.archived]
+        scores = [question_quality_score(question)[0] for question in active]
+        metrics.append({
+            "faculty_id": member.id,
+            "faculty_name": member.name or member.email,
+            "department": member.department or "Unassigned",
+            "questions_contributed": len(owned),
+            "active_questions": len(active),
+            "archived_questions": len(owned) - len(active),
+            "published_questions": sum((question.lifecycle_status or "draft") == "published" for question in active),
+            "approved_questions": sum((question.lifecycle_status or "draft") == "approved" for question in active),
+            "draft_questions": sum((question.lifecycle_status or "draft") in {"draft", "review"} for question in active),
+            "deprecated_questions": sum((question.lifecycle_status or "draft") == "deprecated" for question in active),
+            "content_quality_score": round(sum(scores) / len(scores)) if scores else 0,
+        })
+    all_active = [question for question in questions if not question.archived]
+    all_scores = [question_quality_score(question)[0] for question in all_active]
+    department_metrics = {}
+    for item in metrics:
+        department = item["department"]
+        bucket = department_metrics.setdefault(department, {"department": department, "faculty": 0, "questions_contributed": 0, "published_questions": 0, "activity": 0, "quality_scores": []})
+        bucket["faculty"] += 1
+        bucket["questions_contributed"] += item["questions_contributed"]
+        bucket["published_questions"] += item["published_questions"]
+        bucket["quality_scores"].append(item["content_quality_score"])
+        bucket["activity"] += sum(1 for entry in db.query(models.ActivityLog).filter(models.ActivityLog.user_id == item["faculty_id"]).all())
+    departments = [{**item, "quality_score": round(sum(item.pop("quality_scores")) / len(item["quality_scores"])) if item["quality_scores"] else 0} for item in department_metrics.values()]
+    pending_count = db.query(models.AccountRequest).filter(models.AccountRequest.status == "pending").count()
+    review_count = sum(1 for question in all_active if (question.lifecycle_status or "draft") in {"draft", "review"})
+    failed_count = db.query(models.ActivityLog).filter(models.ActivityLog.status == "error").count()
+    return {
+        "faculty": sorted(metrics, key=lambda item: item["questions_contributed"], reverse=True),
+        "departments": sorted(departments, key=lambda item: item["questions_contributed"], reverse=True),
+        "content_quality_score": round(sum(all_scores) / len(all_scores)) if all_scores else 0,
+        "quality_scope": "Content completeness and governance checks; not learner performance.",
+        "notifications": [
+            {"type": "account", "title": "New account requests", "count": pending_count} if pending_count else None,
+            {"type": "review", "title": "Questions awaiting review", "count": review_count} if review_count else None,
+            {"type": "error", "title": "Failed system actions", "count": failed_count} if failed_count else None,
+            {"type": "inactive", "title": "Inactive faculty", "count": sum(1 for item in metrics if item["questions_contributed"] == 0)},
+        ],
+    }
 
 otp_store = {}
 contact_admin_otp_store = {}
@@ -401,6 +503,11 @@ class UpdatePasswordRequest(BaseModel):
         if error:
             raise ValueError(error)
         return value
+
+
+class BulkUserActionRequest(BaseModel):
+    user_ids: list[int] = Field(..., min_length=1, max_length=100)
+    action: str = Field(..., pattern="^(archive|restore|revoke_sessions)$")
 
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
@@ -755,7 +862,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     enforce_rate_limit("login", data.email)
     user = db.query(models.User).filter(func.lower(models.User.email) == data.email).first()
 
-    if user and verify_password(data.password, user.password):
+    if user and not user.archived and verify_password(data.password, user.password):
         pass
     else:
         user = None
@@ -763,11 +870,16 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password.")
 
+    now = datetime.utcnow()
+    db.query(models.UserSession).filter(models.UserSession.user_id == user.id, models.UserSession.revoked_at.is_(None)).update({"revoked_at": now})
+    raw_token = secrets.token_urlsafe(48)
+    session = models.UserSession(user_id=user.id, token_hash=hashlib.sha256(raw_token.encode()).hexdigest(), expires_at=now + timedelta(hours=12))
+    db.add(session)
     log_activity(db, "System Login", f"Logged in as {user.email}.", "login", user_id=user.id)
 
     # Return response (replace with JWT later)
     return {
-        "token": "fake-token-for-now",
+        "token": raw_token,
         "user_id": user.id,
         "role": user.role,
         "email": user.email,
@@ -796,7 +908,7 @@ def check_request_status(email: str, db: Session = Depends(get_db)):
     return {"exists": False, "status": None}
 
 @app.get("/api/contact-admin/pending")
-def list_pending_account_requests(db: Session = Depends(get_db)):
+def list_pending_account_requests(db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
     requests = (
         db.query(models.AccountRequest)
         .filter(models.AccountRequest.status == "pending")
@@ -818,7 +930,7 @@ def list_pending_account_requests(db: Session = Depends(get_db)):
     ]
 
 @app.get("/api/contact-admin/users")
-def list_admin_users(db: Session = Depends(get_db)):
+def list_admin_users(db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
     # Return all users (except those soft-archived) so admin can manage any account
     active_users = (
         db.query(models.User)
@@ -833,25 +945,125 @@ def list_admin_users(db: Session = Depends(get_db)):
         .all()
     )
 
-    format_user = lambda user: {
+    activity_by_user = defaultdict(list)
+    for entry in db.query(models.ActivityLog).filter(models.ActivityLog.user_id.isnot(None)).all():
+        activity_by_user[entry.user_id].append(entry)
+
+    def latest_activity(entries, predicate=lambda entry: True):
+        matches = [entry for entry in entries if predicate(entry) and entry.created_at]
+        return max(matches, key=lambda entry: entry.created_at).created_at.isoformat() if matches else None
+
+    def format_user(user):
+        entries = activity_by_user.get(user.id, [])
+        return {
         "id": user.id,
         "full_name": user.name or user.email.split("@", 1)[0],
         "department": user.department or "N/A",
         "email": user.email,
         "role": user.role,
         "status": "Active" if not user.archived else "Archived",
-        "created_at": None,
-        "joined": "Recently added",
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "joined": user.created_at.isoformat() if user.created_at else None,
+        "last_active": latest_activity(entries),
+        "last_export": latest_activity(entries, lambda entry: entry.type in {"download", "export"} or "export" in (entry.action or "").lower()),
+        "last_generate": latest_activity(entries, lambda entry: entry.type == "generate" or "generat" in (entry.action or "").lower()),
+        "activity_count": len(entries),
         "archived": user.archived,
-    }
+        }
 
     return {
         "active": [format_user(user) for user in active_users],
         "archived": [format_user(user) for user in archived_users],
     }
 
+
+@app.get("/api/admin/users/{user_id}/activity")
+def get_admin_user_activity(user_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
+    rows = db.query(models.ActivityLog).filter(models.ActivityLog.user_id == user_id).order_by(models.ActivityLog.created_at.desc()).limit(100).all()
+    return [{
+        "id": row.id,
+        "action": row.action,
+        "type": row.type,
+        "status": row.status,
+        "detail": row.details,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    } for row in rows]
+
+
+@app.get("/api/admin/users/{user_id}/overview")
+def get_admin_user_overview(user_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    subjects = db.query(models.Subject).filter(models.Subject.user_id == user_id).order_by(models.Subject.created_at.desc()).all()
+    subject_names = {subject.id: subject.name for subject in db.query(models.Subject).all()}
+    questions = db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.user_id == user_id).order_by(models.GeneratedQuestion.created_at.desc()).all()
+    activities = db.query(models.ActivityLog).filter(models.ActivityLog.user_id == user_id).order_by(models.ActivityLog.created_at.desc()).all()
+
+    return {
+        "user": {
+            "id": user.id,
+            "name": user.name or user.email.split("@", 1)[0],
+            "email": user.email,
+            "role": user.role,
+            "department": user.department or "Unassigned",
+            "joined": user.created_at.isoformat() if user.created_at else None,
+            "archived": user.archived,
+        },
+        "subjects": [{
+            "id": subject.id,
+            "name": subject.name,
+            "code": subject.code,
+            "department": subject.department.name if subject.department else "Unassigned",
+            "created_at": subject.created_at.isoformat() if subject.created_at else None,
+            "archived": subject.archived,
+        } for subject in subjects],
+        "questions": [{
+            "id": question.id,
+            "question": question.question,
+            "subject": subject_names.get(question.subject_id, "Unassigned"),
+            "topic": question.topic_name or "General",
+            "type": question.question_type,
+            "bloom_level": question.bloom_level,
+            "difficulty": question.difficulty,
+            "lifecycle_status": "archived" if question.archived else (question.lifecycle_status or "draft"),
+            "created_at": question.created_at.isoformat() if question.created_at else None,
+        } for question in questions],
+        "activities": [{
+            "id": activity.id,
+            "action": activity.action,
+            "type": activity.type,
+            "status": activity.status,
+            "detail": activity.details,
+            "filename": activity.filename,
+            "media_type": activity.media_type,
+            "created_at": activity.created_at.isoformat() if activity.created_at else None,
+        } for activity in activities],
+    }
+
+
+@app.post("/api/admin/users/bulk")
+def bulk_user_action(payload: BulkUserActionRequest, db: Session = Depends(get_db), admin: models.User = Depends(require_admin)):
+    users = db.query(models.User).filter(models.User.id.in_(payload.user_ids)).all()
+    if not users:
+        raise HTTPException(status_code=404, detail="No matching users found")
+    now = datetime.utcnow()
+    changed = []
+    for user in users:
+        if payload.action == "archive":
+            user.archived = True
+        elif payload.action == "restore":
+            user.archived = False
+        else:
+            db.query(models.UserSession).filter(models.UserSession.user_id == user.id, models.UserSession.revoked_at.is_(None)).update({"revoked_at": now})
+        changed.append(user.id)
+        log_activity(db, f"Bulk User {payload.action.title()}", f"Admin {admin.id} applied {payload.action} to user {user.id}.", "security", user_id=admin.id)
+    db.commit()
+    return {"updated": changed, "action": payload.action}
+
 @app.post("/api/contact-admin/approve")
-async def approve_account_request(payload: AccountActionRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def approve_account_request(payload: AccountActionRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
     normalized_email = normalize_email(payload.email)
     request_entry = (
         db.query(models.AccountRequest)
@@ -919,7 +1131,7 @@ async def approve_account_request(payload: AccountActionRequest, background_task
     }
 
 @app.put("/api/users/update-password")
-def update_user_password(payload: UpdatePasswordRequest, db: Session = Depends(get_db)):
+def update_user_password(payload: UpdatePasswordRequest, db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
     normalized_email = normalize_email(payload.email)
     user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
     if not user:
@@ -931,7 +1143,7 @@ def update_user_password(payload: UpdatePasswordRequest, db: Session = Depends(g
     return {"message": "Password updated successfully."}
 
 @app.post("/api/users/archive")
-def archive_user(payload: AccountActionRequest, db: Session = Depends(get_db)):
+def archive_user(payload: AccountActionRequest, db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
     normalized_email = normalize_email(payload.email)
     user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
     if not user:
@@ -943,7 +1155,7 @@ def archive_user(payload: AccountActionRequest, db: Session = Depends(get_db)):
     return {"message": "User archived successfully.", "status": "archived"}
 
 @app.post("/api/users/restore")
-def restore_user(payload: AccountActionRequest, db: Session = Depends(get_db)):
+def restore_user(payload: AccountActionRequest, db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
     normalized_email = normalize_email(payload.email)
     user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
     if not user:
@@ -955,7 +1167,7 @@ def restore_user(payload: AccountActionRequest, db: Session = Depends(get_db)):
     return {"message": "User restored successfully.", "status": "active"}
 
 @app.post("/api/users/verify-admin-password")
-def verify_admin_password(payload: AdminVerifyRequest, db: Session = Depends(get_db)):
+def verify_admin_password(payload: AdminVerifyRequest, db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
     normalized_admin_email = normalize_email(payload.admin_email)
     admin_user = (
         db.query(models.User)
@@ -979,13 +1191,12 @@ def verify_admin_password(payload: AdminVerifyRequest, db: Session = Depends(get
 
     return {
         "email": target_user.email,
-        "password": target_user.password,
         "role": target_user.role,
         "archived": target_user.archived,
     }
 
 @app.delete("/api/users/{email}")
-def delete_user(email: str, db: Session = Depends(get_db)):
+def delete_user(email: str, db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
     normalized_email = normalize_email(email)
     user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
     if not user:
@@ -998,7 +1209,7 @@ def delete_user(email: str, db: Session = Depends(get_db)):
     return {"message": "User deleted successfully."}
 
 @app.post("/api/contact-admin/decline")
-def decline_account_request(payload: AccountActionRequest, db: Session = Depends(get_db)):
+def decline_account_request(payload: AccountActionRequest, db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
     normalized_email = normalize_email(payload.email)
     request_entry = (
         db.query(models.AccountRequest)
@@ -1336,11 +1547,16 @@ class QuestionSetUpdateRequest(BaseModel):
 @app.get("/api/departments")
 def get_departments(db: Session = Depends(get_db)):
     departments = db.query(models.Department).order_by(models.Department.name.asc()).all()
+    faculty_counts = defaultdict(int)
+    for faculty in db.query(models.User).filter(models.User.role.ilike("faculty"), models.User.archived == False).all():
+        if faculty.department:
+            faculty_counts[faculty.department.strip().lower()] += 1
     return [
         {
             "id": department.id,
             "name": department.name,
             "code": department.code,
+            "faculty_count": faculty_counts[department.name.strip().lower()],
         }
         for department in departments
     ]
@@ -1684,6 +1900,8 @@ def get_subjects(user_id: int = None, db: Session = Depends(get_db)):
         .group_by(models.GeneratedQuestion.subject_id)
         .all()
     )
+    departments = {department.id: department.name for department in db.query(models.Department).all()}
+    faculty = {user.id: (user.name or user.email) for user in db.query(models.User).filter(models.User.role.ilike("faculty")).all()}
     return [
         {
             "id": subject.id,
@@ -1691,6 +1909,9 @@ def get_subjects(user_id: int = None, db: Session = Depends(get_db)):
             "code": subject.code,
             "description": subject.description,
             "department_id": subject.department_id,
+            "department_name": departments.get(subject.department_id, "Unassigned department"),
+            "faculty_name": faculty.get(subject.user_id, "System or unassigned"),
+            "creator_id": subject.user_id,
             "created_at": subject.created_at,
             "archived": subject.archived,
             "question_count": question_counts.get(subject.id, 0),
@@ -1989,6 +2210,7 @@ async def update_question(
     explanation: str = Form(...),
     review_status: str = Form("needs_review"),
     difficulty: str = Form("moderate"),
+    lifecycle_status: str = Form(None),
     db: Session = Depends(get_db)
 ):
     q = db.query(models.GeneratedQuestion).filter(
@@ -1996,12 +2218,15 @@ async def update_question(
     ).first()
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
+    if lifecycle_status is not None and lifecycle_status not in {"draft", "review", "approved", "published", "deprecated"}:
+        raise HTTPException(status_code=400, detail="Invalid lifecycle status")
     db.add(models.QuestionVersion(snapshot={
         "question": q.question,
         "correct_answer": q.correct_answer,
         "explanation": q.explanation,
         "review_status": q.review_status,
         "difficulty": q.difficulty,
+        "lifecycle_status": q.lifecycle_status,
     }, question_id=q.id))
     q.question = question
     q.correct_answer = correct_answer
@@ -2012,6 +2237,8 @@ async def update_question(
         raise HTTPException(status_code=400, detail="Invalid difficulty")
     q.review_status = review_status
     q.difficulty = difficulty
+    if lifecycle_status is not None:
+        q.lifecycle_status = lifecycle_status
     db.commit()
     log_activity(db, "Question Updated", f"Updated question #{question_id} and review metadata.", "question")
     return {"message": "Question updated successfully"}
@@ -2037,9 +2264,12 @@ def restore_question_version(question_id: int, version_id: int, db: Session = De
         "explanation": question.explanation,
         "review_status": question.review_status,
         "difficulty": question.difficulty,
+        "lifecycle_status": question.lifecycle_status,
     }, question_id=question.id))
     for field in ("question", "correct_answer", "explanation", "review_status", "difficulty"):
         setattr(question, field, version.snapshot.get(field))
+    if "lifecycle_status" in version.snapshot:
+        question.lifecycle_status = version.snapshot.get("lifecycle_status") or "draft"
     db.commit()
     log_activity(db, "Question Version Restored", f"Restored version {version_id} for question #{question_id}.", "question")
     return {"message": "Question version restored"}
@@ -2050,6 +2280,7 @@ def bulk_update_questions(
     question_ids: str = Form(...),
     review_status: str = Form(None),
     difficulty: str = Form(None),
+    lifecycle_status: str = Form(None),
     db: Session = Depends(get_db),
 ):
     selected_ids = [int(item.strip()) for item in (question_ids or "").split(",") if item.strip().isdigit()]
@@ -2059,6 +2290,8 @@ def bulk_update_questions(
         raise HTTPException(status_code=400, detail="Invalid review status")
     if difficulty is not None and difficulty not in {"easy", "moderate", "hard"}:
         raise HTTPException(status_code=400, detail="Invalid difficulty")
+    if lifecycle_status is not None and lifecycle_status not in {"draft", "review", "approved", "published", "deprecated"}:
+        raise HTTPException(status_code=400, detail="Invalid lifecycle status")
     questions = db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.id.in_(selected_ids)).all()
     if not questions:
         raise HTTPException(status_code=404, detail="No matching questions found")
@@ -2067,6 +2300,8 @@ def bulk_update_questions(
             question.review_status = review_status
         if difficulty is not None:
             question.difficulty = difficulty
+        if lifecycle_status is not None:
+            question.lifecycle_status = lifecycle_status
     db.commit()
     log_activity(db, "Updated Questions", f"Bulk updated {len(questions)} question review records.", "review")
     return {"updated": len(questions)}

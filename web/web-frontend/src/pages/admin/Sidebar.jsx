@@ -6,6 +6,7 @@ import UserMgmtBtn from "./UserMgmt";
 import ReportsBtn from "./Reports";
 import LogoutBtn from "./Logout";
 import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
+import { ShieldCheck } from "lucide-react";
 
 const Sidebar = ({ activeTab, setActiveTab }) => {
   return (
@@ -41,6 +42,15 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
         <AcademicMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} />
         <UserMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} />
         <ReportsBtn activeTab={activeTab} setActiveTab={setActiveTab} />
+        <button
+          onClick={() => setActiveTab("governance")}
+          className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150 relative"
+          style={activeTab === "governance" ? { background: "var(--bq-accent)", color: "#ffffff" } : { color: "var(--bq-muted)", background: "transparent" }}
+        >
+          {activeTab === "governance" && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full" style={{ background: "#fff" }} />}
+          <ShieldCheck size={18} style={{ color: activeTab === "governance" ? "#ffffff" : "var(--bq-accent)" }} />
+          <span className="text-sm font-medium tracking-wide">Content Governance</span>
+        </button>
       </nav>
 
       <div className="px-3 py-4" style={{ borderTop: "1px solid rgba(15, 23, 42, 0.08)" }}>

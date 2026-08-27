@@ -12,6 +12,7 @@ class User(Base):
     archived = Column(Boolean, default=False, nullable=False)
     name = Column(String, nullable=True)         # <-- new
     department = Column(String, nullable=True)   # <-- new, only set for role == "faculty"
+    created_at = Column(DateTime, server_default=func.now())
 
 class Department(Base):
     __tablename__ = "departments"
@@ -66,6 +67,7 @@ class GeneratedQuestion(Base):
     explanation = Column(Text)
     topic_name = Column(String, nullable=True)  # 🌟 Added column to record topic origin metadata
     review_status = Column(String(32), nullable=False, default="needs_review", server_default="needs_review")
+    lifecycle_status = Column(String(32), nullable=False, default="draft", server_default="draft")
     difficulty = Column(String(32), nullable=False, default="moderate", server_default="moderate")
     archived = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime, server_default=func.now())
@@ -137,3 +139,13 @@ class QuestionVersion(Base):
     media_type = Column(String(255), nullable=True)
     file_content = Column(LargeBinary, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String(128), unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, server_default=func.now())
+    last_used_at = Column(DateTime, server_default=func.now())
+    expires_at = Column(DateTime, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)

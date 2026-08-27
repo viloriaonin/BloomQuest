@@ -659,6 +659,7 @@ async def confirm_generation(
 
         q = models.GeneratedQuestion(
             subject_id=row["subject_id"],
+            user_id=user_id,
             topic_name=row["topic_name"],
             question=row["question"],
             bloom_level=row["bloom_level"],

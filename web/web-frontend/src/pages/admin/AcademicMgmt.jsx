@@ -169,7 +169,6 @@ const ACADEMIC_API = "/api";
 
 export const AcademicMgmtContent = () => {
   const [departments, setDepartments] = React.useState([]);
-  const [subjects, setSubjects] = React.useState([]);
   const [modal, setModal] = React.useState(null);
   const [editingItem, setEditingItem] = React.useState(null);
   const [form, setForm] = React.useState({ name: "", code: "", department_id: "" });
@@ -179,10 +178,9 @@ export const AcademicMgmtContent = () => {
   const loadData = React.useCallback(async () => {
     setLoading(true);
     try {
-      const [departmentsRes, subjectsRes] = await Promise.all([fetch(`${ACADEMIC_API}/departments`), fetch(`${ACADEMIC_API}/subjects`)]);
-      if (!departmentsRes.ok || !subjectsRes.ok) throw new Error("Could not load academic data.");
+      const departmentsRes = await fetch(`${ACADEMIC_API}/departments`);
+      if (!departmentsRes.ok) throw new Error("Could not load academic data.");
       setDepartments(await departmentsRes.json());
-      setSubjects(await subjectsRes.json());
       setError("");
     } catch (err) { setError(err.message); }
     finally { setLoading(false); }
@@ -198,9 +196,8 @@ export const AcademicMgmtContent = () => {
 
   const submit = async (event) => {
     event.preventDefault();
-    const isSubject = modal === "subject";
-    const endpoint = `${isSubject ? "/subjects" : "/departments"}${editingItem ? `/${editingItem.id}` : ""}`;
-    const payload = isSubject ? { name: form.name, code: form.code, department_id: Number(form.department_id), user_id: localStorage.getItem("user_id") } : { name: form.name, code: form.code };
+    const endpoint = `${"/departments"}${editingItem ? `/${editingItem.id}` : ""}`;
+    const payload = { name: form.name, code: form.code };
     try {
       const response = await fetch(`${ACADEMIC_API}${endpoint}`, { method: editingItem ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if (!response.ok) throw new Error("Could not save this item.");
@@ -214,11 +211,10 @@ export const AcademicMgmtContent = () => {
     if (!response.ok) setError("Could not delete this item."); else loadData();
   };
 
-  return <div className="grid gap-6 xl:grid-cols-2">
+  return <div className="bq-academic-attached grid gap-6">
     {error && <div className="xl:col-span-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
-    <section className="bq-panel rounded-3xl p-6"><div className="mb-6 flex items-start justify-between gap-4"><div><p className="text-sm font-semibold text-slate-500">Departments</p><p className="mt-1 text-xs text-slate-400">Manage academic units and schools</p></div><button className="bq-primary-button" onClick={() => openModal("department")}>Add department</button></div>{loading ? <p className="text-sm text-slate-400">Loading departments...</p> : <div className="space-y-3">{departments.map((department) => <div key={department.id} className="flex items-center justify-between gap-4 rounded-3xl border border-red-100 bg-[#faf7f7] p-5"><div><p className="font-semibold text-slate-900">{department.name}</p><p className="mt-1 text-sm text-slate-500">{department.code}</p></div><div className="flex gap-3"><button className="text-sm font-semibold text-slate-500 hover:text-[#B4454A]" onClick={() => openModal("department", department)}>Edit</button><button className="text-sm font-semibold text-red-600" onClick={() => remove("departments", department.id)}>Delete</button></div></div>)}</div>}</section>
-    <section className="bq-panel rounded-3xl p-6"><div className="mb-6 flex items-start justify-between gap-4"><div><p className="text-sm font-semibold text-slate-500">Subjects</p><p className="mt-1 text-xs text-slate-400">Assign subjects to departments</p></div><button className="bq-primary-button" onClick={() => openModal("subject")}>Add subject</button></div>{loading ? <p className="text-sm text-slate-400">Loading subjects...</p> : <div className="space-y-3">{subjects.map((subject) => <div key={subject.id} className="flex items-center justify-between gap-4 rounded-3xl border border-red-100 bg-[#faf7f7] p-5"><div><p className="font-semibold text-slate-900">{subject.name}</p><p className="mt-1 text-sm text-slate-500">{subject.code} <span className="mx-1 text-slate-300">|</span> {departments.find((item) => item.id === subject.department_id)?.name || "Unassigned"}</p></div><div className="flex gap-3"><button className="text-sm font-semibold text-slate-500 hover:text-[#B4454A]" onClick={() => openModal("subject", subject)}>Edit</button><button className="text-sm font-semibold text-red-600" onClick={() => remove("subjects", subject.id)}>Delete</button></div></div>)}</div>}</section>
-    {modal && <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4"><form onSubmit={submit} className="bq-modal-panel w-full max-w-md p-6"><div className="mb-5 flex items-center justify-between"><h3 className="text-lg font-bold text-slate-900">{editingItem ? "Edit" : "Add"} {modal}</h3><button type="button" className="text-slate-400" onClick={() => setModal(null)}>Close</button></div><label className="mb-4 block text-sm font-semibold text-slate-700">Name<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bq-field mt-1 w-full px-3" /></label><label className="mb-4 block text-sm font-semibold text-slate-700">Code<input required value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} className="bq-field mt-1 w-full px-3" /></label>{modal === "subject" && <label className="mb-5 block text-sm font-semibold text-slate-700">Department<select required value={form.department_id} onChange={(e) => setForm({ ...form, department_id: e.target.value })} className="bq-field mt-1 w-full px-3"><option value="">Select department</option>{departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></label>}<div className="flex justify-end gap-2"><button type="button" className="bq-secondary-button" onClick={() => setModal(null)}>Cancel</button><button className="bq-primary-button">Save</button></div></form></div>}
+    <section className="bq-panel w-full rounded-[32px] p-8"><div className="mb-6 flex items-start justify-between gap-4"><div><p className="text-sm font-semibold text-slate-200">Departments</p><p className="mt-1 text-xs text-slate-400">Manage academic units and schools</p></div><button className="bq-primary-button whitespace-nowrap" onClick={() => openModal("department")}>+ Add New</button></div>{loading ? <p className="text-sm text-slate-400">Loading departments...</p> : departments.length === 0 ? <div className="rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-6 text-center text-sm text-slate-500">No departments yet.</div> : <div className="space-y-4">{departments.map((department) => <div key={department.id} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><div className="flex items-center justify-between gap-6"><div className="min-w-0"><p className="truncate font-semibold text-slate-100">{department.name}</p><p className="mt-1 text-sm text-slate-400">{department.code || "No code"}</p></div><div className="flex shrink-0 items-center gap-6"><span className="text-sm font-medium text-slate-500">{department.faculty_count ?? 0} faculty</span><div className="flex gap-3"><button className="text-sm font-semibold text-slate-400 hover:text-white" onClick={() => openModal("department", department)}>Edit</button><button className="text-sm font-semibold text-red-400" onClick={() => remove("departments", department.id)}>Delete</button></div></div></div></div>)}</div>}</section>
+    {modal && <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4"><form onSubmit={submit} className="bq-modal-panel w-full max-w-md p-6"><div className="mb-5 flex items-center justify-between"><h3 className="text-lg font-bold text-slate-900">{editingItem ? "Edit" : "Add"} department</h3><button type="button" className="text-slate-400" onClick={() => setModal(null)}>Close</button></div><label className="mb-4 block text-sm font-semibold text-slate-700">Name<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bq-field mt-1 w-full px-3" /></label><label className="mb-5 block text-sm font-semibold text-slate-700">Code<input required value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} className="bq-field mt-1 w-full px-3" /></label><div className="flex justify-end gap-2"><button type="button" className="bq-secondary-button" onClick={() => setModal(null)}>Cancel</button><button className="bq-primary-button">Save</button></div></form></div>}
   </div>;
 };
 

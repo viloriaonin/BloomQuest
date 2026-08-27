@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { usePopup } from "../../components/PopupProvider";
 import LoadingSpinner from "../../components/LoadingSpinner";
+import { Activity, CheckSquare, FileText, History, X, Users, UserCheck, UserPlus } from "lucide-react";
 
 const API_BASE_URL = "http://localhost:8000/api";
 
@@ -13,6 +14,15 @@ export const UserMgmtContent = () => {
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [errorRequests, setErrorRequests] = useState("");
   const [errorUsers, setErrorUsers] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("active");
+  const [activityFilter, setActivityFilter] = useState("all");
+  const [selectedUserIds, setSelectedUserIds] = useState([]);
+  const [activityUser, setActivityUser] = useState(null);
+  const [userActivity, setUserActivity] = useState([]);
+  const [facultyDetail, setFacultyDetail] = useState(null);
+  const [loadingActivity, setLoadingActivity] = useState(false);
 
   const [editingUser, setEditingUser] = useState(null);
   const [adminPassword, setAdminPassword] = useState("");
@@ -274,33 +284,100 @@ export const UserMgmtContent = () => {
     }
   };
 
+  const matchesSearch = (user) => {
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) return true;
+    return [user.full_name, user.name, user.email, user.department, user.employee_id]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query));
+  };
+
+  const matchesFilters = (user) => {
+    const roleMatches = roleFilter === "all" || String(user.role || "").toLowerCase() === roleFilter;
+    const activityCount = Number(user.activity_count || 0);
+    const activityMatches = activityFilter === "all" || (activityFilter === "active" ? activityCount > 0 : activityCount === 0);
+    return roleMatches && activityMatches;
+  };
+
+  const formatActivityDate = (value) => {
+    if (!value) return "No activity";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "No activity";
+    const elapsedMs = Date.now() - date.getTime();
+    const elapsedHours = Math.floor(elapsedMs / (1000 * 60 * 60));
+    if (elapsedHours < 24) {
+      if (elapsedHours < 1) {
+        const elapsedMinutes = Math.max(1, Math.floor(elapsedMs / (1000 * 60)));
+        return `${elapsedMinutes} minute${elapsedMinutes === 1 ? "" : "s"} ago`;
+      }
+      return `${elapsedHours} hour${elapsedHours === 1 ? "" : "s"} ago`;
+    }
+    return date.toLocaleDateString([], { dateStyle: "medium" });
+  };
+
+  const filteredRequests = requests.filter(matchesSearch);
+  const filteredActiveUsers = activeUsers.filter((user) => matchesSearch(user) && matchesFilters(user));
+  const filteredArchivedUsers = archivedUsers.filter((user) => matchesSearch(user) && matchesFilters(user));
+
+  const visibleUsers = statusFilter === "archived" ? filteredArchivedUsers : statusFilter === "all" ? [...filteredActiveUsers, ...filteredArchivedUsers] : filteredActiveUsers;
+
+  const openActivity = async (user) => {
+    setActivityUser(user);
+    setLoadingActivity(true);
+    try {
+      const response = await fetch(`${API_BASE_URL.replace("/api", "")}/api/admin/users/${user.id}/overview`);
+      const data = response.ok ? await response.json() : null;
+      setFacultyDetail(data);
+      setUserActivity(data?.activities || []);
+    } finally {
+      setLoadingActivity(false);
+    }
+  };
+
+  const toggleUser = (id) => setSelectedUserIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
+
+  const runBulkAction = async (action) => {
+    if (!selectedUserIds.length) return;
+    const confirmed = await showConfirm(`Apply ${action.replace("_", " ")} to ${selectedUserIds.length} selected users?`, "Bulk User Action");
+    if (!confirmed) return;
+    const response = await fetch(`${API_BASE_URL.replace("/api", "")}/api/admin/users/bulk`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_ids: selectedUserIds, action }) });
+    if (!response.ok) return showAlert("Bulk action failed.", "Admin Error");
+    setSelectedUserIds([]);
+    await fetchUsers();
+  };
+
   return (
-    <div className="space-y-6 relative page-transition">
-      <div className="grid gap-5 md:grid-cols-4">
+    <div className="bq-admin-user-management bq-attached-user-ui space-y-6 relative page-transition">
+      <div className="grid gap-3 md:grid-cols-4">
         {[
           { label: "Total Users", value: (activeUsers.length + archivedUsers.length).toString(), tone: "text-red-700" },
           { label: "Active", value: activeUsers.length.toString(), tone: "text-green-700" },
           { label: "Pending", value: requests.length.toString(), tone: "text-amber-700" },
           { label: "Archived", value: archivedUsers.length.toString(), tone: "text-slate-700" },
         ].map((card) => (
-          <div key={card.label} className="rounded-3xl bg-white border border-gray-200 p-6 shadow-sm">
+          <div key={card.label} className="bq-admin-user-stat rounded-md bg-white border border-gray-200 p-5 shadow-sm">
             <div className="flex justify-between items-start gap-4">
               <div>
                 <p className="text-sm font-medium text-gray-500">{card.label}</p>
                 <p className="mt-4 text-3xl font-bold text-gray-900">{card.value}</p>
               </div>
-              <div className={`rounded-2xl bg-gray-50 p-3 ${card.tone}`}>
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /></svg>
+              <div className={`bq-user-stat-icon rounded-2xl bg-gray-50 p-3 ${card.tone}`}>
+                {card.label === "Total Users" ? <Users size={18} /> : card.label === "Active" ? <UserCheck size={18} /> : <UserPlus size={18} />}
               </div>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="rounded-3xl bg-white border border-gray-200 p-6 shadow-sm">
+      <div className="bq-admin-user-section rounded-md bg-white border border-gray-200 p-5 shadow-sm">
         <div className="mb-4">
           <h3 className="text-base font-bold text-gray-900">Pending Account Requests</h3>
           <p className="text-xs text-gray-500 mt-0.5">Review submissions from the administrator contact form.</p>
+        </div>
+
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="text-sm font-medium text-gray-500">Review submissions from the administrator contact form.</div>
+          <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search users..." className="bq-field max-w-xs px-3 py-2 text-sm" />
         </div>
 
         {loadingRequests ? (
@@ -309,11 +386,11 @@ export const UserMgmtContent = () => {
           </div>
         ) : errorRequests ? (
           <div className="p-4 rounded-xl text-center text-sm text-red-700 bg-red-50 border border-red-100">{errorRequests}</div>
-        ) : requests.length === 0 ? (
+        ) : filteredRequests.length === 0 ? (
           <div className="py-8 text-center text-sm text-gray-400 border border-dashed border-gray-200 rounded-2xl">No pending registration requests found.</div>
         ) : (
           <div className="space-y-3">
-            {requests.map((request, idx) => {
+            {filteredRequests.map((request, idx) => {
               const name = request.full_name || request.name || "Unknown User";
               const email = request.email;
               const dept = request.department || "No Department Provided";
@@ -349,28 +426,35 @@ export const UserMgmtContent = () => {
         )}
       </div>
 
-      <div className="rounded-3xl bg-white border border-gray-200 p-6 shadow-sm overflow-x-auto">
+      <div className="bq-admin-user-section rounded-md bg-white border border-gray-200 p-5 shadow-sm overflow-hidden">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="bq-field px-3 py-2 text-sm"><option value="all">All roles</option><option value="faculty">Faculty</option><option value="student">Student</option></select>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="bq-field px-3 py-2 text-sm"><option value="active">Active users</option><option value="archived">Archived users</option><option value="all">All statuses</option></select>
+          <select value={activityFilter} onChange={(event) => setActivityFilter(event.target.value)} className="bq-field px-3 py-2 text-sm"><option value="all">Any activity</option><option value="active">Has activity</option><option value="inactive">Inactive</option></select>
+          <button type="button" onClick={() => setSelectedUserIds(visibleUsers.map((user) => user.id))} className="bq-secondary-button px-3 py-2 text-sm"><CheckSquare size={14} /> Select visible</button>
+          {selectedUserIds.length > 0 && <><button type="button" onClick={() => runBulkAction("archive")} className="bq-secondary-button px-3 py-2 text-sm">Archive selected</button><button type="button" onClick={() => runBulkAction("restore")} className="bq-secondary-button px-3 py-2 text-sm">Restore selected</button><button type="button" onClick={() => runBulkAction("revoke_sessions")} className="bq-secondary-button px-3 py-2 text-sm">Sign out selected</button></>}
+        </div>
         <div className="text-sm font-medium text-gray-500 mb-4">
-          {loadingUsers ? <LoadingSpinner label="Loading users..." spinnerColor="border-gray-500" /> : `Showing ${activeUsers.length} active users`}
+          {loadingUsers ? <LoadingSpinner label="Loading users..." spinnerColor="border-gray-500" /> : `Showing ${filteredActiveUsers.length} of ${activeUsers.length} active users`}
         </div>
         {errorUsers ? (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errorUsers}</div>
         ) : null}
-        <table className="min-w-full text-left text-sm">
+        <table className="w-full table-fixed text-left text-sm">
           <thead>
             <tr className="border-b border-gray-200 text-gray-600">
-              {['Name', 'Employee ID', 'Department', 'College', 'Status', 'Joined', 'Actions'].map((heading) => (
+              {['Name', 'Role', 'Department', 'Status', 'Actions'].map((heading) => (
                 <th key={heading} className="py-4 pr-6 font-semibold">{heading}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {activeUsers.length === 0 ? (
+            {visibleUsers.length === 0 ? (
               <tr>
-                <td colSpan="7" className="py-8 text-center text-gray-400">No active users found in database.</td>
+                <td colSpan="5" className="py-8 text-center text-gray-400">No active users found in database.</td>
               </tr>
             ) : (
-              activeUsers.map((user) => {
+              visibleUsers.map((user) => {
                 const displayName = user.full_name || user.name || "Unknown";
                 const displayInitials = displayName
                   .split(' ')
@@ -384,6 +468,7 @@ export const UserMgmtContent = () => {
                   <tr key={user.id || user.email} className="hover:bg-gray-50 transition-colors">
                     <td className="py-5 pr-6">
                       <div className="flex items-center gap-3">
+                        <input type="checkbox" checked={selectedUserIds.includes(user.id)} onChange={() => toggleUser(user.id)} aria-label={`Select ${displayName}`} />
                         <div className="flex h-11 w-11 items-center justify-center rounded-full bg-red-700 text-sm font-bold text-white">
                           {displayInitials}
                         </div>
@@ -393,30 +478,15 @@ export const UserMgmtContent = () => {
                         </div>
                       </div>
                     </td>
-                    <td className="py-5 pr-6 text-gray-600">{user.employee_id || user.id || "N/A"}</td>
+                    <td className="py-5 pr-6 text-gray-600">{user.role || "N/A"}</td>
                     <td className="py-5 pr-6 text-gray-600">{user.department || "N/A"}</td>
-                    <td className="py-5 pr-6 text-gray-600">{user.college || "N/A"}</td>
                     <td className="py-5 pr-6">
                       <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${displayStatus === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'}`}>
                         {displayStatus}
                       </span>
                     </td>
-                    <td className="py-5 pr-6 text-gray-600">{user.joined_date || user.joined || "Recent"}</td>
                     <td className="py-5 pr-6">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleOpenManage(user)}
-                          className="rounded-full border border-gray-300 bg-white px-4 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition shadow-sm"
-                        >
-                          Manage
-                        </button>
-                        <button
-                          onClick={() => handleArchiveUser(user)}
-                          className="rounded-full border border-gray-300 bg-white px-4 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition"
-                        >
-                          Archive
-                        </button>
-                      </div>
+                      <button type="button" onClick={() => openActivity(user)} className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition"><Activity size={13} /> Activity</button>
                     </td>
                   </tr>
                 );
@@ -426,7 +496,7 @@ export const UserMgmtContent = () => {
         </table>
       </div>
 
-      <div className="rounded-3xl bg-white border border-gray-200 p-6 shadow-sm overflow-x-auto mt-6">
+      <div className="bq-admin-user-section rounded-md bg-white border border-gray-200 p-5 shadow-sm overflow-hidden mt-6">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-base font-bold text-gray-900">Archived Users</h3>
@@ -437,11 +507,11 @@ export const UserMgmtContent = () => {
           </span>
         </div>
 
-        {archivedUsers.length === 0 ? (
+            {filteredArchivedUsers.length === 0 ? (
           <div className="py-8 text-center text-sm text-gray-400 border border-dashed border-gray-200 rounded-2xl">No archived users found.</div>
         ) : (
           <div className="space-y-3">
-            {archivedUsers.map((user) => {
+            {filteredArchivedUsers.map((user) => {
               const displayName = user.full_name || user.name || "Unknown";
               return (
                 <div key={user.email} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-gray-50 border border-gray-100 transition hover:bg-gray-100/70">
@@ -469,6 +539,22 @@ export const UserMgmtContent = () => {
           </div>
         )}
       </div>
+
+      {activityUser && (
+        <div className="bq-modal-overlay fixed inset-0 z-50 flex justify-end" onMouseDown={(event) => { if (event.target === event.currentTarget) setActivityUser(null); }}>
+          <aside className="bq-modal-panel h-full w-full max-w-xl overflow-y-auto rounded-none border-l p-6">
+            <div className="mb-6 flex items-start justify-between gap-4 border-b border-gray-200 pb-4">
+              <div><p className="bq-eyebrow">User activity</p><h3 className="text-xl font-bold text-gray-900">{activityUser.full_name || activityUser.email}</h3><p className="mt-1 text-sm text-gray-500">{activityUser.email}</p><div className="mt-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3"><div className="rounded-lg border border-gray-200 bg-gray-50 p-2"><span className="block text-gray-400">Joined</span><strong className="mt-1 block text-gray-700">{formatActivityDate(activityUser.created_at || activityUser.joined)}</strong></div><div className="rounded-lg border border-gray-200 bg-gray-50 p-2"><span className="block text-gray-400">Last Active</span><strong className="mt-1 block text-gray-700">{formatActivityDate(activityUser.last_active)}</strong></div><div className="rounded-lg border border-gray-200 bg-gray-50 p-2"><span className="block text-gray-400">Last Export</span><strong className="mt-1 block text-gray-700">{formatActivityDate(activityUser.last_export)}</strong></div><div className="rounded-lg border border-gray-200 bg-gray-50 p-2"><span className="block text-gray-400">Last Generate</span><strong className="mt-1 block text-gray-700">{formatActivityDate(activityUser.last_generate)}</strong></div><div className="rounded-lg border border-gray-200 bg-gray-50 p-2"><span className="block text-gray-400">Activity</span><strong className="mt-1 block text-gray-700">{activityUser.activity_count ?? 0} records</strong></div></div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => { setActivityUser(null); handleOpenManage(activityUser); }} className="bq-primary-button px-3 py-2 text-xs">Manage User</button>{activityUser.archived ? <button type="button" onClick={() => { setActivityUser(null); handleRestoreUser(activityUser.email); }} className="bq-secondary-button px-3 py-2 text-xs">Restore User</button> : <button type="button" onClick={() => { setActivityUser(null); handleArchiveUser(activityUser); }} className="bq-secondary-button px-3 py-2 text-xs">Archive User</button>}</div></div>
+              <button type="button" onClick={() => setActivityUser(null)} className="bq-secondary-button px-2 py-2"><X size={16} /></button>
+            </div>
+            {loadingActivity ? <LoadingSpinner label="Loading faculty history..." spinnerColor="border-gray-500" /> : facultyDetail && <div className="space-y-6">
+              <section><h4 className="mb-3 flex items-center gap-2 text-sm font-bold text-gray-900"><FileText size={15} /> Subjects created ({facultyDetail.subjects.length})</h4>{facultyDetail.subjects.length ? <div className="space-y-2">{facultyDetail.subjects.map((subject) => <article key={subject.id} className="rounded-xl border border-gray-200 bg-gray-50 p-3"><div className="flex items-center justify-between gap-3"><div><p className="font-semibold text-gray-900">{subject.name}</p><p className="text-xs text-gray-500">{subject.code || "No course code"} · {subject.department}</p></div><span className="text-xs text-gray-400">{formatActivityDate(subject.created_at)}</span></div></article>)}</div> : <p className="text-sm text-gray-500">No subjects created.</p>}</section>
+              <section><h4 className="mb-3 flex items-center gap-2 text-sm font-bold text-gray-900"><FileText size={15} /> Questions created ({facultyDetail.questions.length})</h4>{facultyDetail.questions.length ? <div className="space-y-2">{facultyDetail.questions.map((question) => <article key={question.id} className="rounded-xl border border-gray-200 bg-gray-50 p-3"><p className="font-semibold text-gray-900">{question.question}</p><p className="mt-1 text-xs text-gray-500">{question.subject} · {question.topic} · {question.type} · {question.bloom_level || "Unclassified"} · {question.difficulty || "No difficulty"}</p><div className="mt-2 flex items-center justify-between"><span className="rounded-full bg-red-100 px-2 py-1 text-[10px] font-semibold text-red-700">{question.lifecycle_status}</span><span className="text-xs text-gray-400">{formatActivityDate(question.created_at)}</span></div></article>)}</div> : <p className="text-sm text-gray-500">No questions created.</p>}</section>
+              <section><h4 className="mb-3 flex items-center gap-2 text-sm font-bold text-gray-900"><History size={15} /> Complete activity history ({userActivity.length})</h4>{userActivity.length ? <div className="space-y-3">{userActivity.map((entry) => <article key={entry.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-gray-900">{entry.action}</p><p className="mt-1 text-sm text-gray-500">{entry.detail || "No additional details"}</p>{entry.filename && <p className="mt-1 text-xs text-gray-400">File: {entry.filename}</p>}</div><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${entry.status === "error" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>{entry.status || "success"}</span></div><p className="mt-3 text-xs text-gray-400">{entry.type || "activity"} · {formatActivityDate(entry.created_at)}</p></article>)}</div> : <p className="text-sm text-gray-500">No recorded activity.</p>}</section>
+            </div>}
+          </aside>
+        </div>
+      )}
 
       {editingUser && (
         <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -519,10 +605,7 @@ export const UserMgmtContent = () => {
                       <span className="font-medium">Email</span>
                       <span>{verifiedUserCredentials.email}</span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium">Password</span>
-                      <span>{verifiedUserCredentials.password}</span>
-                    </div>
+                    <p className="text-xs text-gray-500">Password is protected and cannot be displayed. Use the password update form below to set a new one.</p>
                     <div className="flex items-center justify-between">
                       <span className="font-medium">Role</span>
                       <span>{verifiedUserCredentials.role || "faculty"}</span>

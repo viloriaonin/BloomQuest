@@ -4,7 +4,8 @@ import { useNavigate } from "react-router-dom";
 const LogoutBtn = () => {
   const navigate = useNavigate();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await fetch("/api/logout", { method: "POST" }).catch(() => {});
     localStorage.removeItem("token");
     localStorage.removeItem("role");
     localStorage.removeItem("email");
