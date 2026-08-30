@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
-from sqlalchemy import func, text
+from sqlalchemy import func, text, or_
 from dotenv import load_dotenv
 from database import engine, get_db, SessionLocal
 from file_extractor import extract_text
@@ -129,16 +129,27 @@ def build_assessment_document(questions, subject_name, export_format, include_an
 
 
 def matching_choices(question):
-    options = question.options
-    if isinstance(options, str):
-        try:
-            options = json.loads(options)
-        except (TypeError, json.JSONDecodeError):
-            options = None
-    if isinstance(options, dict) and options.get("left_items") and options.get("right_items"):
-        return options["left_items"], options["right_items"]
+    candidates = [getattr(question, "options", None), getattr(question, "matching_options", None), getattr(question, "choice_map", None)]
+    for candidate in candidates:
+        if isinstance(candidate, str):
+            try:
+                candidate = json.loads(candidate)
+            except (TypeError, json.JSONDecodeError):
+                candidate = None
+        if isinstance(candidate, dict):
+            for left_key, right_key in (("left_items", "right_items"), ("column_a", "column_b"), ("left", "right")):
+                left_items = candidate.get(left_key) or []
+                right_items = candidate.get(right_key) or []
+                if left_items and right_items:
+                    return list(left_items), list(right_items)
 
-    answer = question.correct_answer
+    for left_key, right_key in (("left_items", "right_items"), ("column_a", "column_b")):
+        left_items = getattr(question, left_key, None)
+        right_items = getattr(question, right_key, None)
+        if left_items and right_items:
+            return list(left_items), list(right_items)
+
+    answer = getattr(question, "correct_answer", None)
     if isinstance(answer, str):
         try:
             answer = json.loads(answer)
@@ -146,6 +157,16 @@ def matching_choices(question):
             answer = None
     if isinstance(answer, dict):
         return list(answer.keys()), list(answer.values())
+    if isinstance(answer, list):
+        mapping = {}
+        for item in answer:
+            if isinstance(item, dict):
+                mapping.update({str(k): str(v) for k, v in item.items()})
+            elif isinstance(item, str) and "->" in item:
+                left, right = item.split("->", 1)
+                mapping[str(left).strip()] = str(right).strip()
+        if mapping:
+            return list(mapping.keys()), list(mapping.values())
     return [], []
 
 
@@ -306,6 +327,7 @@ def get_admin_insights(db: Session = Depends(get_db), _admin: models.User = Depe
     }
 
 otp_store = {}
+change_password_otp_store = {}
 contact_admin_otp_store = {}
 contact_admin_pending_requests = {}
 
@@ -486,6 +508,64 @@ class AdminVerifyRequest(BaseModel):
 
 class UpdatePasswordRequest(BaseModel):
     email: str = Field(..., min_length=5, max_length=255)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = normalize_email(value)
+        if not EMAIL_REGEX.fullmatch(normalized):
+            raise ValueError("Please provide a valid email address.")
+        return normalized
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        error = validate_password_strength(value)
+        if error:
+            raise ValueError(error)
+        return value
+
+
+class ChangePasswordOtpRequest(BaseModel):
+    email: str = Field(..., min_length=5, max_length=255)
+    current_password: str = Field(..., min_length=8, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = normalize_email(value)
+        if not EMAIL_REGEX.fullmatch(normalized):
+            raise ValueError("Please provide a valid email address.")
+        return normalized
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        error = validate_password_strength(value)
+        if error:
+            raise ValueError(error)
+        return value
+
+
+class VerifyChangePasswordOtpRequest(BaseModel):
+    email: str = Field(..., min_length=5, max_length=255)
+    otp: str = Field(..., min_length=4, max_length=8)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = normalize_email(value)
+        if not EMAIL_REGEX.fullmatch(normalized):
+            raise ValueError("Please provide a valid email address.")
+        return normalized
+
+
+class CompleteChangePasswordRequest(BaseModel):
+    email: str = Field(..., min_length=5, max_length=255)
+    current_password: str = Field(..., min_length=8, max_length=128)
+    otp: str | None = None
     new_password: str = Field(..., min_length=8, max_length=128)
 
     @field_validator("email")
@@ -799,6 +879,13 @@ def _cleanup_otp(email: str):
     if record and record["expires_at"] < datetime.utcnow():
         otp_store.pop(email, None)
 
+
+def _cleanup_change_password_otp(email: str):
+    record = change_password_otp_store.get(email)
+    if record and record["expires_at"] < datetime.utcnow():
+        change_password_otp_store.pop(email, None)
+
+
 @app.post("/api/forgot-password/send-otp")
 def send_otp(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
     enforce_rate_limit("otp", data.email)
@@ -856,6 +943,74 @@ def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
     log_activity(db, "Password Reset Completed", f"Password reset completed for {data.email}.", "security")
 
     return {"message": "Password has been reset successfully."}
+
+
+@app.post("/api/user/change-password/request-otp")
+def request_user_change_password_otp(data: ChangePasswordOtpRequest, db: Session = Depends(get_db)):
+    enforce_rate_limit("change-password-otp", data.email)
+    normalized_email = normalize_email(data.email)
+    user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if not verify_password(data.current_password, user.password):
+        raise HTTPException(status_code=401, detail="The current password is incorrect.")
+    if data.current_password == data.new_password:
+        raise HTTPException(status_code=400, detail="Your new password must be different from the current password.")
+
+    code = f"{random.randint(0, 999999):06d}"
+    change_password_otp_store[normalized_email] = {
+        "otp": code,
+        "expires_at": datetime.utcnow() + timedelta(minutes=10),
+    }
+
+    sent = send_password_reset_email(normalized_email, code)
+    if not sent:
+        logger.warning("[OTP] User password change email not sent; returning demo code for %s", normalized_email)
+        return {"message": "A verification code has been sent to your email address.", "demo_code": code}
+
+    log_activity(db, "Password Change OTP Sent", f"Sent a password change verification code for {normalized_email}.", "security", user_id=user.id)
+    return {"message": "A verification code has been sent to your email address."}
+
+
+@app.post("/api/user/change-password/verify-otp")
+def verify_user_change_password_otp(data: VerifyChangePasswordOtpRequest, db: Session = Depends(get_db)):
+    enforce_rate_limit("change-password-verify", data.email)
+    normalized_email = normalize_email(data.email)
+    _cleanup_change_password_otp(normalized_email)
+    record = change_password_otp_store.get(normalized_email)
+    if not record or record["otp"] != data.otp:
+        raise HTTPException(status_code=400, detail="Incorrect or expired verification code.")
+
+    log_activity(db, "Password Change Verified", f"Verified password change code for {normalized_email}.", "security")
+    return {"message": "OTP verified."}
+
+
+@app.patch("/api/user/change-password/update")
+def update_user_password_with_otp(data: CompleteChangePasswordRequest, db: Session = Depends(get_db)):
+    enforce_rate_limit("change-password-update", data.email)
+    normalized_email = normalize_email(data.email)
+
+    if data.otp:
+        _cleanup_change_password_otp(normalized_email)
+        record = change_password_otp_store.get(normalized_email)
+        if not record or record["otp"] != data.otp:
+            raise HTTPException(status_code=400, detail="Invalid or expired verification code.")
+
+    user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if not verify_password(data.current_password, user.password):
+        raise HTTPException(status_code=401, detail="The current password is incorrect.")
+    if data.current_password == data.new_password:
+        raise HTTPException(status_code=400, detail="Your new password must be different from the current password.")
+
+    user.password = hash_password(data.new_password)
+    db.commit()
+    change_password_otp_store.pop(normalized_email, None)
+    log_activity(db, "Password Change Completed", f"Password changed successfully for {normalized_email}.", "security", user_id=user.id)
+
+    return {"message": "Password updated successfully."}
+
 
 @app.post("/api/login")
 def login(data: LoginRequest, db: Session = Depends(get_db)):
@@ -1475,6 +1630,7 @@ async def generate_questions(
             question = models.GeneratedQuestion(
                 tos_id=tos_record.id,
                 subject_id=upload.subject_id,
+                user_id=upload.user_id,
                 bloom_level=bloom_level,
                 question_type=q.get("type"),
                 question=q["question"],
@@ -1755,6 +1911,22 @@ def delete_subject(subject_id: int, user_id: int = None, db: Session = Depends(g
     log_activity(db, "Subject Deleted", f"Deleted subject '{subject.name}'.", "academic", user_id=user_id)
     return {"message": "Subject deleted successfully."}
 
+@app.delete("/api/recycle-bin/subjects/{subject_id}")
+def permanently_delete_subject(subject_id: int, user_id: int = None, db: Session = Depends(get_db)):
+    subject = db.query(models.Subject).filter(
+        models.Subject.id == subject_id,
+        models.Subject.archived.is_(True),
+    ).first()
+    if not subject or (user_id and subject.user_id not in (None, user_id)):
+        raise HTTPException(status_code=404, detail="Archived subject not found.")
+    subject_name = subject.name
+    db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.subject_id == subject_id).update({"subject_id": None}, synchronize_session=False)
+    db.query(models.UploadedFile).filter(models.UploadedFile.subject_id == subject_id).update({"subject_id": None}, synchronize_session=False)
+    db.delete(subject)
+    db.commit()
+    log_activity(db, "Subject Permanently Deleted", f"Permanently deleted subject '{subject_name}'.", "delete", user_id=user_id)
+    return {"message": "Subject permanently deleted."}
+
 @app.get("/api/recycle-bin/subjects")
 def get_archived_subjects(user_id: int = None, db: Session = Depends(get_db)):
     query = db.query(models.Subject).filter(models.Subject.archived.is_(True))
@@ -1890,13 +2062,18 @@ def get_subjects(user_id: int = None, db: Session = Depends(get_db)):
         query = query.outerjoin(
             models.UploadedFile,
             models.UploadedFile.subject_id == models.Subject.id,
+        ).outerjoin(
+            models.GeneratedQuestion,
+            models.GeneratedQuestion.subject_id == models.Subject.id,
         ).filter(
             (models.Subject.user_id == user_id)
             | (models.UploadedFile.user_id == user_id)
+            | (models.GeneratedQuestion.user_id == user_id)
         ).distinct()
     subjects = query.all()
     question_counts = dict(
         db.query(models.GeneratedQuestion.subject_id, func.count(models.GeneratedQuestion.id))
+        .filter(models.GeneratedQuestion.archived.is_(False))
         .group_by(models.GeneratedQuestion.subject_id)
         .all()
     )
@@ -1949,13 +2126,20 @@ def get_questions(
 ):
     query = db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.archived.is_(False))
     if user_id:
-        query = query.join(
+        query = query.outerjoin(
             models.TableOfSpecification,
             models.TableOfSpecification.id == models.GeneratedQuestion.tos_id,
-        ).join(
+        ).outerjoin(
             models.UploadedFile,
             models.UploadedFile.id == models.TableOfSpecification.upload_id,
-        ).filter(models.UploadedFile.user_id == user_id)
+        ).outerjoin(
+            models.Subject,
+            models.Subject.id == models.GeneratedQuestion.subject_id,
+        ).filter(or_(
+            models.GeneratedQuestion.user_id == user_id,
+            models.UploadedFile.user_id == user_id,
+            models.Subject.user_id == user_id,
+        ))
     if subject_id:
         query = query.filter(models.GeneratedQuestion.subject_id == subject_id)
     if bloom_level:
@@ -2145,6 +2329,18 @@ def download_saved_file(activity_id: int, user_id: int = None, db: Session = Dep
     return Response(content=log.file_content, media_type=log.media_type or "application/octet-stream", headers={"Content-Disposition": f"attachment; filename={log.filename or 'downloaded-file'}"})
 
 
+@app.get("/api/downloads/{activity_id}/view")
+def view_saved_file(activity_id: int, user_id: int = None, db: Session = Depends(get_db)):
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User identification is required")
+    query = db.query(models.ActivityLog).filter(models.ActivityLog.id == activity_id, models.ActivityLog.type == "download")
+    query = query.filter(models.ActivityLog.user_id == user_id)
+    log = query.first()
+    if not log or not log.file_content:
+        raise HTTPException(status_code=404, detail="Saved download not found")
+    return Response(content=log.file_content, media_type=log.media_type or "application/octet-stream", headers={"Content-Disposition": f"inline; filename={log.filename or 'downloaded-file'}"})
+
+
 @app.get("/api/downloads/{activity_id}/preview")
 def preview_saved_file(activity_id: int, user_id: int = None, db: Session = Depends(get_db)):
     if not user_id:
@@ -2177,12 +2373,94 @@ def preview_saved_file(activity_id: int, user_id: int = None, db: Session = Depe
             blocks.append(f"<table><tbody>{''.join(rows)}</tbody></table>")
         return {"kind": "html", "filename": log.filename, "content": "".join(blocks)}
     if media_type.endswith("spreadsheetml.sheet"):
-        workbook = openpyxl.load_workbook(io.BytesIO(log.file_content), read_only=True, data_only=True)
-        sheets = []
+        workbook = openpyxl.load_workbook(io.BytesIO(log.file_content), read_only=False, data_only=True)
+        candidate_sheets = []
         for sheet in workbook.worksheets:
-            rows = [["" if value is None else str(value) for value in row] for row in sheet.iter_rows(values_only=True)]
-            sheets.append({"name": sheet.title, "rows": rows})
-        return {"kind": "spreadsheet", "filename": log.filename, "sheets": sheets}
+            if sheet.sheet_state == "hidden":
+                continue
+            text_values = []
+            for row in sheet.iter_rows(min_row=1, max_row=min(15, sheet.max_row), min_col=1, max_col=min(12, sheet.max_column)):
+                for cell in row:
+                    if cell.value is None:
+                        continue
+                    text_values.append(str(cell.value).strip().lower())
+            if any("table of specifications" in value for value in text_values):
+                candidate_sheets.append(sheet)
+        if not candidate_sheets:
+            candidate_sheets = [sheet for sheet in workbook.worksheets if sheet.sheet_state != "hidden"]
+        if not candidate_sheets:
+            return {"kind": "text", "filename": log.filename, "content": log.file_content.decode("utf-8", errors="replace")}
+
+        sheets = []
+        for sheet in candidate_sheets[:1]:
+            merged_ranges = []
+            merged_cells = getattr(sheet, "merged_cells", None)
+            if merged_cells is not None:
+                for merged in merged_cells.ranges:
+                    merged_ranges.append({
+                        "min_row": merged.min_row,
+                        "max_row": merged.max_row,
+                        "min_col": merged.min_col,
+                        "max_col": merged.max_col,
+                    })
+
+            html_rows = []
+            occupied = set()
+            for row in sheet.iter_rows():
+                cells = []
+                for cell in row:
+                    if (cell.row, cell.column) in occupied:
+                        continue
+                    value = "" if cell.value is None else str(cell.value)
+                    row_span = 1
+                    col_span = 1
+                    for merged in merged_ranges:
+                        if (
+                            merged["min_row"] <= cell.row <= merged["max_row"]
+                            and merged["min_col"] <= cell.column <= merged["max_col"]
+                            and (merged["min_row"], merged["min_col"]) == (cell.row, cell.column)
+                        ):
+                            row_span = merged["max_row"] - merged["min_row"] + 1
+                            col_span = merged["max_col"] - merged["min_col"] + 1
+                            for rr in range(merged["min_row"], merged["max_row"] + 1):
+                                for cc in range(merged["min_col"], merged["max_col"] + 1):
+                                    occupied.add((rr, cc))
+                            break
+
+                    style_parts = []
+                    if cell.font and cell.font.bold:
+                        style_parts.append("font-weight: 700;")
+                    if cell.alignment and cell.alignment.horizontal:
+                        style_parts.append(f"text-align: {cell.alignment.horizontal};")
+                    if cell.border:
+                        style_parts.append("border: 1px solid #cbd5e1;")
+                    if cell.fill and getattr(cell.fill, "fill_type", None) == "solid":
+                        style_parts.append("background-color: #f8fafc;")
+                    cells.append({
+                        "value": value,
+                        "row_span": row_span,
+                        "col_span": col_span,
+                        "style": "".join(style_parts),
+                    })
+                if cells:
+                    html_rows.append(cells)
+
+            rows_html = []
+            for row in html_rows:
+                cells_html = []
+                for cell in row:
+                    cells_html.append(
+                        f'<td style="{cell["style"]}" rowspan="{cell["row_span"]}" colspan="{cell["col_span"]}">{cell["value"]}</td>'
+                    )
+                rows_html.append(f"<tr>{''.join(cells_html)}</tr>")
+            sheets.append({
+                "name": sheet.title,
+                "html": f"<table style='border-collapse: collapse; width: 100%; font-size: 12px; text-align: left;'>{''.join(rows_html)}</table>",
+            })
+        content_sections = []
+        for sheet in sheets:
+            content_sections.append(f"<section style='margin-bottom: 24px;'><h3 style='margin: 0 0 12px; font-weight: 700;'>{sheet['name']}</h3>{sheet['html']}</section>")
+        return {"kind": "html", "filename": log.filename, "content": "".join(content_sections)}
     return {"kind": "text", "filename": log.filename, "content": log.file_content.decode("utf-8", errors="replace")}
 
 
@@ -2324,6 +2602,23 @@ def delete_question(question_id: int, user_id: int = None, db: Session = Depends
     return {"message": "Question deleted successfully"}
 
 
+@app.delete("/api/recycle-bin/questions/{question_id}")
+def permanently_delete_question(question_id: int, user_id: int = None, db: Session = Depends(get_db)):
+    question = db.query(models.GeneratedQuestion).filter(
+        models.GeneratedQuestion.id == question_id,
+        models.GeneratedQuestion.archived.is_(True),
+    ).first()
+    if not question or (user_id and question.user_id not in (None, user_id)):
+        raise HTTPException(status_code=404, detail="Archived question not found.")
+    question_preview = question.question[:60] if question.question else f"Question #{question_id}"
+    db.query(models.QuestionVersion).filter(models.QuestionVersion.question_id == question_id).delete(synchronize_session=False)
+    db.query(models.QuestionSetItem).filter(models.QuestionSetItem.question_id == question_id).delete(synchronize_session=False)
+    db.delete(question)
+    db.commit()
+    log_activity(db, "Question Permanently Deleted", f"Permanently deleted question: '{question_preview}'.", "delete", user_id=user_id)
+    return {"message": "Question permanently deleted."}
+
+
 @app.post("/api/questions/export/tos")
 def export_question_bank_tos(
     subject_id: int = Form(...),
@@ -2462,13 +2757,14 @@ def export_assessment(
 
         normalized_questions = []
         for question in questions:
+            left_items, right_items = matching_choices(question) if question.question_type == "Matching Type" else ([], [])
             normalized_questions.append(type("QuestionLike", (), {
                 "question": getattr(question, "question", "") or "",
                 "question_type": getattr(question, "question_type", "") or "",
-                "options": getattr(question, "options", None) or [],
+                "options": getattr(question, "options", None) or {"left_items": left_items, "right_items": right_items},
                 "correct_answer": getattr(question, "correct_answer", "") or "",
-                "left_items": matching_choices(question)[0] if question.question_type == "Matching Type" else [],
-                "right_items": matching_choices(question)[1] if question.question_type == "Matching Type" else [],
+                "left_items": left_items,
+                "right_items": right_items,
             })())
 
         content, filename = build_assessment_document(normalized_questions, subject.name, export_format.lower(), include_answer_key=include_answer_key, answer_mode=answer_mode)

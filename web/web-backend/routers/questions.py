@@ -341,6 +341,120 @@ def parse_syllabus_excel(contents: bytes):
 
 import random
 
+
+def _clean_answer_text(value):
+    if value is None:
+        return ""
+    text = str(value).strip().replace("'", '').replace('"', '')
+    return text.replace('{', '').replace('}', '').replace('[', '').replace(']', '').strip()
+
+
+def _resolve_option_letter(options, target_value):
+    if not isinstance(options, list):
+        return ""
+    target = _clean_answer_text(target_value)
+    for index, option in enumerate(options):
+        if _clean_answer_text(option) == target:
+            return chr(65 + index)
+    return ""
+
+
+def _normalize_matching_items(question):
+    candidates = [
+        question.get("options"),
+        question.get("matching_options"),
+        question.get("choice_map"),
+    ]
+
+    for candidate in candidates:
+        if isinstance(candidate, str):
+            try:
+                candidate = json.loads(candidate)
+            except (TypeError, ValueError):
+                candidate = None
+
+        if isinstance(candidate, dict):
+            left_items = candidate.get("left_items") or candidate.get("column_a") or candidate.get("left") or []
+            right_items = candidate.get("right_items") or candidate.get("column_b") or candidate.get("right") or []
+            if left_items and right_items:
+                return list(left_items), list(right_items)
+
+    left_items = question.get("left_items") or []
+    right_items = question.get("right_items") or []
+    if left_items and right_items:
+        return list(left_items), list(right_items)
+
+    correct_answer = question.get("correct_answer")
+    if isinstance(correct_answer, str):
+        try:
+            correct_answer = json.loads(correct_answer)
+        except (TypeError, ValueError):
+            correct_answer = None
+    if isinstance(correct_answer, dict):
+        return list(correct_answer.keys()), list(correct_answer.values())
+    if isinstance(correct_answer, list):
+        flattened = []
+        for item in correct_answer:
+            if isinstance(item, str) and "->" in item:
+                left, right = item.split("->", 1)
+                flattened.append((left.strip(), right.strip()))
+        if flattened:
+            return [left for left, _ in flattened], [right for _, right in flattened]
+
+    return [], []
+
+
+def _matching_answer_key(question):
+    question_type = (question.get("question_type") or "").strip()
+    if question_type != "Matching Type":
+        correct_answer = question.get("correct_answer")
+        if isinstance(correct_answer, str):
+            options = question.get("options")
+            if isinstance(options, list):
+                letter = _resolve_option_letter(options, correct_answer)
+                if letter:
+                    return letter
+        return _format_correct_answer(correct_answer)
+
+    correct_answer = question.get("correct_answer")
+    if isinstance(correct_answer, str):
+        try:
+            correct_answer = json.loads(correct_answer)
+        except (TypeError, ValueError):
+            correct_answer = None
+
+    left_items, right_items = _normalize_matching_items(question)
+    if isinstance(correct_answer, dict):
+        parts = []
+        for left, right in correct_answer.items():
+            if right_items and right in right_items:
+                letter = chr(65 + right_items.index(right))
+                parts.append(f"{left} -> {letter}")
+            else:
+                parts.append(f"{left} -> {right}")
+        return "; ".join(parts)
+
+    if isinstance(correct_answer, list):
+        parts = []
+        for item in correct_answer:
+            if isinstance(item, str) and "->" in item:
+                left, right = item.split("->", 1)
+                left = left.strip()
+                right = right.strip()
+                if right_items and right in right_items:
+                    parts.append(f"{left} -> {chr(65 + right_items.index(right))}")
+                else:
+                    parts.append(f"{left} -> {right}")
+            else:
+                parts.append(str(item))
+        return "; ".join(parts)
+
+    if left_items and right_items:
+        return "; ".join(f"{left} -> {chr(65 + idx)}" for idx, left in enumerate(left_items))
+
+    return _format_correct_answer(correct_answer)
+
+
 def _format_correct_answer(correct_answer):
     """Render a question's correct_answer into one readable line for the
     answer key, regardless of whether the AI returned a plain string
@@ -367,21 +481,22 @@ def _build_assessment_docx(questions, course_title, course_code) -> bytes:
             for idx, opt in enumerate(q["options"]):
                 doc.add_paragraph(f"    {chr(65 + idx)}. {opt}")
 
-        elif qtype == "Matching Type" and q.get("left_items") and q.get("right_items"):
-            left_items = q["left_items"]
-            right_items = list(q["right_items"])
-            random.shuffle(right_items)  # so the pairing isn't just position 1-to-1
-            rows = max(len(left_items), len(right_items))
-            table = doc.add_table(rows=rows + 1, cols=2)
-            table.style = "Table Grid"
-            table.rows[0].cells[0].text = "Column A"
-            table.rows[0].cells[1].text = "Column B"
-            for r in range(rows):
-                left_text = f"{r + 1}. {left_items[r]}" if r < len(left_items) else ""
-                right_text = f"{chr(65 + r)}. {right_items[r]}" if r < len(right_items) else ""
-                table.rows[r + 1].cells[0].text = left_text
-                table.rows[r + 1].cells[1].text = right_text
-            doc.add_paragraph()
+        elif qtype == "Matching Type":
+            left_items, right_items = _normalize_matching_items(q)
+            if left_items or right_items:
+                rows = max(len(left_items), len(right_items))
+                table = doc.add_table(rows=rows + 1, cols=2)
+                table.style = "Table Grid"
+                table.rows[0].cells[0].text = "Column A"
+                table.rows[0].cells[1].text = "Column B"
+                for r in range(rows):
+                    left_text = f"{r + 1}. {left_items[r]}" if r < len(left_items) else ""
+                    right_text = f"{chr(65 + r)}. {right_items[r]}" if r < len(right_items) else ""
+                    table.rows[r + 1].cells[0].text = left_text
+                    table.rows[r + 1].cells[1].text = right_text
+                doc.add_paragraph()
+            else:
+                doc.add_paragraph("    Answer: _______________________________________________")
 
         elif qtype == "Enumeration" and isinstance(q.get("correct_answer"), list):
             for idx in range(len(q["correct_answer"])):
@@ -396,7 +511,7 @@ def _build_assessment_docx(questions, course_title, course_code) -> bytes:
     doc.add_page_break()
     doc.add_heading("Answer Key", level=1)
     for i, q in enumerate(questions, start=1):
-        doc.add_paragraph(f"{i}. {_format_correct_answer(q['correct_answer'])}")
+        doc.add_paragraph(f"{i}. {_matching_answer_key(q)}")
 
     buf = io.BytesIO()
     doc.save(buf)
@@ -420,23 +535,24 @@ def _build_assessment_pdf(questions, course_title, course_code) -> bytes:
             for idx, opt in enumerate(q["options"]):
                 story.append(Paragraph(f"&nbsp;&nbsp;{chr(65 + idx)}. {opt}", styles["Normal"]))
 
-        elif qtype == "Matching Type" and q.get("left_items") and q.get("right_items"):
-            left_items = q["left_items"]
-            right_items = list(q["right_items"])
-            random.shuffle(right_items)
-            rows = max(len(left_items), len(right_items))
-            table_data = [["Column A", "Column B"]]
-            for r in range(rows):
-                left_text = f"{r + 1}. {left_items[r]}" if r < len(left_items) else ""
-                right_text = f"{chr(65 + r)}. {right_items[r]}" if r < len(right_items) else ""
-                table_data.append([left_text, right_text])
-            tbl = Table(table_data, colWidths=[240, 240])
-            tbl.setStyle(TableStyle([
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ]))
-            story.append(tbl)
+        elif qtype == "Matching Type":
+            left_items, right_items = _normalize_matching_items(q)
+            if left_items or right_items:
+                rows = max(len(left_items), len(right_items))
+                table_data = [["Column A", "Column B"]]
+                for r in range(rows):
+                    left_text = f"{r + 1}. {left_items[r]}" if r < len(left_items) else ""
+                    right_text = f"{chr(65 + r)}. {right_items[r]}" if r < len(right_items) else ""
+                    table_data.append([left_text, right_text])
+                tbl = Table(table_data, colWidths=[240, 240])
+                tbl.setStyle(TableStyle([
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ]))
+                story.append(tbl)
+            else:
+                story.append(Paragraph("&nbsp;&nbsp;Answer: _______________________________________________", styles["Normal"]))
 
         elif qtype == "Enumeration" and isinstance(q.get("correct_answer"), list):
             for idx in range(len(q["correct_answer"])):
@@ -453,7 +569,7 @@ def _build_assessment_pdf(questions, course_title, course_code) -> bytes:
     story.append(Spacer(1, 20))
     story.append(Paragraph("Answer Key", styles["Heading1"]))
     for i, q in enumerate(questions, start=1):
-        story.append(Paragraph(f"{i}. {_format_correct_answer(q['correct_answer'])}", styles["Normal"]))
+        story.append(Paragraph(f"{i}. {_matching_answer_key(q)}", styles["Normal"]))
 
     doc.build(story)
     return buf.getvalue()
@@ -623,10 +739,12 @@ async def confirm_generation(
 
     subject_row = db.query(models.Subject).filter(models.Subject.code == subject["code"]).first()
     if not subject_row:
-        subject_row = models.Subject(name=subject["name"], code=subject["code"])
+        subject_row = models.Subject(name=subject["name"], code=subject["code"], user_id=user_id)
         db.add(subject_row)
         db.commit()
         db.refresh(subject_row)
+    elif user_id and subject_row.user_id is None:
+        subject_row.user_id = user_id
 
     rows = prepare_database_rows(generated_questions, subject_row.id)
     for row in rows:

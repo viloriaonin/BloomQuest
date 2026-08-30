@@ -21,7 +21,7 @@ const formatDate = (isoString) => {
 
 // Helper function to render the correct icon based on the activity type
 const getIcon = (type, status) => {
-  if (status === 'error') {
+  if (type === 'delete') {
     return (
       <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -93,7 +93,7 @@ const getIcon = (type, status) => {
 };
 
 const History = () => {
-  const [activeTab, setActiveTab] = useState('all');
+  const [activeTab, setActiveTab] = useState('logins');
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -128,30 +128,29 @@ const History = () => {
     fetchHistory();
   }, []);
 
+  const isDeletedActivity = (item) => String(item.type).toLowerCase() === 'delete' || /\bdeleted?\b|permanently removed/i.test(`${item.action || ''} ${item.details || ''}`);
+
   const tabs = [
-    { id: 'all', label: 'All activity', types: null },
     { id: 'logins', label: 'Users logged', types: ['login'] },
     { id: 'generated', label: 'Question generation', types: ['generate', 'question', 'question_set', 'classify'] },
     { id: 'exports', label: 'Exports / downloads', types: ['export', 'download'] },
-    { id: 'errors', label: 'Errors', types: null, status: 'error' },
+    { id: 'deleted', label: 'Deleted', deleted: true },
   ];
 
   const activeTabConfig = tabs.find((tab) => tab.id === activeTab);
-  const hasNewActivity = (tab) => history.some((item) => newActivityIds.includes(item.id) && (tab.status ? item.status === tab.status : !tab.types || tab.types.includes(String(item.type).toLowerCase())));
+  const matchesTab = (item, tab) => tab.deleted ? isDeletedActivity(item) : tab.status ? item.status === tab.status : tab.types?.includes(String(item.type).toLowerCase());
+  const hasNewActivity = (tab) => history.some((item) => newActivityIds.includes(item.id) && matchesTab(item, tab));
 
   const activateTab = (tab) => {
     setActiveTab(tab.id);
-    const matchingIds = history.filter((item) => tab.status ? item.status === tab.status : !tab.types || tab.types.includes(String(item.type).toLowerCase())).map((item) => item.id);
+    const matchingIds = history.filter((item) => matchesTab(item, tab)).map((item) => item.id);
     const seen = JSON.parse(localStorage.getItem('bloomquest-seen-history') || '[]');
     const nextSeen = [...new Set([...seen, ...matchingIds])];
     localStorage.setItem('bloomquest-seen-history', JSON.stringify(nextSeen));
     setNewActivityIds((current) => current.filter((id) => !matchingIds.includes(id)));
   };
 
-  const filteredHistory = history.filter(item =>
-    (!activeTabConfig.types ? (!activeTabConfig.status || item.status === activeTabConfig.status) : activeTabConfig.types.includes(String(item.type).toLowerCase())) &&
-    true
-  );
+  const filteredHistory = history.filter((item) => matchesTab(item, activeTabConfig));
 
   return (
     <div className="bq-page">

@@ -34,6 +34,136 @@ const SUBJECT_THEMES = [
   { bg: '#5CB37B', iconColor: '#FFFFFF', icon: FlaskConical },
 ];
 
+const cleanText = (value) => String(value ?? '').trim().replace(/[{}[\]"']/g, '').replace(/\s+/g, ' ');
+
+const normalizeJsonLike = (value) => {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed) return value;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+};
+
+const getOptionLetter = (question, answerValue) => {
+  const options = Array.isArray(question?.options) ? question.options : [];
+  if (!options.length) return '';
+  const target = cleanText(answerValue)
+    .replace(/\s*->\s*/g, '->')
+    .replace(/\s+/g, ' ');
+
+  for (let index = 0; index < options.length; index += 1) {
+    const option = cleanText(options[index]);
+    if (option === target) return String.fromCharCode(65 + index);
+  }
+  return '';
+};
+
+const getMatchingChoices = (question) => {
+  const parsedOptions = normalizeJsonLike(question?.options);
+  const options = parsedOptions && typeof parsedOptions === 'object' && !Array.isArray(parsedOptions) ? parsedOptions : {};
+  const firstNonEmptyArray = (...values) => values.find((value) => Array.isArray(value) && value.length > 0) || [];
+  let answerMap = normalizeJsonLike(question?.correct_answer);
+  if (typeof answerMap === 'string') {
+    try {
+      answerMap = JSON.parse(answerMap);
+    } catch {
+      const entries = answerMap
+        .replace(/^[\s[{]+|[}\]]+$/g, '')
+        .split(/\s*,\s*/)
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+      const pairs = entries
+        .map((entry) => {
+          const separator = entry.indexOf('->');
+          return separator >= 0 ? [entry.slice(0, separator).trim(), entry.slice(separator + 2).trim()] : null;
+        })
+        .filter(Boolean);
+      if (pairs.length) answerMap = Object.fromEntries(pairs);
+      else answerMap = null;
+    }
+  }
+  const answerKeys = answerMap && typeof answerMap === 'object' && !Array.isArray(answerMap) ? Object.keys(answerMap) : [];
+  const answerValues = answerMap && typeof answerMap === 'object' && !Array.isArray(answerMap) ? Object.values(answerMap) : [];
+  const leftItems = firstNonEmptyArray(options.left_items, options.column_a, question?.left_items, question?.column_a, answerKeys);
+  const rightItems = firstNonEmptyArray(options.right_items, options.column_b, question?.right_items, question?.column_b, answerValues);
+  return {
+    leftItems: Array.isArray(leftItems) ? leftItems : [],
+    rightItems: Array.isArray(rightItems) ? rightItems : [],
+  };
+};
+
+const formatAnswerKey = (answer, question) => {
+  const normalizeAnswerObject = (value) => {
+    if (Array.isArray(value)) return value.map((item) => normalizeAnswerObject(item)).join('; ');
+    if (value && typeof value === 'object') {
+      return Object.entries(value)
+        .map(([key, item]) => {
+          const rightItems = getMatchingChoices(question).rightItems;
+          const letterForValue = rightItems.length
+            ? rightItems.findIndex((choice) => cleanText(choice) === cleanText(item))
+            : -1;
+          const mappedValue = letterForValue >= 0 ? String.fromCharCode(65 + letterForValue) : String(item ?? '');
+          return `${key} -> ${mappedValue}`;
+        })
+        .join('; ');
+    }
+    if (typeof value === 'string') {
+      const parsed = normalizeJsonLike(value);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return formatAnswerKey(parsed, question);
+      }
+      if (question?.question_type === 'MCQ') {
+        const optionsLetter = getOptionLetter(question, value);
+        if (optionsLetter) return optionsLetter;
+      }
+      if (question?.question_type === 'Matching Type') {
+        const match = value.match(/^\s*([^\s]+)\s*->\s*(.+?)\s*$/);
+        if (match) {
+          const left = match[1].trim();
+          const right = match[2].trim();
+          const rightItems = getMatchingChoices(question).rightItems;
+          const index = rightItems.findIndex((choice) => cleanText(choice) === cleanText(right));
+          return `${left} -> ${index >= 0 ? String.fromCharCode(65 + index) : cleanText(right)}`;
+        }
+      }
+      return cleanText(value).replace(/->/g, ' -> ');
+    }
+    return String(value ?? '');
+  };
+
+  const value = normalizeJsonLike(answer);
+  if (question?.question_type === 'MCQ') {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const firstValue = Object.values(value)[0];
+      return getOptionLetter(question, firstValue) || cleanText(firstValue);
+    }
+    const mcqLetter = getOptionLetter(question, value);
+    if (mcqLetter) return mcqLetter;
+    return cleanText(value ?? '');
+  }
+
+  if (question?.question_type === 'Matching Type') {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return Object.entries(value)
+        .map(([left, right]) => {
+          const rightItems = getMatchingChoices(question).rightItems;
+          const index = rightItems.findIndex((choice) => cleanText(choice) === cleanText(right));
+          return `${left} -> ${index >= 0 ? String.fromCharCode(65 + index) : cleanText(right)}`;
+        })
+        .join('; ');
+    }
+    if (Array.isArray(value)) {
+      return value.map((item) => formatAnswerKey(item, question)).join('; ');
+    }
+    return normalizeAnswerObject(value);
+  }
+
+  return normalizeAnswerObject(value);
+};
+
 const QuestionBank = () => {
   const { showConfirm } = usePopup();
   const navigate = useNavigate();
@@ -128,6 +258,8 @@ const QuestionBank = () => {
       if (!res.ok) throw new Error('Failed to fetch questions');
       const data = await res.json();
       setQuestions(data);
+      const subjectsRes = await fetch(`${API_URL}/api/subjects`);
+      if (subjectsRes.ok) setSubjects(await subjectsRes.json());
     } catch (err) {
       setError('Could not load questions.');
     } finally {
@@ -327,16 +459,6 @@ const QuestionBank = () => {
     evaluate: summaryQuestionRecords.filter((q) => q.bloom_level === 'Evaluate').length,
     create: summaryQuestionRecords.filter((q) => q.bloom_level === 'Create').length,
   };
-
-  const selectedTosSummary = BLOOMS_LEVELS.map((level) => {
-    const count = summaryQuestionRecords.filter((q) => q.bloom_level === level.name).length;
-    const weight = summaryQuestionRecords.length ? (count / summaryQuestionRecords.length) * 100 : 0;
-    return {
-      ...level,
-      count,
-      weight,
-    };
-  });
 
   const handleSidebarDownload = async (mode) => {
     if (!selectedSubject || selectedQuestions.length === 0) return;
@@ -572,38 +694,7 @@ const QuestionBank = () => {
       {/* Subject selected — show tabs and questions */}
       {questionScope && (
         <div className="mb-20 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="overflow-visible rounded-xl border border-gray-100 bg-white shadow-sm">
-            {selectedQuestionRecords.length > 0 && (
-              <div className="border-b border-slate-200 bg-[#f7faf7] p-5">
-                <div className="flex flex-col gap-3 pb-4 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#B4454A]">TOS Summary</p>
-                    <h3 className="mt-1 text-2xl font-bold text-slate-900">Table of Specifications Summary</h3>
-                    <p className="mt-1 text-sm text-slate-500">This summary reflects the selected question distribution across Bloom&apos;s taxonomy levels.</p>
-                  </div>
-                  <div className="text-left sm:text-right">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Total Selected Questions</p>
-                    <p className="text-3xl font-bold text-[#B4454A]">{selectedQuestionRecords.length}</p>
-                  </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {selectedTosSummary.map((row) => (
-                    <div key={row.name} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-base font-semibold text-slate-800">{row.name}</span>
-                        <span className="text-sm font-semibold text-slate-500">{row.count} item{row.count === 1 ? '' : 's'}</span>
-                      </div>
-                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-                        <div className="h-full rounded-full bg-[#B4454A]" style={{ width: `${Math.min(row.weight, 100)}%` }} />
-                      </div>
-                      <div className="mt-2 text-xs font-medium text-slate-500">Weight: {row.weight.toFixed(1)}%</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
+          <div className="min-h-0 overflow-visible rounded-xl border border-gray-100 bg-white shadow-sm">
             <div className="flex overflow-x-auto border-b border-gray-200 px-4" role="tablist" aria-label="Question bank views">
               {questionViews.map(([id, label, count]) => <button key={id} type="button" role="tab" aria-selected={bankView === id} onClick={() => setBankView(id)} className={`min-w-max border-b-2 px-4 py-3 text-sm font-semibold ${bankView === id ? 'border-[#B4454A] text-[#B4454A]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{label}<span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] ${bankView === id ? 'bg-red-50 text-[#B4454A]' : 'bg-slate-100 text-slate-500'}`}>{count}</span></button>)}
             </div>
@@ -714,25 +805,24 @@ const QuestionBank = () => {
                             </div>
                           )}
 
-                          {q.question_type === 'Matching Type' && (
-                            (q.options && !Array.isArray(q.options) && (q.options.left_items || q.options.right_items)) ||
-                            (q.left_items && q.right_items && Array.isArray(q.left_items) && Array.isArray(q.right_items))
-                          ) && (
-                            <div className="mb-3 grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
+                          {q.question_type === 'Matching Type' && (() => {
+                            const { leftItems, rightItems } = getMatchingChoices(q);
+                            if (!leftItems.length && !rightItems.length) return null;
+                            return <div className="mb-3 grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
                               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                                 <p className="mb-1 font-bold text-slate-600">Column A</p>
-                                {((q.options?.left_items || q.left_items) || []).map((item, index) => <p key={index} className="py-1">{index + 1}. {item}</p>)}
+                                {leftItems.map((item, index) => <p key={index} className="py-1">{index + 1}. {item}</p>)}
                               </div>
                               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                                 <p className="mb-1 font-bold text-slate-600">Column B</p>
-                                {((q.options?.right_items || q.right_items) || []).map((item, index) => <p key={index} className="py-1">{String.fromCharCode(65 + index)}. {item}</p>)}
+                                {rightItems.map((item, index) => <p key={index} className="py-1">{String.fromCharCode(65 + index)}. {item}</p>)}
                               </div>
-                            </div>
-                          )}
+                            </div>;
+                          })()}
 
-                          {q.correct_answer && (!q.options || !Array.isArray(q.options)) && (
+                          {q.correct_answer && !['essay', 'situational'].includes(String(q.question_type || '').toLowerCase()) && (
                             <p className="mb-3 rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: '#F1FBF4', border: '1px solid #BBE3C7', color: '#15803D' }}>
-                              <span className="font-medium">Answer: </span>{q.correct_answer}
+                              <span className="font-medium">Answer: </span>{formatAnswerKey(q.correct_answer, q)}
                             </p>
                           )}
 
@@ -763,8 +853,31 @@ const QuestionBank = () => {
             </>
           </div>
 
-          <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
-            <div className="max-h-[calc(100vh-7rem)] overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start xl:max-h-[calc(100vh-4rem)] xl:overflow-y-auto xl:pr-1">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="border-b border-slate-100 pb-4">
+                <div className="flex items-center gap-2">
+                  <Download className="h-4 w-4 text-slate-400" />
+                  <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Downloads</h3>
+                </div>
+                <div className="mt-3 space-y-2">
+                  <label className="block text-xs font-semibold text-slate-500">Exam type
+                    <select value={examType} onChange={(event) => setExamType(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-[#B4454A]">
+                      {EXAM_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                  </label>
+                  {[
+                    { key: 'tos', label: 'Download TOS (.xlsx)' },
+                    { key: 'docx', label: 'Download test (.docx)' },
+                    { key: 'pdf', label: 'Download test (.pdf)' },
+                  ].map(({ key, label }) => (
+                    <button key={key} type="button" onClick={() => handleSidebarDownload(key)} disabled={!selectedQuestions.length || exporting} className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
+                      <FileText className="h-4 w-4" style={{ color: PRIMARY }} />{label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Saved</p>
@@ -850,35 +963,6 @@ const QuestionBank = () => {
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex items-center gap-2">
-                <Download className="h-4 w-4 text-slate-400" />
-                <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Downloads</h3>
-              </div>
-              <div className="mt-3 space-y-2">
-                <label className="block text-xs font-semibold text-slate-500">Exam type
-                  <select value={examType} onChange={(event) => setExamType(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-[#B4454A]">
-                    {EXAM_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </select>
-                </label>
-                {[
-                  { key: 'tos', label: 'Download TOS (.xlsx)' },
-                  { key: 'docx', label: 'Download test (.docx)' },
-                  { key: 'pdf', label: 'Download test (.pdf)' },
-                ].map(({ key, label }) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => handleSidebarDownload(key)}
-                    disabled={!selectedQuestions.length || exporting}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <FileText className="h-4 w-4" style={{ color: PRIMARY }} />
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
           </aside>
         </div>
       )}
@@ -898,7 +982,7 @@ const QuestionBank = () => {
         <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewOpen(false); }}>
           <section role="dialog" aria-modal="true" aria-labelledby="assessment-preview-title" className="bq-modal-panel flex max-h-[calc(100vh-2rem)] w-full max-w-3xl min-h-0 flex-col overflow-hidden">
             <div className="flex shrink-0 items-center justify-between border-b bg-[#fffdfc] p-5"><div><h2 id="assessment-preview-title" className="text-lg font-bold text-slate-900">Assessment preview</h2><p className="mt-1 text-sm text-slate-500">{selectedQuestions.length} selected question{selectedQuestions.length === 1 ? '' : 's'} for {selectedSubjectName}.</p></div><button type="button" onClick={() => setPreviewOpen(false)} className="text-sm font-semibold text-[#B4454A]">Close</button></div>
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#f8fafc] p-5">{selectedQuestions.map((questionId, index) => { const question = questions.find((item) => item.id === questionId); if (!question) return null; return <article key={question.id} className="rounded-lg border border-slate-200 bg-white p-4"><div className="flex items-start gap-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-slate-900">{index + 1}. {question.question}</p><div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500"><span>{question.bloom_level}</span><span>{question.question_type}</span></div>{Array.isArray(question.options) && question.options.map((option, optionIndex) => <p key={optionIndex} className="mt-1 text-xs text-slate-600">{String.fromCharCode(65 + optionIndex)}. {option}</p>)}{question.question_type === 'Matching Type' && question.options && !Array.isArray(question.options) && <div className="mt-2 grid grid-cols-2 gap-3 text-xs"><div><p className="font-bold text-slate-600">Column A</p>{(question.options.left_items || []).map((item, itemIndex) => <p key={itemIndex}>{itemIndex + 1}. {item}</p>)}</div><div><p className="font-bold text-slate-600">Column B</p>{(question.options.right_items || []).map((item, itemIndex) => <p key={itemIndex}>{String.fromCharCode(65 + itemIndex)}. {item}</p>)}</div></div>}</div><div className="flex shrink-0 flex-col items-end gap-1"><button type="button" onClick={() => { setPreviewOpen(false); handleEditOpen(question); }} className="text-xs font-semibold text-[#B4454A] hover:text-[#8f1c2b]">Edit question</button><div className="flex gap-1"><button type="button" onClick={() => moveSelectedQuestion(index, -1)} disabled={index === 0} aria-label="Move question up" className="rounded border px-2 py-1 text-xs disabled:text-slate-300">↑</button><button type="button" onClick={() => moveSelectedQuestion(index, 1)} disabled={index === selectedQuestions.length - 1} aria-label="Move question down" className="rounded border px-2 py-1 text-xs disabled:text-slate-300">↓</button></div></div></div></article>; })}</div>
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#f8fafc] p-5">{selectedQuestions.map((questionId, index) => { const question = questions.find((item) => item.id === questionId); if (!question) return null; const matchingChoices = getMatchingChoices(question); return <article key={question.id} className="rounded-lg border border-slate-200 bg-white p-4"><div className="flex items-start gap-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-slate-900">{index + 1}. {question.question}</p><div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500"><span>{question.bloom_level}</span><span>{question.question_type}</span></div>{Array.isArray(question.options) && question.options.map((option, optionIndex) => <p key={optionIndex} className="mt-1 text-xs text-slate-600">{String.fromCharCode(65 + optionIndex)}. {option}</p>)}{question.question_type === 'Matching Type' && (matchingChoices.leftItems.length || matchingChoices.rightItems.length) > 0 && <div className="mt-2 grid grid-cols-2 gap-3 text-xs"><div><p className="font-bold text-slate-600">Column A</p>{matchingChoices.leftItems.map((item, itemIndex) => <p key={itemIndex}>{itemIndex + 1}. {item}</p>)}</div><div><p className="font-bold text-slate-600">Column B</p>{matchingChoices.rightItems.map((item, itemIndex) => <p key={itemIndex}>{String.fromCharCode(65 + itemIndex)}. {item}</p>)}</div></div>}</div><div className="flex shrink-0 flex-col items-end gap-1"><button type="button" onClick={() => { setPreviewOpen(false); handleEditOpen(question); }} className="text-xs font-semibold text-[#B4454A] hover:text-[#8f1c2b]">Edit question</button><div className="flex gap-1"><button type="button" onClick={() => moveSelectedQuestion(index, -1)} disabled={index === 0} aria-label="Move question up" className="rounded border px-2 py-1 text-xs disabled:text-slate-300">↑</button><button type="button" onClick={() => moveSelectedQuestion(index, 1)} disabled={index === selectedQuestions.length - 1} aria-label="Move question down" className="rounded border px-2 py-1 text-xs disabled:text-slate-300">↓</button></div></div></div></article>; })}</div>
             <div className="flex shrink-0 justify-end gap-2 border-t bg-[#fffdfc] p-4"><button type="button" onClick={() => setPreviewOpen(false)} className="bq-secondary-button">Close</button></div>
           </section>
         </div>

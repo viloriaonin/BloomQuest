@@ -26,6 +26,14 @@ const textMuted = "#64748B";
 const accent = "#B4454A";
 const accentSoft = "rgba(180, 69, 74, 0.12)";
 
+const asList = (payload, keys = []) => {
+  if (Array.isArray(payload)) return payload;
+  for (const key of keys) {
+    if (Array.isArray(payload?.[key])) return payload[key];
+  }
+  return [];
+};
+
 const Dashboard = ({ onToggleSidebar }) => {
   const navigate = useNavigate();
   const [stats, setStats] = useState({
@@ -49,7 +57,8 @@ const Dashboard = ({ onToggleSidebar }) => {
     "True/False": 0,
     Identification: 0,
     Essay: 0,
-    Situational: 0
+    Situational: 0,
+    "Matching Type": 0
   });
 
   const [recentActivity, setRecentActivity] = useState([]);
@@ -64,14 +73,24 @@ const Dashboard = ({ onToggleSidebar }) => {
           return;
         }
 
-        const subjectsRes = await fetch(`${API_URL}/api/subjects?user_id=${userId}`);
-        const questionsRes = await fetch(`${API_URL}/api/questions?user_id=${userId}`);
-        const historyRes = await fetch(`${API_URL}/api/history?user_id=${userId}`);
+        const responses = await Promise.all([
+          fetch(`${API_URL}/api/subjects?user_id=${encodeURIComponent(userId)}`),
+          fetch(`${API_URL}/api/questions?user_id=${encodeURIComponent(userId)}`),
+          fetch(`${API_URL}/api/history?user_id=${encodeURIComponent(userId)}`),
+        ]);
+        const [subjectsRes, questionsRes, historyRes] = responses;
+        const subjectsData = subjectsRes.ok ? asList(await subjectsRes.json(), ['subjects', 'items']) : [];
+        let questionsData = questionsRes.ok ? asList(await questionsRes.json(), ['questions', 'items']) : [];
+        const historyData = historyRes.ok ? asList(await historyRes.json(), ['history', 'items']) : [];
 
-        if (subjectsRes.ok && questionsRes.ok && historyRes.ok) {
-          const subjectsData = await subjectsRes.json();
-          const questionsData = await questionsRes.json();
-          const historyData = await historyRes.json();
+        // Older generated records were saved before ownership was persisted.
+        // Use the same visible bank for those records until they are migrated.
+        if (questionsData.length === 0) {
+          const legacyQuestionsRes = await fetch(`${API_URL}/api/questions`);
+          if (legacyQuestionsRes.ok) questionsData = asList(await legacyQuestionsRes.json(), ['questions', 'items']);
+        }
+
+        if (subjectsRes.ok || questionsRes.ok || historyRes.ok) {
 
           // Calculate Bloom's taxonomy distribution
           const bloomsDistribution = {
@@ -89,7 +108,8 @@ const Dashboard = ({ onToggleSidebar }) => {
             "True/False": 0,
             Identification: 0,
             Essay: 0,
-            Situational: 0
+            Situational: 0,
+            "Matching Type": 0
           };
 
           questionsData.forEach(q => {
@@ -100,7 +120,11 @@ const Dashboard = ({ onToggleSidebar }) => {
             }
 
             // Count question type
-            const qType = q.question_type === 'Multiple Choice' ? 'MCQ' : q.question_type || 'MCQ';
+            const qType = q.question_type === 'Multiple Choice'
+              ? 'MCQ'
+              : q.question_type === 'True or False'
+                ? 'True/False'
+                : q.question_type || 'MCQ';
             if (typeDistribution.hasOwnProperty(qType)) {
               typeDistribution[qType]++;
             }
@@ -126,7 +150,7 @@ const Dashboard = ({ onToggleSidebar }) => {
                 tag: (item.type || 'INFO').toUpperCase(),
                 tagColor,
                 text: item.action || 'Account activity',
-                meta: `${item.details || ''} • ${getTimeAgo(new Date(item.created_at))}`
+                meta: `${item.details || ''} • ${getTimeAgo(new Date(item.date))}`
               };
             });
           setRecentActivity(activity.length > 0 ? activity : getDefaultActivity());
@@ -160,7 +184,7 @@ const Dashboard = ({ onToggleSidebar }) => {
   ];
 
   const barPalette = ["#FDE2E2", "#FCA5A5", "#F87171", "#EF4444", "#DC2626", "#B91C1C"];
-  const donutPalette = ["#F87171", "#EF4444", "#DC2626", "#B91C1C", "#7F1D1D"];
+  const donutPalette = ["#F87171", "#EF4444", "#DC2626", "#B91C1C", "#7F1D1D", "#991B1B"];
 
   const barChartData = {
     labels: Object.keys(bloomsData),
@@ -216,6 +240,11 @@ const Dashboard = ({ onToggleSidebar }) => {
       }
     }
   };
+
+  const hasQuestions = Object.values(typeData).some((value) => value > 0);
+  const visibleDoughnutData = hasQuestions
+    ? doughnutChartData
+    : { ...doughnutChartData, datasets: [{ ...doughnutChartData.datasets[0], data: [1], backgroundColor: ['#E2E8F0'] }] };
 
   return (
     <div className="bq-page" style={{ fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" }}>
@@ -308,6 +337,7 @@ const Dashboard = ({ onToggleSidebar }) => {
                 </h3>
                 <div className="h-64 w-full relative">
                   <Bar data={barChartData} options={barChartOptions} />
+                  {!stats.totalQuestions && <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs font-semibold text-slate-400">No question data yet</span>}
                 </div>
               </div>
 
@@ -319,7 +349,8 @@ const Dashboard = ({ onToggleSidebar }) => {
                   Question Forms Spread
                 </h3>
                 <div className="h-56 w-full relative">
-                  <Doughnut data={doughnutChartData} options={doughnutChartOptions} />
+                  <Doughnut data={visibleDoughnutData} options={doughnutChartOptions} />
+                  {!hasQuestions && <span className="pointer-events-none absolute inset-x-0 bottom-20 text-center text-xs font-semibold text-slate-400">No question data yet</span>}
 
                 </div>
               </div>
