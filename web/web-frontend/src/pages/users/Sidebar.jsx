@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   BookOpen,
@@ -30,7 +30,6 @@ const Sidebar = ({ collapsed, mobileOpen, onToggleCollapsed, onNavigate }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const role = localStorage.getItem("role")?.toLowerCase();
-  const [appearance, setAppearance] = useState(() => localStorage.getItem("bloomquest-appearance") || "light");
 
   const menuItems = role === "admin"
     ? [{ label: "Admin Dashboard", path: "/admin", icon: icons.dashboard }]
@@ -51,12 +50,6 @@ const Sidebar = ({ collapsed, mobileOpen, onToggleCollapsed, onNavigate }) => {
   const handleLogout = () => {
     localStorage.removeItem("token");
     navigate("/");
-  };
-
-  const handleAppearanceChange = (event) => {
-    const nextAppearance = event.target.value;
-    setAppearance(nextAppearance);
-    localStorage.setItem("bloomquest-appearance", nextAppearance);
   };
 
   return (
@@ -111,15 +104,6 @@ const Sidebar = ({ collapsed, mobileOpen, onToggleCollapsed, onNavigate }) => {
       </nav>
 
       <div className="px-3 pb-5 border-t pt-3" style={{ borderColor: "rgba(15, 23, 42, 0.08)" }}>
-        {!collapsed && (
-          <label className="mb-2 flex items-center justify-between gap-2 rounded-xl border bg-white px-3 py-2 text-xs" style={{ borderColor: "rgba(15,23,42,0.08)", color: "#64748B" }}>
-            <span>Appearance</span>
-            <select value={appearance} onChange={handleAppearanceChange} className="bg-transparent text-xs font-semibold text-slate-700 outline-none">
-              <option value="light">Light</option>
-              <option value="system">System</option>
-            </select>
-          </label>
-        )}
         <button
           onClick={handleLogout}
           title={collapsed ? "Logout" : undefined}

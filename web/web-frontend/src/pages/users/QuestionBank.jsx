@@ -63,105 +63,253 @@ const getOptionLetter = (question, answerValue) => {
 
 const getMatchingChoices = (question) => {
   const parsedOptions = normalizeJsonLike(question?.options);
-  const options = parsedOptions && typeof parsedOptions === 'object' && !Array.isArray(parsedOptions) ? parsedOptions : {};
-  const firstNonEmptyArray = (...values) => values.find((value) => Array.isArray(value) && value.length > 0) || [];
-  let answerMap = normalizeJsonLike(question?.correct_answer);
-  if (typeof answerMap === 'string') {
-    try {
-      answerMap = JSON.parse(answerMap);
-    } catch {
-      const entries = answerMap
-        .replace(/^[\s[{]+|[}\]]+$/g, '')
-        .split(/\s*,\s*/)
-        .map((entry) => entry.trim())
-        .filter(Boolean);
-      const pairs = entries
-        .map((entry) => {
-          const separator = entry.indexOf('->');
-          return separator >= 0 ? [entry.slice(0, separator).trim(), entry.slice(separator + 2).trim()] : null;
-        })
-        .filter(Boolean);
-      if (pairs.length) answerMap = Object.fromEntries(pairs);
-      else answerMap = null;
-    }
+
+  const options =
+    parsedOptions &&
+    typeof parsedOptions === 'object' &&
+    !Array.isArray(parsedOptions)
+      ? parsedOptions
+      : {};
+
+  // If the database already has proper matching choices, use them.
+  const existingLeft =
+    Array.isArray(options.left_items) && options.left_items.length
+      ? options.left_items
+      : Array.isArray(options.column_a) && options.column_a.length
+        ? options.column_a
+        : Array.isArray(question?.left_items) && question.left_items.length
+          ? question.left_items
+          : Array.isArray(question?.column_a) && question.column_a.length
+            ? question.column_a
+            : [];
+
+  const existingRight =
+    Array.isArray(options.right_items) && options.right_items.length
+      ? options.right_items
+      : Array.isArray(options.column_b) && options.column_b.length
+        ? options.column_b
+        : Array.isArray(question?.right_items) && question.right_items.length
+          ? question.right_items
+          : Array.isArray(question?.column_b) && question.column_b.length
+            ? question.column_b
+            : [];
+
+  if (existingLeft.length && existingRight.length) {
+    return {
+      leftItems: existingLeft.map(cleanText),
+      rightItems: existingRight.map(cleanText),
+    };
   }
-  const answerKeys = answerMap && typeof answerMap === 'object' && !Array.isArray(answerMap) ? Object.keys(answerMap) : [];
-  const answerValues = answerMap && typeof answerMap === 'object' && !Array.isArray(answerMap) ? Object.values(answerMap) : [];
-  const leftItems = firstNonEmptyArray(options.left_items, options.column_a, question?.left_items, question?.column_a, answerKeys);
-  const rightItems = firstNonEmptyArray(options.right_items, options.column_b, question?.right_items, question?.column_b, answerValues);
+
+  /*
+   * Fallback:
+   * Some existing matching questions store the pairs inside
+   * correct_answer as:
+   *
+   * {
+   *   "Left 1 -> Description 1",
+   *   "Left 2 -> Description 2"
+   * }
+   *
+   * DO NOT split simply on commas because the descriptions
+   * themselves may contain commas.
+   */
+  let rawAnswer = question?.correct_answer;
+
+  if (typeof rawAnswer !== 'string') {
+    return {
+      leftItems: [],
+      rightItems: [],
+    };
+  }
+
+  rawAnswer = rawAnswer
+    .trim()
+    .replace(/^"+|"+$/g, '')
+    .replace(/^\{+|\}+$/g, '')
+    .replace(/\\"/g, '"');
+
+  /*
+   * A new matching pair starts when a comma is followed by
+   * text that eventually contains "->".
+   *
+   * Example:
+   *
+   * "User Interfaces -> Manages user experience, layout,
+   * and client interaction, Servers -> Processes business logic"
+   *
+   * The comma after "experience" must NOT split the entry.
+   */
+  const entries = rawAnswer
+    .split(/,\s*(?=[^,{}[\]]+?\s*->)/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  const leftItems = [];
+  const rightItems = [];
+
+  entries.forEach((entry) => {
+    const separatorIndex = entry.indexOf('->');
+
+    if (separatorIndex === -1) return;
+
+    const left = entry
+      .substring(0, separatorIndex)
+      .trim()
+      .replace(/^["']+|["']+$/g, '');
+
+    const right = entry
+      .substring(separatorIndex + 2)
+      .trim()
+      .replace(/^["']+|["']+$/g, '');
+
+    if (left && right) {
+      leftItems.push(cleanText(left));
+      rightItems.push(cleanText(right));
+    }
+  });
+
   return {
-    leftItems: Array.isArray(leftItems) ? leftItems : [],
-    rightItems: Array.isArray(rightItems) ? rightItems : [],
+    leftItems,
+    rightItems,
   };
 };
 
 const formatAnswerKey = (answer, question) => {
-  const normalizeAnswerObject = (value) => {
-    if (Array.isArray(value)) return value.map((item) => normalizeAnswerObject(item)).join('; ');
-    if (value && typeof value === 'object') {
-      return Object.entries(value)
-        .map(([key, item]) => {
-          const rightItems = getMatchingChoices(question).rightItems;
-          const letterForValue = rightItems.length
-            ? rightItems.findIndex((choice) => cleanText(choice) === cleanText(item))
-            : -1;
-          const mappedValue = letterForValue >= 0 ? String.fromCharCode(65 + letterForValue) : String(item ?? '');
-          return `${key} -> ${mappedValue}`;
-        })
-        .join('; ');
-    }
-    if (typeof value === 'string') {
-      const parsed = normalizeJsonLike(value);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return formatAnswerKey(parsed, question);
-      }
-      if (question?.question_type === 'MCQ') {
-        const optionsLetter = getOptionLetter(question, value);
-        if (optionsLetter) return optionsLetter;
-      }
-      if (question?.question_type === 'Matching Type') {
-        const match = value.match(/^\s*([^\s]+)\s*->\s*(.+?)\s*$/);
-        if (match) {
-          const left = match[1].trim();
-          const right = match[2].trim();
-          const rightItems = getMatchingChoices(question).rightItems;
-          const index = rightItems.findIndex((choice) => cleanText(choice) === cleanText(right));
-          return `${left} -> ${index >= 0 ? String.fromCharCode(65 + index) : cleanText(right)}`;
-        }
-      }
-      return cleanText(value).replace(/->/g, ' -> ');
-    }
-    return String(value ?? '');
-  };
-
-  const value = normalizeJsonLike(answer);
-  if (question?.question_type === 'MCQ') {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      const firstValue = Object.values(value)[0];
-      return getOptionLetter(question, firstValue) || cleanText(firstValue);
-    }
-    const mcqLetter = getOptionLetter(question, value);
-    if (mcqLetter) return mcqLetter;
-    return cleanText(value ?? '');
-  }
-
   if (question?.question_type === 'Matching Type') {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      return Object.entries(value)
-        .map(([left, right]) => {
-          const rightItems = getMatchingChoices(question).rightItems;
-          const index = rightItems.findIndex((choice) => cleanText(choice) === cleanText(right));
-          return `${left} -> ${index >= 0 ? String.fromCharCode(65 + index) : cleanText(right)}`;
-        })
-        .join('; ');
-    }
-    if (Array.isArray(value)) {
-      return value.map((item) => formatAnswerKey(item, question)).join('; ');
-    }
-    return normalizeAnswerObject(value);
+  const { leftItems, rightItems } = getMatchingChoices(question);
+
+  if (!leftItems.length || !rightItems.length) {
+    return 'N/A';
   }
 
-  return normalizeAnswerObject(value);
+  let answerMap = normalizeJsonLike(question?.correct_answer);
+
+  /*
+   * If correct_answer is not valid JSON, reconstruct it using
+   * the same safe parser used for the matching choices.
+   */
+  if (
+    typeof answerMap !== 'object' ||
+    answerMap === null ||
+    Array.isArray(answerMap)
+  ) {
+    answerMap = {};
+
+    const rawAnswer = String(question?.correct_answer ?? '')
+      .trim()
+      .replace(/^"+|"+$/g, '')
+      .replace(/^\{+|\}+$/g, '')
+      .replace(/\\"/g, '"');
+
+    const entries = rawAnswer
+      .split(/,\s*(?=[^,{}[\]]+?\s*->)/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+
+    entries.forEach((entry) => {
+      const separatorIndex = entry.indexOf('->');
+
+      if (separatorIndex === -1) return;
+
+      const left = cleanText(
+        entry.substring(0, separatorIndex)
+      );
+
+      const right = cleanText(
+        entry.substring(separatorIndex + 2)
+      );
+
+      if (left && right) {
+        answerMap[left] = right;
+      }
+    });
+  }
+
+  const letters = [];
+
+  /*
+   * IMPORTANT:
+   * Iterate through Column A so the answer key follows
+   * the exact order of the questions.
+   */
+  leftItems.forEach((leftItem) => {
+    const matchingKey = Object.keys(answerMap).find(
+      (key) =>
+        cleanText(key).toLowerCase() ===
+        cleanText(leftItem).toLowerCase()
+    );
+
+    if (!matchingKey) return;
+
+    const answerValue = cleanText(answerMap[matchingKey]);
+
+    // If already stored as A/B/C/etc.
+    if (/^[A-Za-z]$/.test(answerValue)) {
+      letters.push(answerValue.toUpperCase());
+      return;
+    }
+
+    // Find the corresponding Column B choice.
+    const rightIndex = rightItems.findIndex(
+      (rightItem) =>
+        cleanText(rightItem).toLowerCase() ===
+        answerValue.toLowerCase()
+    );
+
+    if (rightIndex !== -1) {
+      letters.push(
+        String.fromCharCode(65 + rightIndex)
+      );
+    }
+  });
+
+  return letters.length
+    ? letters.join(', ')
+    : 'N/A';
+}
+
+  // MCQ
+  if (question?.question_type === 'MCQ') {
+    const value = normalizeJsonLike(answer);
+
+    if (
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value)
+    ) {
+      const firstValue = Object.values(value)[0];
+
+      return (
+        getOptionLetter(question, firstValue) ||
+        cleanText(firstValue)
+      );
+    }
+
+    return (
+      getOptionLetter(question, value) ||
+      cleanText(value ?? '')
+    );
+  }
+
+  // Other question types
+  const value = normalizeJsonLike(answer);
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => cleanText(item))
+      .filter(Boolean)
+      .join('; ');
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.values(value)
+      .map((item) => cleanText(item))
+      .filter(Boolean)
+      .join('; ');
+  }
+
+  return cleanText(value ?? '');
 };
 
 const QuestionBank = () => {

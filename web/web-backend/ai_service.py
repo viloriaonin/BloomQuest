@@ -553,17 +553,31 @@ def build_preview(generated_questions):
 
 def prepare_database_rows(generated_questions, subject_id):
     rows = []
+
     for q in generated_questions:
+        question_type = q.get("question_type")
+
+        options = q.get("options", [])
+
+        # Matching Type questions use left_items and right_items
+        # instead of the normal MCQ options array.
+        if question_type == "Matching Type":
+            options = {
+                "left_items": q.get("left_items", []),
+                "right_items": q.get("right_items", []),
+            }
+
         rows.append({
             "subject_id": subject_id,
             "topic_name": q.get("topic_name", ""),
             "question": q["question"],
             "bloom_level": q["bloom_level"],
-            "question_type": q["question_type"],
-            "options": q.get("options", []),
+            "question_type": question_type,
+            "options": options,
             "correct_answer": q["correct_answer"],
             "explanation": q.get("explanation", "")
         })
+
     return rows
 
 

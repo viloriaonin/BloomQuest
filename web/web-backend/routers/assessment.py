@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-import os, uuid, tempfile, json
+import os, uuid, tempfile, json, re, random
 import pythoncom
 from docx2pdf import convert
 from database import get_db
@@ -58,87 +58,298 @@ def _match_option_letter(options, target_text):
 
 
 def _get_matching_mapping(question):
+    """
+    Return the Matching Type answer mapping as:
+
+        {
+            "Column A item": "Column B answer"
+        }
+
+    Supports:
+    - normal dictionaries
+    - JSON dictionaries
+    - lists of dictionaries
+    - strings using "left -> right"
+    - the current BloomQuest format where correct_answer
+      is stored as:
+      {"left -> right","left -> right"}
+    """
+
+    # ---------------------------------------------------------
+    # First try the question's stored matching options
+    # ---------------------------------------------------------
     for candidate in [
         getattr(question, "options", None),
         getattr(question, "matching_options", None),
         getattr(question, "choice_map", None),
     ]:
+
         if isinstance(candidate, str):
+
             try:
                 candidate = json.loads(candidate)
             except (TypeError, ValueError):
                 candidate = None
 
         if isinstance(candidate, dict):
-            for left_key, right_key in (("left_items", "right_items"), ("column_a", "column_b"), ("left", "right")):
+
+            for left_key, right_key in [
+                ("left_items", "right_items"),
+                ("column_a", "column_b"),
+                ("left", "right"),
+            ]:
+
                 left_items = candidate.get(left_key) or []
                 right_items = candidate.get(right_key) or []
+
                 if left_items and right_items:
-                    return {str(left_items[i]): str(right_items[i]) for i in range(min(len(left_items), len(right_items)))}
 
-    for left_key, right_key in (("left_items", "right_items"), ("column_a", "column_b")):
-        left_items = getattr(question, left_key, None)
-        right_items = getattr(question, right_key, None)
+                    return {
+                        str(left_items[i]).strip():
+                        str(right_items[i]).strip()
+                        for i in range(
+                            min(len(left_items), len(right_items))
+                        )
+                    }
+
+    # ---------------------------------------------------------
+    # Try separate database fields
+    # ---------------------------------------------------------
+    for left_key, right_key in [
+        ("left_items", "right_items"),
+        ("column_a", "column_b"),
+    ]:
+
+        left_items = getattr(question, left_key, None) or []
+        right_items = getattr(question, right_key, None) or []
+
         if left_items and right_items:
-            return {str(left_items[i]): str(right_items[i]) for i in range(min(len(left_items), len(right_items)))}
 
+            return {
+                str(left_items[i]).strip():
+                str(right_items[i]).strip()
+                for i in range(
+                    min(len(left_items), len(right_items))
+                )
+            }
+
+    # ---------------------------------------------------------
+    # Read correct_answer
+    # ---------------------------------------------------------
     answer = getattr(question, "correct_answer", None)
+
+    if answer is None:
+        return {}
+
+    # ---------------------------------------------------------
+    # Normal JSON
+    # ---------------------------------------------------------
     if isinstance(answer, str):
+
         try:
-            answer = json.loads(answer)
+            parsed = json.loads(answer)
+            answer = parsed
         except (TypeError, ValueError):
-            answer = None
+
+            # -------------------------------------------------
+            # IMPORTANT:
+            #
+            # Current BloomQuest records use this format:
+            #
+            # {"Left -> Right","Left -> Right"}
+            #
+            # This is NOT a valid JSON object because there
+            # are no ":" separators.
+            #
+            # Convert the outer braces into brackets so it
+            # becomes a JSON list.
+            # -------------------------------------------------
+            text = answer.strip()
+
+            if (
+                text.startswith("{")
+                and text.endswith("}")
+            ):
+                try:
+                    converted = "[" + text[1:-1] + "]"
+                    parsed = json.loads(converted)
+
+                    if isinstance(parsed, list):
+                        answer = parsed
+
+                except (TypeError, ValueError):
+                    pass
+
+    # ---------------------------------------------------------
+    # Dictionary format
+    # ---------------------------------------------------------
     if isinstance(answer, dict):
-        return {str(key): str(value) for key, value in answer.items()}
+
+        return {
+            str(key).strip(): str(value).strip()
+            for key, value in answer.items()
+        }
+
+    # ---------------------------------------------------------
+    # List format
+    # ---------------------------------------------------------
     if isinstance(answer, list):
+
         mapping = {}
+
         for item in answer:
+
             if isinstance(item, dict):
-                mapping.update({str(k): str(v) for k, v in item.items()})
-            elif isinstance(item, str) and "->" in item:
-                left, right = item.split("->", 1)
-                mapping[str(left).strip()] = str(right).strip()
+
+                for left, right in item.items():
+
+                    mapping[
+                        str(left).strip()
+                    ] = str(right).strip()
+
+            elif isinstance(item, str):
+
+                if "->" in item:
+
+                    left, right = item.split(
+                        "->",
+                        1
+                    )
+
+                    mapping[
+                        left.strip()
+                    ] = right.strip()
+
         if mapping:
             return mapping
+
+    # ---------------------------------------------------------
+    # Single "left -> right" string
+    # ---------------------------------------------------------
+    if isinstance(answer, str) and "->" in answer:
+
+        mapping = {}
+
+        # Handle multiple mappings separated by commas
+        # only when they use the arrow format.
+        parts = re.split(
+            r'"\s*,\s*"',
+            answer.strip("{}")
+        )
+
+        for part in parts:
+
+            part = part.strip().strip('"')
+
+            if "->" not in part:
+                continue
+
+            left, right = part.split(
+                "->",
+                1
+            )
+
+            mapping[
+                left.strip()
+            ] = right.strip()
+
+        if mapping:
+            return mapping
+
     return {}
 
 
 def _get_matching_items(question):
-    mapping = _get_matching_mapping(question)
-    if mapping:
-        return list(mapping.keys()), list(mapping.values())
+    """
+    Return Column A and Column B choices for Matching Type.
 
+    Priority:
+    1. Stored matching options
+    2. Separate left/right database fields
+    3. Reconstruct choices from correct_answer
+
+    The current BloomQuest database has empty options for many
+    Matching Type questions, so the third method is important.
+    """
+
+    # ---------------------------------------------------------
+    # Try stored options first
+    # ---------------------------------------------------------
     for candidate in [
         getattr(question, "options", None),
         getattr(question, "matching_options", None),
         getattr(question, "choice_map", None),
     ]:
+
         if isinstance(candidate, str):
+
             try:
                 candidate = json.loads(candidate)
             except (TypeError, ValueError):
                 candidate = None
+
         if isinstance(candidate, dict):
-            left_items = candidate.get("left_items") or candidate.get("column_a") or candidate.get("left") or []
-            right_items = candidate.get("right_items") or candidate.get("column_b") or candidate.get("right") or []
-            if left_items and right_items:
-                return left_items, right_items
 
-    for left_key, right_key in (("left_items", "right_items"), ("column_a", "column_b")):
-        left_items = getattr(question, left_key, None)
-        right_items = getattr(question, right_key, None)
-        if left_items and right_items:
-            return left_items, right_items
+            left_items = (
+                candidate.get("left_items")
+                or candidate.get("column_a")
+                or candidate.get("left")
+                or []
+            )
 
-    answer = getattr(question, "correct_answer", None)
-    if isinstance(answer, str):
-        try:
-            answer = json.loads(answer)
-        except (TypeError, ValueError):
-            answer = None
-    if isinstance(answer, dict):
-        return list(answer.keys()), list(answer.values())
-    return [], []
+            right_items = (
+                candidate.get("right_items")
+                or candidate.get("column_b")
+                or candidate.get("right")
+                or []
+            )
+
+            if left_items or right_items:
+
+                return (
+                    list(left_items),
+                    list(right_items)
+                )
+
+    # ---------------------------------------------------------
+    # Try separate database fields
+    # ---------------------------------------------------------
+    left_items = (
+        getattr(question, "left_items", None)
+        or []
+    )
+
+    right_items = (
+        getattr(question, "right_items", None)
+        or []
+    )
+
+    if left_items or right_items:
+
+        return (
+            list(left_items),
+            list(right_items)
+        )
+
+    # ---------------------------------------------------------
+    # Reconstruct from correct_answer
+    # ---------------------------------------------------------
+    mapping = _get_matching_mapping(question)
+
+    if not mapping:
+        return [], []
+
+    left_items = list(mapping.keys())
+    right_items = list(mapping.values())
+
+    # ---------------------------------------------------------
+    # Shuffle Column B.
+    #
+    # This prevents the answer from automatically being
+    # A, B, C, D...
+    # ---------------------------------------------------------
+
+    return left_items, right_items
 
 
 def _roman_numeral(index: int) -> str:
@@ -171,107 +382,114 @@ def _question_type_label(question_type: str) -> str:
 def _format_answer_key_value(question):
     answer = getattr(question, "correct_answer", None)
     options = getattr(question, "options", None)
+
+    # Parse options if stored as JSON text
     if isinstance(options, str):
         try:
             options = json.loads(options)
         except (TypeError, ValueError):
             options = None
 
-    if question.question_type == "MCQ":
-        if isinstance(answer, list) and answer:
-            return _match_option_letter(options, answer[0]) or _clean_letter_value(answer[0])
-        if isinstance(answer, dict):
-            values = list(answer.values())
-            if values:
-                return _match_option_letter(options, values[0]) or _clean_letter_value(values[0])
-        if isinstance(answer, str):
-            parsed = None
-            try:
-                parsed = json.loads(answer)
-            except (TypeError, ValueError):
-                parsed = None
-            if isinstance(parsed, list) and parsed:
-                return _match_option_letter(options, parsed[0]) or _clean_letter_value(parsed[0])
-            if isinstance(parsed, dict):
-                values = list(parsed.values())
-                if values:
-                    return _match_option_letter(options, values[0]) or _clean_letter_value(values[0])
-            letter = _match_option_letter(options, answer)
-            if letter:
-                return letter
-            return _clean_letter_value(answer)
-        return "N/A"
-
+    # -----------------------------
+    # MATCHING TYPE
+    # -----------------------------
     if question.question_type == "Matching Type":
-        if isinstance(answer, str):
-            try:
-                parsed = json.loads(answer)
-            except (TypeError, ValueError):
-                parsed = None
-            if isinstance(parsed, dict):
-                answer = parsed
-            elif isinstance(parsed, list):
-                answer = parsed
 
+        # Get Column A and Column B
+        left_items, right_items = _get_matching_items(question)
+
+        # Get the answer mapping using the same parser
+        # that reconstructs the current database format.
         mapping = _get_matching_mapping(question)
-        if mapping:
-            parts = []
-            right_items = []
-            if isinstance(options, dict):
-                right_items = options.get("right_items") or []
-            if not right_items and isinstance(answer, dict):
-                answer_items = list(answer.values())
-                for left, right in mapping.items():
-                    letter = _match_option_letter(right_items, right) or _match_option_letter(answer_items, right)
-                    if letter:
-                        parts.append(f"{left} -> {letter}")
-                    else:
-                        parts.append(f"{left} -> {_clean_letter_value(right)}")
+
+        if not mapping:
+            return "N/A"
+
+        if not left_items or not right_items:
+            return "N/A"
+
+        letters = []
+
+        # Follow the order of Column A.
+        for left in left_items:
+
+            left_text = str(left).strip()
+
+            # Find the corresponding answer
+            right = None
+
+            # First try exact match
+            if left_text in mapping:
+                right = mapping[left_text]
+
             else:
-                for left, right in mapping.items():
-                    letter = _match_option_letter(right_items, right)
-                    if letter:
-                        parts.append(f"{left} -> {letter}")
-                    else:
-                        parts.append(f"{left} -> {_clean_letter_value(right)}")
-            if parts:
-                return "; ".join(parts)
-        if isinstance(answer, list):
-            formatted = []
-            for item in answer:
-                if isinstance(item, str):
-                    parsed = None
-                    try:
-                        parsed = json.loads(item)
-                    except (TypeError, ValueError):
-                        parsed = None
-                    if isinstance(parsed, dict):
-                        for left, right in parsed.items():
-                            letter = _match_option_letter(getattr(question, "options", None).get("right_items") if isinstance(getattr(question, "options", None), dict) else [], right)
-                            if letter:
-                                formatted.append(f"{left} -> {letter}")
-                            else:
-                                formatted.append(f"{left} -> {_clean_letter_value(right)}")
-                    else:
-                        formatted.append(_clean_letter_value(item))
-                elif isinstance(item, dict):
-                    for left, right in item.items():
-                        formatted.append(f"{left} -> {_clean_letter_value(right)}")
-            if formatted:
-                return "; ".join(formatted)
-        if isinstance(answer, str):
-            cleaned = _clean_letter_value(answer)
-            if "->" in cleaned:
-                return cleaned.replace(" -> ", " -> ")
-            return cleaned
+                # Try case-insensitive match
+                for map_left, map_right in mapping.items():
+
+                    if (
+                        str(map_left).strip().lower()
+                        == left_text.lower()
+                    ):
+                        right = map_right
+                        break
+
+            if right is None:
+                continue
+
+            right_text = str(right).strip()
+
+            # -------------------------------------------------
+            # If the stored answer is already a letter
+            # -------------------------------------------------
+            if re.fullmatch(r"[A-Za-z]", right_text):
+                letters.append(right_text.upper())
+                continue
+
+            # -------------------------------------------------
+            # Otherwise find which Column B choice contains
+            # the correct answer.
+            # -------------------------------------------------
+            match_index = -1
+
+            for index, choice in enumerate(right_items):
+
+                choice_text = _clean_letter_value(choice).strip()
+
+                if choice_text.lower() == right_text.lower():
+                    match_index = index
+                    break
+
+            if match_index >= 0:
+                letters.append(chr(65 + match_index))
+
+        if letters:
+            return ", ".join(letters)
+
         return "N/A"
+
+    # =========================================================
+    # OTHER QUESTION TYPES
+    # =========================================================
 
     if isinstance(answer, list):
-        return "; ".join(str(_clean_letter_value(item)) for item in answer if _clean_letter_value(item))
+
+        return "; ".join(
+            str(_clean_letter_value(item))
+            for item in answer
+            if _clean_letter_value(item)
+        )
+
     if isinstance(answer, dict):
-        return "; ".join(str(_clean_letter_value(value)) for value in answer.values() if _clean_letter_value(value))
+
+        return "; ".join(
+            str(_clean_letter_value(value))
+            for value in answer.values()
+            if _clean_letter_value(value)
+        )
+
     if isinstance(answer, str):
         return _clean_letter_value(answer)
+
     return "N/A"
 
 
