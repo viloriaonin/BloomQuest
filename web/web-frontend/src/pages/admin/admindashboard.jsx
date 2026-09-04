@@ -1,10 +1,12 @@
 ﻿import React, { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { QuestionBankContent } from "./QuestionBank";
 import { AcademicMgmtContent } from "./AcademicMgmt";
 import { UserMgmtContent } from "./UserMgmt";
 import { ReportsContent } from "./Reports";
 import Governance from "./Governance";
+import UserDetailPage from "./UserDetailPage";
 import { Bar, Doughnut } from "react-chartjs-2";
 import { Radio, ShieldCheck, ChevronRight, Bell } from "lucide-react";
 import { ArcElement, BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from "chart.js";
@@ -39,11 +41,26 @@ const TAB_META = {
 };
 
 const AdminDashboard = () => {
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState(
+    location.pathname.startsWith("/admin/questions")
+      ? "question-bank"
+      : location.pathname.startsWith("/admin/users/")
+        ? "users"
+        : "dashboard",
+  );
   const [userEmail, setUserEmail] = useState("admin@bloomquest.edu");
   const [userRole, setUserRole] = useState("Administrator");
   const [dashboardData, setDashboardData] = useState({ questions: 0, assessments: 0, faculty: 0, successRate: 0, avgQuestionsPerFaculty: 0, mostActiveDepartment: "N/A", departments: [], notifications: [], activity: [] });
   const [dashboardLoading, setDashboardLoading] = useState(true);
+
+  useEffect(() => {
+    if (location.pathname.startsWith("/admin/questions")) {
+      setActiveTab("question-bank");
+    } else if (location.pathname.startsWith("/admin/users/")) {
+      setActiveTab("users");
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     const storedEmail = window.localStorage.getItem("email");
@@ -123,6 +140,9 @@ const AdminDashboard = () => {
   };
 
   const renderTabContent = () => {
+    if (location.pathname.startsWith("/admin/users/")) {
+      return <UserDetailPage />;
+    }
     switch (activeTab) {
       case "dashboard":
         return renderDashboardContent();

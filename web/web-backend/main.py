@@ -1038,6 +1038,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         "user_id": user.id,
         "role": user.role,
         "email": user.email,
+        "department": user.department,
         "message": "Login successful"
     }
 
