@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:BloomQuest/config/api_config.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'dart:typed_data';
 import '../../utils/file_saver_stub.dart'
     if (dart.library.io) '../../utils/file_saver_io.dart'
     as file_saver;

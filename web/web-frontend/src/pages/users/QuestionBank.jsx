@@ -34,6 +34,29 @@ const SUBJECT_THEMES = [
   { bg: '#5CB37B', iconColor: '#FFFFFF', icon: FlaskConical },
 ];
 
+// Indeterminate progress bar components
+const GeneratingBarStyles = () => (
+  <style>{`
+    @keyframes bq-indeterminate {
+      0%   { left: -40%; width: 40%; }
+      50%  { left: 20%;  width: 60%; }
+      100% { left: 100%; width: 40%; }
+    }
+  `}</style>
+);
+
+const GeneratingProgress = ({ label = 'Generating…' }) => (
+  <span className="flex items-center gap-2 w-full">
+    <span className="text-sm font-semibold whitespace-nowrap">{label}</span>
+    <span className="relative h-2 flex-1 min-w-[60px] overflow-hidden rounded-full bg-white/30">
+      <span
+        className="absolute top-0 h-full rounded-full bg-white"
+        style={{ animation: 'bq-indeterminate 1.2s ease-in-out infinite' }}
+      />
+    </span>
+  </span>
+);
+
 const cleanText = (value) => String(value ?? '').trim().replace(/[{}[\]"']/g, '').replace(/\s+/g, ' ');
 
 const normalizeJsonLike = (value) => {
@@ -354,6 +377,7 @@ const QuestionBank = () => {
   const [selectedTopics, setSelectedTopics] = useState([]);
   const [subcolumnAValues, setSubcolumnAValues] = useState({});
   const [generatingTos, setGeneratingTos] = useState(false);
+  const [tosSavingProgress, setTosSavingProgress] = useState(0);
   const undoTimerRef = useRef(null);
 
   useEffect(() => {
@@ -676,6 +700,7 @@ const QuestionBank = () => {
     }
 
     setGeneratingTos(true);
+    setTosSavingProgress(10); // Start progress
     setError('');
 
     try {
@@ -687,13 +712,17 @@ const QuestionBank = () => {
       const userId = localStorage.getItem('user_id');
       if (userId) formData.append('user_id', userId);
 
+      setTosSavingProgress(30); // Progress: sending request
       const res = await fetch(`${API_URL}/api/questions/export/tos`, {
         method: 'POST',
         body: formData,
       });
+      setTosSavingProgress(70); // Progress: processing
 
       if (!res.ok) throw new Error('TOS generation failed');
+      setTosSavingProgress(85); // Progress: generating file
       const blob = await res.blob();
+      setTosSavingProgress(95); // Almost done
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -702,6 +731,7 @@ const QuestionBank = () => {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+      setTosSavingProgress(100); // Complete
 
       // Reset modal
       setTosModalOpen(false);
@@ -711,11 +741,15 @@ const QuestionBank = () => {
       setError(err.message || 'TOS generation failed.');
     } finally {
       setGeneratingTos(false);
+      setTimeout(() => {
+        setTosSavingProgress(0);
+      }, 500);
     }
   };
 
   return (
     <div className="bq-page">
+      <GeneratingBarStyles />
       <div className="bq-page-inner">
 
       {/* Header */}
@@ -1253,28 +1287,36 @@ const QuestionBank = () => {
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={handleTosGeneration}
-                disabled={generatingTos || selectedTopics.length === 0}
-                className="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-slate-300"
-                style={{ backgroundColor: PRIMARY }}
-              >
-                {generatingTos ? (
-                  <>
-                    <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                    </svg>
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <Download className="h-4 w-4" />
-                    Generate & Download TOS
-                  </>
+              <div>
+                <button
+                  type="button"
+                  onClick={handleTosGeneration}
+                  disabled={generatingTos || selectedTopics.length === 0}
+                  className="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  style={{ backgroundColor: PRIMARY, minWidth: generatingTos ? 280 : undefined }}
+                >
+                  {generatingTos ? (
+                    <GeneratingProgress label="Generating…" />
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4" />
+                      Generate & Download TOS
+                    </>
+                  )}
+                </button>
+                {/* Progress bar under button */}
+                {generatingTos && (
+                  <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full transition-all duration-500 ease-out"
+                      style={{
+                        width: `${tosSavingProgress}%`,
+                        background: 'linear-gradient(90deg, #8F1424 0%, #D64545 50%, #B4454A 100%)',
+                      }}
+                    />
+                  </div>
                 )}
-              </button>
+              </div>
             </div>
           </div>
         </div>
