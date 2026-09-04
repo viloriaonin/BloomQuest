@@ -159,6 +159,30 @@ const safeRenderValue = (value) => {
   return String(value);
 };
 
+// Indeterminate progress bar components
+const GeneratingProgress = ({ label = 'Generating…' }) => (
+  <span className="flex items-center gap-2 w-full">
+    <span className="text-sm font-semibold whitespace-nowrap">{label}</span>
+    <span className="relative h-2 flex-1 min-w-[60px] overflow-hidden rounded-full bg-white/30">
+      <span
+        className="absolute top-0 h-full rounded-full bg-white"
+        style={{ animation: 'bq-indeterminate 1.2s ease-in-out infinite' }}
+      />
+    </span>
+  </span>
+);
+
+// Indeterminate progress bar styles
+const GeneratingBarStyles = () => (
+  <style>{`
+    @keyframes bq-indeterminate {
+      0%   { left: -40%; width: 40%; }
+      50%  { left: 20%;  width: 60%; }
+      100% { left: 100%; width: 40%; }
+    }
+  `}</style>
+);
+
 
 // Professional drag-and-drop upload slot with inline validation
 const UploadSlot = ({ policyKey, file, onFileSelected, onRemove, stepBadge, locked }) => {
@@ -306,6 +330,7 @@ const InputQuestion = () => {
   const [generating, setGenerating] = useState(false);
   const [generationResult, setGenerationResult] = useState(null);
   const [previewBloomTab, setPreviewBloomTab] = useState('Remember'); // Syntax Error Fixed Here
+  const [generationProgress, setGenerationProgress] = useState(0);
   const uploadAbortControllerRef = useRef(null);
 
   useEffect(() => {
@@ -801,6 +826,7 @@ const InputQuestion = () => {
       uploading: false,
       generating: true,
     });
+    setGenerationProgress(10); // Start progress bar
 
     try {
       const payload = {
@@ -817,11 +843,13 @@ const InputQuestion = () => {
         user_id: Number(localStorage.getItem('user_id')) || null,
       };
 
+      setGenerationProgress(20); // Progress: sending request
       const previewResponse = await fetch(`${API_URL}/questions/generate-preview`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+      setGenerationProgress(70); // Progress: received response
 
       if (!previewResponse.ok) {
         const errData = await parseApiResponse(previewResponse);
@@ -832,6 +860,7 @@ const InputQuestion = () => {
         throw new Error(message);
       }
 
+      setGenerationProgress(80); // Progress: preview received, confirming...
       const confirmResponse = await fetch(`${API_URL}/questions/confirm-generation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -843,8 +872,10 @@ const InputQuestion = () => {
         throw new Error(getErrorMessage(errData) || `Saving failed with server status code: ${confirmResponse.status}`);
       }
 
+      setGenerationProgress(95); // Progress: almost done
       const data = await parseApiResponse(confirmResponse);
       setGenerationResult(data);
+      setGenerationProgress(100); // Complete!
       setSuccessMessage('🎉 Matrix TOS mapped and questions populated to the database store successfully!');
       persistInputQuestionSession({
         activeTab: 'upload',
@@ -864,6 +895,10 @@ const InputQuestion = () => {
       console.error("TOS Generation Error:", err);
     } finally {
       setGenerating(false);
+      // Keep progress bar visible for 500ms after completion before hiding
+      setTimeout(() => {
+        setGenerationProgress(0);
+      }, 500);
       persistInputQuestionSession({
         activeTab: 'upload',
         uploading: false,
@@ -895,6 +930,7 @@ const InputQuestion = () => {
 
   return (
     <div className="min-h-screen w-full" style={{ backgroundColor: pageBg, fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" }}>
+      <GeneratingBarStyles />
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
         <div className="mb-7 flex items-start gap-4">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl shadow-sm" style={{ backgroundColor: PRIMARY }}><Sparkles className="h-6 w-6 text-white" strokeWidth={2} /></div>
@@ -1224,10 +1260,29 @@ const InputQuestion = () => {
                             onClick={handleGenerate}
                             disabled={generating || selectedTopics.length === 0 || !totalItems || !!generationResult}
                             className="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-slate-300"
-                            style={{ backgroundColor: PRIMARY }}
+                            style={{ backgroundColor: PRIMARY, minWidth: generating ? 280 : undefined }}
                           >
-                            {generating ? <><svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" /></svg>Generating...</> : <><CheckCircle2 className="h-4 w-4" />{generationResult ? 'Matrix TOS & Assessment Generated' : 'Generate Matrix TOS & Assessment'}</>}
+                            {generating ? (
+                              <GeneratingProgress label="Generating…" />
+                            ) : (
+                              <>
+                                <CheckCircle2 className="h-4 w-4" />
+                                {generationResult ? 'Matrix TOS & Assessment Generated' : 'Generate Matrix TOS & Assessment'}
+                              </>
+                            )}
                           </button>
+                          {/* Progress bar under button */}
+                          {generating && (
+                            <div className="mt-2 w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                              <div
+                                className="h-full transition-all duration-500 ease-out"
+                                style={{
+                                  width: `${generationProgress}%`,
+                                  background: 'linear-gradient(90deg, #8F1424 0%, #D64545 50%, #B4454A 100%)',
+                                }}
+                              />
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
