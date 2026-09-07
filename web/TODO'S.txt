@@ -1,0 +1,18 @@
+- Admin Side 
+1. Add sa sidebar ng recycle bin para makita yung mga deleted na subjects at question then pwede din i-restore.
+
+A. Dashboard
+1. Remove yung Success Rate sa Dashboard
+2. Yung total assessments ay hindi tally sa nasa question bank na total exports (dapat magkatulad)
+3. Active Faculty dapat tally din sa nasa user management
+
+B. Question bank
+1. Pag nagselect ng subject, dapat lilipat ng page, para mas maayos tingnan hehe.
+2. Remove Import bank
+3. Tas itulad sa user side yung pagdownload ng files sa question bank hehe. (Check na langs ang question bank ng user side)
+
+C. Reports
+1. Same ang tab sa history page ng user. Tas pag mag eexport ng report, may option kung alin dun sa mga tabs ang ieexport tas kung anong file type. (csv,word,excel,pdf)
+
+D. Content Governance
+1. Remove yung Review Queue
