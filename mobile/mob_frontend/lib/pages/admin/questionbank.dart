@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'dart:typed_data';
 import 'package:BloomQuest/config/api_config.dart'; // adjust path/package name
 import 'package:BloomQuest/utils/theme_constants.dart';
 import 'package:BloomQuest/widgets/shimmer_box.dart';

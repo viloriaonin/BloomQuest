@@ -225,6 +225,26 @@ function App() {
             </AdminRoute>
           } 
         />
+        <Route
+          path="/admin/questions/:subjectId"
+          element={
+            <AdminRoute>
+              <PageContainer>
+                <AdminDashboard />
+              </PageContainer>
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/users/:userId"
+          element={
+            <AdminRoute>
+              <PageContainer>
+                <AdminDashboard />
+              </PageContainer>
+            </AdminRoute>
+          }
+        />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>

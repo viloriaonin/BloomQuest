@@ -6,7 +6,9 @@ const LegacyAcademicMgmtContent = () => (
       <div className="flex items-center justify-between gap-4 mb-6">
         <div>
           <p className="text-sm font-semibold text-gray-500">Departments</p>
-          <p className="text-xs text-gray-400">Manage academic units and schools</p>
+          <p className="text-xs text-gray-400">
+            Manage academic units and schools
+          </p>
         </div>
         <button className="inline-flex items-center gap-2 rounded-full bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 transition">
           + Add New
@@ -30,13 +32,29 @@ const LegacyAcademicMgmtContent = () => (
               </div>
               <div className="flex items-center gap-2 text-gray-500">
                 <button className="rounded-full p-2 hover:bg-gray-100 transition">
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    className="w-4 h-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <path d="M12 20h9" />
                     <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
                   </svg>
                 </button>
                 <button className="rounded-full p-2 hover:bg-gray-100 transition">
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    className="w-4 h-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <path d="M3 6h18" />
                     <path d="M8 6v14" />
                     <path d="M16 6v14" />
@@ -63,18 +81,36 @@ const LegacyAcademicMgmtContent = () => (
       <div className="rounded-3xl bg-[#faf7f7] p-5 border border-red-100">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="font-semibold text-gray-900">Bachelor of Science in Computer Science</p>
+            <p className="font-semibold text-gray-900">
+              Bachelor of Science in Computer Science
+            </p>
             <p className="mt-2 text-sm text-gray-500">BSCS</p>
           </div>
           <div className="flex items-center gap-2 text-gray-500">
             <button className="rounded-full p-2 hover:bg-gray-100 transition">
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                className="w-4 h-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M12 20h9" />
                 <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
               </svg>
             </button>
             <button className="rounded-full p-2 hover:bg-gray-100 transition">
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                className="w-4 h-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M3 6h18" />
                 <path d="M8 6v14" />
                 <path d="M16 6v14" />
@@ -89,7 +125,9 @@ const LegacyAcademicMgmtContent = () => (
       <div className="flex items-center justify-between gap-4 mb-6">
         <div>
           <p className="text-sm font-semibold text-gray-500">Subjects</p>
-          <p className="text-xs text-gray-400">Organize courses by year level</p>
+          <p className="text-xs text-gray-400">
+            Organize courses by year level
+          </p>
         </div>
         <button className="inline-flex items-center gap-2 rounded-full bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 transition">
           + Add New
@@ -125,29 +163,59 @@ const LegacyAcademicMgmtContent = () => (
             items: [],
           },
         ].map((group) => (
-          <details key={group.year} className="rounded-3xl bg-gray-50 border border-gray-100 p-4">
+          <details
+            key={group.year}
+            className="rounded-3xl bg-gray-50 border border-gray-100 p-4"
+          >
             <summary className="flex cursor-pointer items-center justify-between gap-4 text-sm font-semibold text-gray-900 list-none">
-              <span>{group.year} ({group.count})</span>
-              <span className="text-gray-400">{group.count > 0 ? "▾" : "▸"}</span>
+              <span>
+                {group.year} ({group.count})
+              </span>
+              <span className="text-gray-400">
+                {group.count > 0 ? "▾" : "▸"}
+              </span>
             </summary>
 
             {group.items.length > 0 && (
               <div className="mt-4 space-y-3">
                 {group.items.map((subject) => (
-                  <div key={subject.title} className="rounded-3xl bg-white p-4 border border-gray-100 shadow-sm flex items-center justify-between gap-4">
+                  <div
+                    key={subject.title}
+                    className="rounded-3xl bg-white p-4 border border-gray-100 shadow-sm flex items-center justify-between gap-4"
+                  >
                     <div>
-                      <p className="font-semibold text-gray-900">{subject.title}</p>
-                      <p className="mt-1 text-sm text-gray-500">{subject.code}</p>
+                      <p className="font-semibold text-gray-900">
+                        {subject.title}
+                      </p>
+                      <p className="mt-1 text-sm text-gray-500">
+                        {subject.code}
+                      </p>
                     </div>
                     <div className="flex items-center gap-2 text-gray-500">
                       <button className="rounded-full p-2 hover:bg-gray-100 transition">
-                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg
+                          className="w-4 h-4"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
                           <path d="M12 20h9" />
                           <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
                         </svg>
                       </button>
                       <button className="rounded-full p-2 hover:bg-gray-100 transition">
-                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg
+                          className="w-4 h-4"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
                           <path d="M3 6h18" />
                           <path d="M8 6v14" />
                           <path d="M16 6v14" />
@@ -169,28 +237,66 @@ const ACADEMIC_API = "/api";
 
 export const AcademicMgmtContent = () => {
   const [departments, setDepartments] = React.useState([]);
+  const [facultyByDepartment, setFacultyByDepartment] = React.useState({});
+  const [expandedDepartment, setExpandedDepartment] = React.useState(null);
   const [modal, setModal] = React.useState(null);
   const [editingItem, setEditingItem] = React.useState(null);
-  const [form, setForm] = React.useState({ name: "", code: "", department_id: "" });
+  const [form, setForm] = React.useState({
+    name: "",
+    code: "",
+    department_id: "",
+  });
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
 
   const loadData = React.useCallback(async () => {
     setLoading(true);
     try {
-      const departmentsRes = await fetch(`${ACADEMIC_API}/departments`);
-      if (!departmentsRes.ok) throw new Error("Could not load academic data.");
+      const [departmentsRes, facultyRes] = await Promise.all([
+        fetch(`${ACADEMIC_API}/departments`),
+        fetch(`${ACADEMIC_API}/contact-admin/users`),
+      ]);
+      if (!departmentsRes.ok || !facultyRes.ok) {
+        throw new Error("Could not load academic data.");
+      }
       setDepartments(await departmentsRes.json());
+      const usersPayload = await facultyRes.json();
+      const users = Array.isArray(usersPayload)
+        ? usersPayload
+        : usersPayload.users || [];
+      setFacultyByDepartment(
+        users
+          .filter((user) => String(user.role).toLowerCase() === "faculty")
+          .reduce((groups, user) => {
+            const key = String(user.department || "").trim().toLowerCase();
+            if (!key) return groups;
+            groups[key] = [...(groups[key] || []), user];
+            return groups;
+          }, {}),
+      );
       setError("");
-    } catch (err) { setError(err.message); }
-    finally { setLoading(false); }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  React.useEffect(() => { loadData(); }, [loadData]);
+  React.useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const openModal = (type, item = null) => {
     setEditingItem(item);
-    setForm(item ? { name: item.name, code: item.code, department_id: item.department_id || "" } : { name: "", code: "", department_id: departments[0]?.id || "" });
+    setForm(
+      item
+        ? {
+            name: item.name,
+            code: item.code,
+            department_id: item.department_id || "",
+          }
+        : { name: "", code: "", department_id: departments[0]?.id || "" },
+    );
     setModal(type);
   };
 
@@ -199,23 +305,179 @@ export const AcademicMgmtContent = () => {
     const endpoint = `${"/departments"}${editingItem ? `/${editingItem.id}` : ""}`;
     const payload = { name: form.name, code: form.code };
     try {
-      const response = await fetch(`${ACADEMIC_API}${endpoint}`, { method: editingItem ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const response = await fetch(`${ACADEMIC_API}${endpoint}`, {
+        method: editingItem ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
       if (!response.ok) throw new Error("Could not save this item.");
-      setModal(null); setEditingItem(null); setForm({ name: "", code: "", department_id: "" }); loadData();
-    } catch (err) { setError(err.message); }
+      setModal(null);
+      setEditingItem(null);
+      setForm({ name: "", code: "", department_id: "" });
+      loadData();
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   const remove = async (type, id) => {
     if (!window.confirm("Delete this item?")) return;
-    const response = await fetch(`${ACADEMIC_API}/${type}/${id}`, { method: "DELETE" });
-    if (!response.ok) setError("Could not delete this item."); else loadData();
+    const response = await fetch(`${ACADEMIC_API}/${type}/${id}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) setError("Could not delete this item.");
+    else loadData();
   };
 
-  return <div className="bq-academic-attached grid gap-6">
-    {error && <div className="xl:col-span-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
-    <section className="bq-panel w-full rounded-[32px] p-8"><div className="mb-6 flex items-start justify-between gap-4"><div><p className="text-sm font-semibold text-slate-200">Departments</p><p className="mt-1 text-xs text-slate-400">Manage academic units and schools</p></div><button className="bq-primary-button whitespace-nowrap" onClick={() => openModal("department")}>+ Add New</button></div>{loading ? <p className="text-sm text-slate-400">Loading departments...</p> : departments.length === 0 ? <div className="rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-6 text-center text-sm text-slate-500">No departments yet.</div> : <div className="space-y-4">{departments.map((department) => <div key={department.id} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"><div className="flex items-center justify-between gap-6"><div className="min-w-0"><p className="truncate font-semibold text-slate-100">{department.name}</p><p className="mt-1 text-sm text-slate-400">{department.code || "No code"}</p></div><div className="flex shrink-0 items-center gap-6"><span className="text-sm font-medium text-slate-500">{department.faculty_count ?? 0} faculty</span><div className="flex gap-3"><button className="text-sm font-semibold text-slate-400 hover:text-white" onClick={() => openModal("department", department)}>Edit</button><button className="text-sm font-semibold text-red-400" onClick={() => remove("departments", department.id)}>Delete</button></div></div></div></div>)}</div>}</section>
-    {modal && <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4"><form onSubmit={submit} className="bq-modal-panel w-full max-w-md p-6"><div className="mb-5 flex items-center justify-between"><h3 className="text-lg font-bold text-slate-900">{editingItem ? "Edit" : "Add"} department</h3><button type="button" className="text-slate-400" onClick={() => setModal(null)}>Close</button></div><label className="mb-4 block text-sm font-semibold text-slate-700">Name<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bq-field mt-1 w-full px-3" /></label><label className="mb-5 block text-sm font-semibold text-slate-700">Code<input required value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} className="bq-field mt-1 w-full px-3" /></label><div className="flex justify-end gap-2"><button type="button" className="bq-secondary-button" onClick={() => setModal(null)}>Cancel</button><button className="bq-primary-button">Save</button></div></form></div>}
-  </div>;
+  return (
+    <div className="bq-academic-attached grid gap-6">
+      {error && (
+        <div className="xl:col-span-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+      <section className="bq-panel w-full rounded-[32px] p-8">
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-slate-200">Departments</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Manage academic units and schools
+            </p>
+          </div>
+          <button
+            className="bq-primary-button whitespace-nowrap"
+            onClick={() => openModal("department")}
+          >
+            + Add New
+          </button>
+        </div>
+        {loading ? (
+          <p className="text-sm text-slate-400">Loading departments...</p>
+        ) : departments.length === 0 ? (
+          <div className="rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-6 text-center text-sm text-slate-500">
+            No departments yet.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {departments.map((department) => (
+              <div key={department.id} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                <div className="flex items-center justify-between gap-6">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-slate-100">
+                      {department.name}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-400">
+                      {department.code || "No code"}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-6">
+                    <button
+                      type="button"
+                      className="text-sm font-medium text-slate-400 hover:text-white"
+                      onClick={() =>
+                        setExpandedDepartment(
+                          expandedDepartment === department.id
+                            ? null
+                            : department.id,
+                        )
+                      }
+                      aria-expanded={expandedDepartment === department.id}
+                    >
+                      {department.faculty_count ?? 0} faculty
+                      <span className="ml-2 text-xs">
+                        {expandedDepartment === department.id ? "▴" : "▾"}
+                      </span>
+                    </button>
+                    <div className="flex gap-3">
+                      <button
+                        className="text-sm font-semibold text-slate-400 hover:text-white"
+                        onClick={() => openModal("department", department)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="text-sm font-semibold text-red-400"
+                        onClick={() => remove("departments", department.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {expandedDepartment === department.id && (
+                  <div className="mt-4 border-t border-white/10 pt-4">
+                    {(facultyByDepartment[department.name.trim().toLowerCase()] || []).length > 0 ? (
+                      <div className="space-y-2">
+                        {(facultyByDepartment[department.name.trim().toLowerCase()] || []).map((faculty) => (
+                          <div key={faculty.id} className="flex items-center justify-between rounded-xl bg-black/10 px-3 py-2">
+                            <span className="text-sm font-medium text-slate-200">
+                              {faculty.full_name || faculty.name || faculty.email}
+                            </span>
+                            <span className="text-xs text-slate-500">{faculty.email}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-slate-500">No faculty assigned to this department.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+      {modal && (
+        <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
+          <form
+            onSubmit={submit}
+            className="bq-modal-panel w-full max-w-md p-6"
+          >
+            <div className="mb-5 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">
+                {editingItem ? "Edit" : "Add"} department
+              </h3>
+              <button
+                type="button"
+                className="text-slate-400"
+                onClick={() => setModal(null)}
+              >
+                Close
+              </button>
+            </div>
+            <label className="mb-4 block text-sm font-semibold text-slate-700">
+              Name
+              <input
+                required
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                className="bq-field mt-1 w-full px-3"
+              />
+            </label>
+            <label className="mb-5 block text-sm font-semibold text-slate-700">
+              Code
+              <input
+                required
+                value={form.code}
+                onChange={(e) => setForm({ ...form, code: e.target.value })}
+                className="bq-field mt-1 w-full px-3"
+              />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                className="bq-secondary-button"
+                onClick={() => setModal(null)}
+              >
+                Cancel
+              </button>
+              <button className="bq-primary-button">Save</button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  );
 };
 
 const AcademicMgmtBtn = ({ activeTab, setActiveTab }) => {
@@ -241,11 +503,17 @@ const AcademicMgmtBtn = ({ activeTab, setActiveTab }) => {
           style={{ background: "#fff" }}
         />
       )}
-      <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"
-        style={{ color: isActive ? "#ffffff" : "var(--bq-accent)" }}>
+      <svg
+        className="w-5 h-5 flex-shrink-0"
+        fill="currentColor"
+        viewBox="0 0 20 20"
+        style={{ color: isActive ? "#ffffff" : "var(--bq-accent)" }}
+      >
         <path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z" />
       </svg>
-      <span className="text-sm font-medium tracking-wide">Academic Management</span>
+      <span className="text-sm font-medium tracking-wide">
+        Academic Management
+      </span>
     </button>
   );
 };

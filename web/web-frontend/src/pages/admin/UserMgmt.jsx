@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { usePopup } from "../../components/PopupProvider";
 import LoadingSpinner from "../../components/LoadingSpinner";
-import { Activity, CheckSquare, FileText, History, X, Users, UserCheck, UserPlus } from "lucide-react";
+import { Activity, CheckSquare, FileText, History, X, Users } from "lucide-react";
 
 const API_BASE_URL = "http://localhost:8000/api";
 
 export const UserMgmtContent = () => {
   const { showAlert, showConfirm } = usePopup();
+  const navigate = useNavigate();
   const [requests, setRequests] = useState([]);
   const [activeUsers, setActiveUsers] = useState([]);
   const [archivedUsers, setArchivedUsers] = useState([]);
@@ -18,6 +20,7 @@ export const UserMgmtContent = () => {
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("active");
   const [activityFilter, setActivityFilter] = useState("all");
+  const [userView, setUserView] = useState("active");
   const [selectedUserIds, setSelectedUserIds] = useState([]);
   const [activityUser, setActivityUser] = useState(null);
   const [userActivity, setUserActivity] = useState([]);
@@ -321,19 +324,6 @@ export const UserMgmtContent = () => {
 
   const visibleUsers = statusFilter === "archived" ? filteredArchivedUsers : statusFilter === "all" ? [...filteredActiveUsers, ...filteredArchivedUsers] : filteredActiveUsers;
 
-  const openActivity = async (user) => {
-    setActivityUser(user);
-    setLoadingActivity(true);
-    try {
-      const response = await fetch(`${API_BASE_URL.replace("/api", "")}/api/admin/users/${user.id}/overview`);
-      const data = response.ok ? await response.json() : null;
-      setFacultyDetail(data);
-      setUserActivity(data?.activities || []);
-    } finally {
-      setLoadingActivity(false);
-    }
-  };
-
   const toggleUser = (id) => setSelectedUserIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
 
   const runBulkAction = async (action) => {
@@ -348,28 +338,42 @@ export const UserMgmtContent = () => {
 
   return (
     <div className="bq-admin-user-management bq-attached-user-ui space-y-6 relative page-transition">
-      <div className="grid gap-3 md:grid-cols-4">
-        {[
-          { label: "Total Users", value: (activeUsers.length + archivedUsers.length).toString(), tone: "text-red-700" },
-          { label: "Active", value: activeUsers.length.toString(), tone: "text-green-700" },
-          { label: "Pending", value: requests.length.toString(), tone: "text-amber-700" },
-          { label: "Archived", value: archivedUsers.length.toString(), tone: "text-slate-700" },
-        ].map((card) => (
-          <div key={card.label} className="bq-admin-user-stat rounded-md bg-white border border-gray-200 p-5 shadow-sm">
-            <div className="flex justify-between items-start gap-4">
-              <div>
-                <p className="text-sm font-medium text-gray-500">{card.label}</p>
-                <p className="mt-4 text-3xl font-bold text-gray-900">{card.value}</p>
-              </div>
-              <div className={`bq-user-stat-icon rounded-2xl bg-gray-50 p-3 ${card.tone}`}>
-                {card.label === "Total Users" ? <Users size={18} /> : card.label === "Active" ? <UserCheck size={18} /> : <UserPlus size={18} />}
-              </div>
-            </div>
+      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between gap-4 bg-[#F0645A] px-6 py-5 text-white">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/75">Administration</p>
+            <h1 className="mt-1 text-2xl font-bold">User management</h1>
+            <p className="mt-1 text-sm text-white/80">Review accounts, departments, activity, and access status.</p>
           </div>
+          <Users className="h-10 w-10 shrink-0" />
+        </div>
+        <div className="grid gap-4 p-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div><p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Total accounts</p><p className="mt-1 text-xl font-bold text-gray-900">{activeUsers.length + archivedUsers.length}</p></div>
+          <div><p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Pending review</p><p className="mt-1 text-xl font-bold text-amber-700">{requests.length}</p></div>
+          <div><p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Active accounts</p><p className="mt-1 text-xl font-bold text-emerald-700">{activeUsers.length}</p></div>
+          <div><p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Archived accounts</p><p className="mt-1 text-xl font-bold text-gray-700">{archivedUsers.length}</p></div>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2 rounded-md border border-gray-200 bg-white p-2 shadow-sm" role="tablist" aria-label="User management sections">
+        {[
+          ["pending", "Pending requests", requests.length],
+          ["active", "Active users", activeUsers.length],
+          ["archived", "Archived users", archivedUsers.length],
+        ].map(([view, label, count]) => (
+          <button
+            key={view}
+            type="button"
+            role="tab"
+            aria-selected={userView === view}
+            onClick={() => setUserView(view)}
+            className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors ${userView === view ? "bg-red-700 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+          >
+            {label} <span className="ml-1 opacity-75">({count})</span>
+          </button>
         ))}
       </div>
 
-      <div className="bq-admin-user-section rounded-md bg-white border border-gray-200 p-5 shadow-sm">
+      {userView === "pending" && <div className="bq-admin-user-section rounded-md bg-white border border-gray-200 p-5 shadow-sm">
         <div className="mb-4">
           <h3 className="text-base font-bold text-gray-900">Pending Account Requests</h3>
           <p className="text-xs text-gray-500 mt-0.5">Review submissions from the administrator contact form.</p>
@@ -424,9 +428,9 @@ export const UserMgmtContent = () => {
             })}
           </div>
         )}
-      </div>
+      </div>}
 
-      <div className="bq-admin-user-section rounded-md bg-white border border-gray-200 p-5 shadow-sm overflow-hidden">
+      {userView === "active" && <div className="bq-admin-user-section rounded-md bg-white border border-gray-200 p-5 shadow-sm overflow-hidden">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="bq-field px-3 py-2 text-sm"><option value="all">All roles</option><option value="faculty">Faculty</option><option value="student">Student</option></select>
           <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="bq-field px-3 py-2 text-sm"><option value="active">Active users</option><option value="archived">Archived users</option><option value="all">All statuses</option></select>
@@ -440,63 +444,40 @@ export const UserMgmtContent = () => {
         {errorUsers ? (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errorUsers}</div>
         ) : null}
-        <table className="w-full table-fixed text-left text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-gray-600">
-              {['Name', 'Role', 'Department', 'Status', 'Actions'].map((heading) => (
-                <th key={heading} className="py-4 pr-6 font-semibold">{heading}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {visibleUsers.length === 0 ? (
-              <tr>
-                <td colSpan="5" className="py-8 text-center text-gray-400">No active users found in database.</td>
-              </tr>
-            ) : (
-              visibleUsers.map((user) => {
-                const displayName = user.full_name || user.name || "Unknown";
-                const displayInitials = displayName
-                  .split(' ')
-                  .map((n) => n[0])
-                  .join('')
-                  .substring(0, 2)
-                  .toUpperCase();
-                const displayStatus = user.status || (user.is_active === false ? "Inactive" : "Active");
-
-                return (
-                  <tr key={user.id || user.email} className="hover:bg-gray-50 transition-colors">
-                    <td className="py-5 pr-6">
-                      <div className="flex items-center gap-3">
-                        <input type="checkbox" checked={selectedUserIds.includes(user.id)} onChange={() => toggleUser(user.id)} aria-label={`Select ${displayName}`} />
-                        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-red-700 text-sm font-bold text-white">
-                          {displayInitials}
-                        </div>
-                        <div>
-                          <p className="font-semibold text-gray-900">{displayName}</p>
-                          <p className="text-xs text-gray-500">{user.email}</p>
-                        </div>
+        {visibleUsers.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-gray-200 py-10 text-center text-sm text-gray-400">No active users found in database.</div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2">
+            {visibleUsers.map((user) => {
+              const displayName = user.full_name || user.name || "Unknown";
+              const displayInitials = displayName.split(" ").map((n) => n[0]).join("").substring(0, 2).toUpperCase();
+              const displayStatus = user.status || (user.is_active === false ? "Inactive" : "Active");
+              return (
+                <article key={user.id || user.email} className="rounded-2xl border border-gray-200 bg-gray-50 p-4 transition hover:border-red-200 hover:shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <input type="checkbox" checked={selectedUserIds.includes(user.id)} onChange={() => toggleUser(user.id)} aria-label={`Select ${displayName}`} />
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-700 text-sm font-bold text-white">{displayInitials}</div>
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-gray-900">{displayName}</p>
+                        <p className="truncate text-xs text-gray-500">{user.email}</p>
                       </div>
-                    </td>
-                    <td className="py-5 pr-6 text-gray-600">{user.role || "N/A"}</td>
-                    <td className="py-5 pr-6 text-gray-600">{user.department || "N/A"}</td>
-                    <td className="py-5 pr-6">
-                      <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${displayStatus === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'}`}>
-                        {displayStatus}
-                      </span>
-                    </td>
-                    <td className="py-5 pr-6">
-                      <button type="button" onClick={() => openActivity(user)} className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition"><Activity size={13} /> Activity</button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${displayStatus === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-700"}`}>{displayStatus}</span>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-3 border-t border-gray-200 pt-3 text-xs">
+                    <div><span className="block text-gray-400">Role</span><strong className="mt-1 block text-gray-700">{user.role || "N/A"}</strong></div>
+                    <div><span className="block text-gray-400">Department</span><strong className="mt-1 block truncate text-gray-700">{user.department || "N/A"}</strong></div>
+                  </div>
+                  <button type="button" onClick={() => navigate(`/admin/users/${user.id}`)} className="mt-4 inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition"><Activity size={13} /> View profile</button>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>}
 
-      <div className="bq-admin-user-section rounded-md bg-white border border-gray-200 p-5 shadow-sm overflow-hidden mt-6">
+      {userView === "archived" && <div className="bq-admin-user-section rounded-md bg-white border border-gray-200 p-5 shadow-sm overflow-hidden mt-6">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-base font-bold text-gray-900">Archived Users</h3>
@@ -538,7 +519,7 @@ export const UserMgmtContent = () => {
             })}
           </div>
         )}
-      </div>
+      </div>}
 
       {activityUser && (
         <div className="bq-modal-overlay fixed inset-0 z-50 flex justify-end" onMouseDown={(event) => { if (event.target === event.currentTarget) setActivityUser(null); }}>

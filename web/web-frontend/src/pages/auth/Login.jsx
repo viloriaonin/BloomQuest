@@ -63,6 +63,8 @@ const Login = () => {
       localStorage.setItem("role", data.role);
       localStorage.setItem("email", data.email);
       localStorage.setItem("user_id", String(data.user_id));
+      localStorage.setItem("department", data.department || "");
+      window.dispatchEvent(new Event("profile-updated"));
 
       const destination = data.role?.toLowerCase() === "admin" ? "/admin" : "/dashboard";
       navigate(destination);
@@ -202,27 +204,28 @@ const Login = () => {
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="bq-label">
-                  Password
-                </label>
+              <label className="bq-label block mb-2">
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Enter your password"
+                  className="bq-field pr-20"
+                />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="bq-label"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 bq-label"
                   style={{ color: accent, letterSpacing: '0.08em' }}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? "Hide" : "Show"}
                 </button>
               </div>
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Enter your password"
-                className="bq-field"
-              />
             </div>
 
             <div className="flex items-center justify-between text-sm pt-1" style={{ fontFamily: 'Inter, sans-serif' }}>

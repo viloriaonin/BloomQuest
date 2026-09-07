@@ -23,6 +23,7 @@ const TopBar = ({ onToggleSidebar }) => {
     email: localStorage.getItem("email") || "faculty@bloomquest.edu",
     role: localStorage.getItem("role") || "Faculty",
     displayName: localStorage.getItem("name") || "Dr. Reyes",
+    department: localStorage.getItem("department") || "Department not assigned",
   }));
 
   const title = pageTitles[location.pathname] || "BloomQuest";
@@ -34,6 +35,7 @@ const TopBar = ({ onToggleSidebar }) => {
         email: localStorage.getItem("email") || "faculty@bloomquest.edu",
         role: localStorage.getItem("role") || "Faculty",
         displayName: localStorage.getItem("name") || "Dr. Reyes",
+        department: localStorage.getItem("department") || "Department not assigned",
       });
     };
 
@@ -51,7 +53,7 @@ const TopBar = ({ onToggleSidebar }) => {
       <div className="flex items-center gap-3">
         <button type="button" onClick={() => onToggleSidebar?.()} className="rounded-lg p-1.5 transition-colors hover:bg-white" style={{ color: textMuted }} aria-label="Toggle navigation"><Menu size={18} /></button>
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.22em]" style={{ color: textMuted }}>Welcome, {profile.displayName}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em]" style={{ color: textMuted }}>Welcome, {profile.displayName} · {profile.department}</p>
           <span className="text-[0.92rem] font-semibold" style={{ color: textPrimary }}>{title}</span>
         </div>
       </div>

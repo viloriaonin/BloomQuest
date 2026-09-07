@@ -851,10 +851,18 @@ async def export_institutional_tos(upload_id: str, user_id: int | None = None, d
     """
     tos_binary = FILE_CACHE.get(f"{upload_id}_tos")
 
+    meta = FILE_CACHE.get(f"{upload_id}_metadata")
+
     if not tos_binary:
         raise HTTPException(
             status_code=404,
             detail="TOS file not found or the session has expired."
+        )
+
+    if not meta:
+        raise HTTPException(
+            status_code=404,
+            detail="Session metadata not found. Please re-upload your files."
         )
 
     subject = meta["subject"]

@@ -47,7 +47,8 @@ const Sidebar = ({ collapsed, mobileOpen, onToggleCollapsed, onNavigate }) => {
     return null;
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await fetch("/api/logout", { method: "POST" }).catch(() => {});
     localStorage.removeItem("token");
     navigate("/");
   };
