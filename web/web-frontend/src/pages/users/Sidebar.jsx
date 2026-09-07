@@ -1,5 +1,6 @@
 import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
 import {
   BookOpen,
   FileClock,
@@ -36,10 +37,10 @@ const Sidebar = ({ collapsed, mobileOpen, onToggleCollapsed, onNavigate }) => {
     : [
         { label: "Dashboard", path: "/dashboard", icon: icons.dashboard },
         { label: "New Analysis", path: "/input", icon: icons.input },
-        { label: "History", path: "/history", icon: icons.history },
         { label: "Question Bank", path: "/question-bank", icon: icons.bank },
         { label: "Downloads", path: "/favorites", icon: icons.favorites },
         { label: "Recycle Bin", path: "/recycle-bin", icon: icons.recycle },
+        { label: "History", path: "/history", icon: icons.history },
         { label: "Settings", path: "/settings", icon: icons.settings },
       ];
 
@@ -59,14 +60,12 @@ const Sidebar = ({ collapsed, mobileOpen, onToggleCollapsed, onNavigate }) => {
       style={{ backgroundColor: "#FCFCFD", borderRight: "1px solid rgba(15, 23, 42, 0.08)" }}
     >
       <div className="flex items-center gap-3 px-3 py-4 border-b" style={{ borderColor: "rgba(15, 23, 42, 0.08)" }}>
-        <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ backgroundColor: "rgba(180, 69, 74, 0.12)" }}>
-          <img src="/bloomquest-logo.png" alt="BloomQuest" className="w-5 h-5 object-contain shrink-0" />
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: "rgba(180, 69, 74, 0.12)" }}>
+            <img src={bloomquestLogo} alt="BloomQuest" className="w-5 h-5 object-contain" />
+          </div>
+          {!collapsed && <div><h1 className="font-bold text-[1.05rem] tracking-wide leading-none" style={{ color: "#0F172A" }}>BloomQuest</h1><p className="text-xs mt-1" style={{ color: "#64748B" }}>Faculty workspace</p></div>}
         </div>
-        {!collapsed && (
-          <span className="font-bold text-[1.05rem] tracking-wide whitespace-nowrap overflow-hidden" style={{ color: "#0F172A" }}>
-            BloomQuest
-          </span>
-        )}
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2.5 py-4">

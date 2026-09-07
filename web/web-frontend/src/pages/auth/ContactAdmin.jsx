@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import LoadingSpinner from "../../components/LoadingSpinner";
 import LegalModal from "../../components/LegalModal";
+import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
 
 // Connects directly to your local backend server environment
 const API_URL = "http://localhost:8000/api/contact-admin";
@@ -16,11 +17,35 @@ const textMuted = '#6F6C64';
 const accent = '#B4454A';
 const accentHover = '#8F1C2B';
 
+const TypewriterText = ({ children }) => {
+  const [text, setText] = useState("");
+
+  useEffect(() => {
+    const fullText = String(children);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setText(fullText);
+      return undefined;
+    }
+
+    let index = 0;
+    const timer = window.setInterval(() => {
+      index += 1;
+      setText(fullText.slice(0, index));
+      if (index >= fullText.length) window.clearInterval(timer);
+    }, 32);
+
+    return () => window.clearInterval(timer);
+  }, [children]);
+
+  return <span className="bq-typewriter">{text}</span>;
+};
+
 const ContactAdmin = () => {
   const navigate = useNavigate();
 
   const [fullName, setFullName] = useState("");
   const [department, setDepartment] = useState("");
+  const [departments, setDepartments] = useState([]);
   const [email, setEmail] = useState("");
   
   // State management for requests status alerts
@@ -29,6 +54,22 @@ const ContactAdmin = () => {
   const [loading, setLoading] = useState(false);
   const [legalModal, setLegalModal] = useState(null); // "privacy" | "terms" | null
   const [existingRequestStatus, setExistingRequestStatus] = useState(null); // 'pending' | 'approved' | 'declined' | 'existing'
+
+  useEffect(() => {
+    let active = true;
+    fetch("http://localhost:8000/api/departments")
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Failed to load departments")))
+      .then((data) => {
+        if (active) setDepartments(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (active) setDepartments([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const isValidEmail = (value) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -149,7 +190,7 @@ const ContactAdmin = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col page-transition relative" style={{ minHeight: '100vh', overflow: 'hidden', backgroundColor: paper }}>
+    <div className="h-screen flex flex-col page-transition relative overflow-hidden" style={{ height: '100vh', backgroundColor: paper }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
 
@@ -205,21 +246,105 @@ const ContactAdmin = () => {
         .bq-corner-tr { top: -10px; right: -10px; border-top: 1.5px solid; border-right: 1.5px solid; }
         .bq-corner-bl { bottom: -10px; left: -10px; border-bottom: 1.5px solid; border-left: 1.5px solid; }
         .bq-corner-br { bottom: -10px; right: -10px; border-bottom: 1.5px solid; border-right: 1.5px solid; }
+
+        @media (max-height: 760px) {
+          .bq-contact-eyebrow { padding-top: 0.5rem; padding-bottom: 0; }
+          .bq-contact-center { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+          .bq-contact-card { padding: 1rem 1.5rem; }
+          .bq-contact-card-header { margin-bottom: 1rem; }
+          .bq-contact-card-title { font-size: 2.25rem; }
+          .bq-contact-form { gap: 0.75rem; }
+          .bq-contact-card .bq-field { padding-top: 0.55rem; padding-bottom: 0.55rem; }
+          .bq-contact-footer { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+        }
+
+          .bq-contact-card {
+            box-shadow: 0 24px 60px rgba(20, 20, 15, 0.09), 0 3px 12px rgba(20, 20, 15, 0.04);
+            border-radius: 12px;
+            animation: bq-contact-rise 520ms ease-out both;
+          }
+          .bq-contact-backdrop {
+            background-image: linear-gradient(rgba(180, 69, 74, 0.09) 1px, transparent 1px), linear-gradient(90deg, rgba(180, 69, 74, 0.09) 1px, transparent 1px);
+            background-size: 44px 44px;
+            mask-image: linear-gradient(to bottom, black, transparent 72%);
+            animation: bq-contact-grid-wave 9s ease-in-out infinite;
+          }
+          .bq-contact-layout {
+            display: grid;
+            grid-template-columns: minmax(180px, 0.72fr) minmax(0, 28rem);
+            align-items: center;
+            gap: clamp(2rem, 6vw, 6rem);
+            width: min(100%, 70rem);
+          }
+          .bq-contact-brand { animation: bq-contact-brand-in 620ms 80ms ease-out both; }
+          .bq-typewriter::after { content: "|"; margin-left: 2px; color: ${accent}; animation: bq-contact-caret-blink 800ms steps(1, end) infinite; }
+          .bq-contact-brand-mark {
+            width: min(100%, 22rem);
+            height: auto;
+            filter: drop-shadow(0 12px 18px rgba(20, 20, 15, 0.16));
+            animation: bq-contact-float 5s ease-in-out 700ms infinite;
+          }
+          @keyframes bq-contact-rise {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          @keyframes bq-contact-brand-in {
+            from { opacity: 0; transform: translateX(-18px); }
+            to { opacity: 1; transform: translateX(0); }
+          }
+          @keyframes bq-contact-caret-blink {
+            0%, 45% { opacity: 1; }
+            46%, 100% { opacity: 0; }
+          }
+          @keyframes bq-contact-grid-wave {
+            0%, 100% { background-position: 0 0, 0 0; background-size: 44px 44px; opacity: 0.86; }
+            50% { background-position: 18px 10px, 10px 18px; background-size: 48px 48px; opacity: 1; }
+          }
+          @keyframes bq-contact-float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-7px); }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .bq-contact-brand, .bq-contact-card, .bq-contact-brand-mark, .bq-contact-backdrop { animation: none; }
+          }
+          @media (max-width: 768px) {
+            .bq-contact-layout { grid-template-columns: 1fr; gap: 0.75rem; max-width: 28rem; }
+            .bq-contact-brand { flex-direction: row; align-items: center; justify-content: center; gap: 0.75rem; text-align: left; }
+            .bq-contact-brand-copy { display: none; }
+          }
+
+        @media (max-height: 760px) {
+          .bq-contact-brand-mark { width: min(100%, 18rem); }
+        }
+
+        @media (max-height: 600px) {
+          .bq-contact-center { overflow-y: auto; align-items: flex-start; }
+          .bq-contact-brand-mark { width: min(100%, 15rem); }
+          .bq-contact-card { padding: 0.75rem 1.25rem; }
+          .bq-contact-card-header { margin-bottom: 0.75rem; }
+          .bq-contact-card-title { font-size: 2rem; }
+          .bq-contact-form { gap: 0.5rem; }
+          .bq-contact-footer { font-size: 0.6875rem; }
+        }
       `}</style>
 
       <div className="absolute inset-0 -z-10" style={{ background: `linear-gradient(135deg, ${paper} 0%, #EEF2F8 100%)` }} />
+      <div className="bq-contact-backdrop pointer-events-none absolute inset-0 -z-10" />
       <div className="absolute -top-20 -right-20 rounded-full opacity-20" style={{ width: 420, height: 420, background: `radial-gradient(circle, ${accent} 0%, transparent 70%)` }} />
       <div className="absolute -bottom-28 -left-24 rounded-full opacity-15" style={{ width: 500, height: 500, background: `radial-gradient(circle, ${accent} 0%, transparent 70%)` }} />
 
-      {/* Quiet eyebrow, top of page */}
-      <div className="w-full flex justify-center pt-10 pb-2">
-        <span className="bq-eyebrow">BloomQuest &nbsp;·&nbsp; Request Access</span>
-      </div>
-
       {/* Centered Contact Admin Card */}
-      <div className="flex-1 flex items-center justify-center px-4 py-6">
-        <div
-          className="bq-card w-full max-w-md p-8 md:p-10"
+      <div className="bq-contact-center min-h-0 flex-1 flex items-center justify-center overflow-hidden px-4 py-4 sm:py-6">
+        <div className="bq-contact-layout">
+          <div className="bq-contact-brand flex flex-col items-start gap-4 text-left">
+            <img src={bloomquestLogo} alt="BloomQuest" className="bq-contact-brand-mark" />
+            <div className="bq-contact-brand-copy">
+              <p className="bq-eyebrow">Request access</p>
+              <p className="mt-3 max-w-xs text-sm leading-6" style={{ color: textMuted }}><TypewriterText>Connect your faculty account to the assessment workspace.</TypewriterText></p>
+            </div>
+          </div>
+          <div
+          className="bq-contact-card bq-card my-2 w-full max-w-md shrink-0 p-5 sm:p-6 md:p-8"
           style={{ backgroundColor: surface, border: `1px solid ${rule}` }}
         >
           <span className="bq-corner bq-corner-tl" />
@@ -227,8 +352,8 @@ const ContactAdmin = () => {
           <span className="bq-corner bq-corner-bl" />
           <span className="bq-corner bq-corner-br" />
 
-          <div className="mb-8">
-            <h2 className="bq-headline text-4xl" style={{ color: ink }}>
+          <div className="bq-contact-card-header mb-5 sm:mb-6">
+            <h2 className="bq-contact-card-title bq-headline text-3xl sm:text-4xl" style={{ color: ink }}>
               Contact Admin
             </h2>
             <div style={{ width: '36px', height: '2px', backgroundColor: accent, marginTop: '14px', marginBottom: '14px' }} />
@@ -276,7 +401,7 @@ const ContactAdmin = () => {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="bq-contact-form space-y-4 sm:space-y-5">
             <div>
               <label className="bq-label block mb-2">
                 Full Name
@@ -294,13 +419,15 @@ const ContactAdmin = () => {
               <label className="bq-label block mb-2">
                 Department / Section
               </label>
-              <input
-                type="text"
+              <select
                 value={department}
                 onChange={(e) => setDepartment(e.target.value)}
-                placeholder="e.g. College of Engineering"
                 className="bq-field"
-              />
+                required
+              >
+                <option value="">Select your department</option>
+                {departments.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+              </select>
             </div>
 
             <div>
@@ -342,11 +469,12 @@ const ContactAdmin = () => {
           <p className="text-center text-sm" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
             Back to login? <button type="button" onClick={() => navigate("/")} className="font-semibold hover:underline" style={{ color: accent }}>Sign in here</button>
           </p>
+          </div>
         </div>
       </div>
 
       <footer
-        className="w-full py-4 px-6 flex flex-col sm:flex-row items-center justify-between gap-2"
+        className="bq-contact-footer w-full shrink-0 py-4 px-6 flex flex-col sm:flex-row items-center justify-between gap-2"
         style={{ backgroundColor: paper, borderTop: `1px solid ${ruleSoft}`, fontFamily: 'Inter, sans-serif' }}
       >
         <p className="text-xs" style={{ color: textMuted }}>

@@ -93,6 +93,7 @@ class ActivityLog(Base):
     filename = Column(String(255), nullable=True)
     media_type = Column(String(255), nullable=True)
     file_content = Column(LargeBinary, nullable=True)
+    archived = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime, server_default=func.now())
 
 class QuestionSet(Base):

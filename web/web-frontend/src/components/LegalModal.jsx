@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import bloomquestLogo from "../assets/images/bloomquest-logo.png";
 
 const accent = '#B4454A';
 const ink = '#17171A';
@@ -89,10 +90,11 @@ const LegalModal = ({ type, onClose }) => {
       onClick={onClose}
     >
       <div
-        className="bq-modal-panel w-full max-w-[700px] max-h-[80vh] flex flex-col overflow-hidden"
+        className="bq-modal-panel legal-document w-full max-w-[760px] max-h-[84vh] flex flex-col overflow-hidden rounded-2xl"
         style={{
-          backgroundColor: '#F8F7F5',
-          border: '1px solid rgba(20,20,15,0.14)',
+          backgroundColor: '#FFFFFF',
+          border: '1px solid rgba(20,20,15,0.12)',
+          boxShadow: '0 28px 80px rgba(20,20,15,0.2)',
           animation: closing
             ? "legalModalOut 180ms ease-in forwards"
             : "legalModalIn 220ms ease-out forwards",
@@ -101,39 +103,50 @@ const LegalModal = ({ type, onClose }) => {
         onClick={(e) => e.stopPropagation()}
       >
         <div
-          className="flex items-center justify-between px-6 py-4"
-          style={{ backgroundColor: accent, borderBottom: '1px solid rgba(20,20,15,0.08)' }}
+          className="flex items-center justify-between gap-4 px-6 py-5 sm:px-8"
+          style={{ background: 'linear-gradient(135deg, #B4454A 0%, #8F1C2B 100%)', borderBottom: '1px solid rgba(255,255,255,0.16)' }}
         >
-          <h2 className="text-[1.05rem] font-bold text-white" style={{ letterSpacing: '0.02em', fontFamily: 'Inter, sans-serif' }}>
-            {isPrivacy ? "Privacy Policy" : "Terms of Service"}
-          </h2>
+          <div className="flex min-w-0 items-center gap-4">
+            <div className="flex h-14 w-36 shrink-0 items-center justify-center rounded-xl bg-white/15 px-3 ring-1 ring-white/25">
+              <img src={bloomquestLogo} alt="BloomQuest" className="legal-brand-logo h-auto w-full object-contain" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/70">BloomQuest policies</p>
+              <h2 className="mt-1 truncate text-xl font-bold text-white" style={{ letterSpacing: '0.01em', fontFamily: 'Inter, sans-serif' }}>
+                {isPrivacy ? "Privacy Policy" : "Terms of Service"}
+              </h2>
+            </div>
+          </div>
           <button
             onClick={onClose}
-            className="text-white text-2xl leading-none hover:opacity-80"
-            aria-label="Close"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-2xl leading-none text-white/80 transition hover:bg-white/15 hover:text-white"
+            aria-label="Close policy dialog"
           >
             &times;
           </button>
         </div>
 
-        <div className="px-6 py-4 overflow-y-auto text-[1.05rem] leading-relaxed" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
+        <div className="legal-content overflow-y-auto px-6 py-6 text-sm leading-7 sm:px-8 sm:py-7" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
+          <div className="mb-6 flex items-center justify-between gap-3 border-b pb-4" style={{ borderColor: 'rgba(20,20,15,0.08)' }}>
+            <p className="text-xs font-medium" style={{ color: textMuted }}>Please review this document carefully.</p>
+            <span className="shrink-0 rounded-full bg-[#FBEDEE] px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[#8F1C2B]">Official policy</span>
+          </div>
           {isPrivacy ? privacyContent : termsContent}
         </div>
 
-        <div className="px-6 py-3 border-t" style={{ backgroundColor: '#F5F3EE', borderTop: '1px solid rgba(20,20,15,0.14)' }}>
-          <div className="flex justify-end">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 rounded-md text-white font-semibold text-base transition hover:opacity-90"
-              style={{ backgroundColor: accent, minWidth: 110, fontFamily: 'Inter, sans-serif' }}
-            >
-              Close
-            </button>
-          </div>
+        <div className="border-t px-6 py-3 sm:px-8" style={{ backgroundColor: '#FAF9F7', borderColor: 'rgba(20,20,15,0.1)' }}>
+          <p className="text-xs" style={{ color: textMuted }}>BloomQuest · Institutional workspace</p>
         </div>
       </div>
 
       <style>{`
+        .legal-content p { margin: 0 0 1.1rem; }
+        .legal-content p:last-child { margin-bottom: 0; }
+        .legal-brand-logo { max-width: 8rem; }
+        .legal-content strong { display: block; margin-bottom: 0.15rem; color: ${ink}; font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; }
+        .legal-content br { display: none; }
+        .legal-content::-webkit-scrollbar { width: 8px; }
+        .legal-content::-webkit-scrollbar-thumb { border: 2px solid #fff; border-radius: 999px; background: rgba(180,69,74,0.32); }
         @keyframes legalOverlayIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes legalOverlayOut { from { opacity: 1; } to { opacity: 0; } }
         @keyframes legalModalIn {

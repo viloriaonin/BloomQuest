@@ -63,11 +63,8 @@ with engine.begin() as connection:
     connection.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"))
     connection.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS user_id INTEGER"))
     binary_definition = "BYTEA" if connection.dialect.name == "postgresql" else "BLOB"
-    for column, definition in (("filename", "VARCHAR(255)"), ("media_type", "VARCHAR(255)"), ("file_content", binary_definition)):
-        try:
-            connection.execute(text(f"ALTER TABLE activity_logs ADD COLUMN {column} {definition}"))
-        except Exception:
-            pass
+    for column, definition in (("filename", "VARCHAR(255)"), ("media_type", "VARCHAR(255)"), ("file_content", binary_definition), ("archived", "BOOLEAN NOT NULL DEFAULT FALSE")):
+        connection.execute(text(f"ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS {column} {definition}"))
 
 
 def log_activity(db: Session, action: str, details: str, type: str, status: str = "success", user_id: int = None):
@@ -1959,6 +1956,13 @@ def get_recycle_bin(user_id: int = None, db: Session = Depends(get_db)):
             | (models.GeneratedQuestion.tos_id.is_(None) & models.GeneratedQuestion.user_id.is_(None))
         )
     questions = question_query.order_by(models.GeneratedQuestion.created_at.desc()).all()
+    download_query = db.query(models.ActivityLog).filter(
+        models.ActivityLog.type == "download",
+        models.ActivityLog.archived.is_(True),
+    )
+    if user_id:
+        download_query = download_query.filter(models.ActivityLog.user_id == user_id)
+    downloads = download_query.order_by(models.ActivityLog.created_at.desc()).all()
     subject_names = dict(db.query(models.Subject.id, models.Subject.name).all())
     return {
         "subjects": subjects,
@@ -1966,11 +1970,26 @@ def get_recycle_bin(user_id: int = None, db: Session = Depends(get_db)):
             {**serialize_question(question), "subject_name": subject_names.get(question.subject_id, "Unassigned subject")}
             for question in questions
         ],
+        "downloads": [
+            {
+                "id": download.id,
+                "action": download.action,
+                "details": download.details,
+                "date": download.created_at.isoformat() if download.created_at else None,
+                "type": download.type,
+                "filename": download.filename,
+                "media_type": download.media_type,
+            }
+            for download in downloads
+        ],
     }
 
 @app.post("/api/recycle-bin/subjects/{subject_id}/restore")
 def restore_subject(subject_id: int, user_id: int = None, db: Session = Depends(get_db)):
-    query = db.query(models.Subject).filter(models.Subject.id == subject_id)
+    query = db.query(models.Subject).filter(
+        models.Subject.id == subject_id,
+        models.Subject.archived.is_(True),
+    )
     if user_id:
         query = query.outerjoin(
             models.UploadedFile,
@@ -2005,6 +2024,7 @@ def restore_archived_question(question_id: int, user_id: int = None, db: Session
         ).filter(
             (models.GeneratedQuestion.user_id == user_id)
             | (models.UploadedFile.user_id == user_id)
+            | (models.GeneratedQuestion.tos_id.is_(None) & models.GeneratedQuestion.user_id.is_(None))
         )
     question = query.first()
     if not question:
@@ -2013,6 +2033,22 @@ def restore_archived_question(question_id: int, user_id: int = None, db: Session
     db.commit()
     log_activity(db, "Question Restored", f"Restored question #{question_id}.", "academic")
     return {"message": "Question restored successfully."}
+
+@app.post("/api/recycle-bin/downloads/{activity_id}/restore")
+def restore_archived_download(activity_id: int, user_id: int = None, db: Session = Depends(get_db)):
+    query = db.query(models.ActivityLog).filter(
+        models.ActivityLog.id == activity_id,
+        models.ActivityLog.type == "download",
+        models.ActivityLog.archived.is_(True),
+    )
+    if user_id:
+        query = query.filter(models.ActivityLog.user_id == user_id)
+    download = query.first()
+    if not download:
+        raise HTTPException(status_code=404, detail="Archived download not found.")
+    download.archived = False
+    db.commit()
+    return {"message": "Download restored successfully."}
 
 # --- NEW ROUTE: SINGLE QUESTION MANUAL CLASSIFICATION ---
 @app.post("/api/questions/manual", status_code=201)
@@ -2302,6 +2338,10 @@ def get_history(user_id: int = None, email: str = None, db: Session = Depends(ge
         user_id = user.id if user else -1
     if user_id:
         query = query.filter(models.ActivityLog.user_id == user_id)
+    query = query.filter(
+        (models.ActivityLog.type != "download")
+        | models.ActivityLog.archived.is_(False)
+    )
     logs = query.limit(100).all()
     return [
         {
@@ -2313,6 +2353,7 @@ def get_history(user_id: int = None, email: str = None, db: Session = Depends(ge
             "status": log.status,
             "filename": getattr(log, "filename", None),
             "downloadable": bool(getattr(log, "file_content", None)),
+            "archived": bool(getattr(log, "archived", False)),
         }
         for log in logs
     ]
@@ -2323,7 +2364,7 @@ def download_saved_file(activity_id: int, user_id: int = None, db: Session = Dep
     if not user_id:
         raise HTTPException(status_code=401, detail="User identification is required")
     query = db.query(models.ActivityLog).filter(models.ActivityLog.id == activity_id, models.ActivityLog.type == "download")
-    query = query.filter(models.ActivityLog.user_id == user_id)
+    query = query.filter(models.ActivityLog.user_id == user_id, models.ActivityLog.archived.is_(False))
     log = query.first()
     if not log or not log.file_content:
         raise HTTPException(status_code=404, detail="Saved download not found")
@@ -2335,7 +2376,7 @@ def view_saved_file(activity_id: int, user_id: int = None, db: Session = Depends
     if not user_id:
         raise HTTPException(status_code=401, detail="User identification is required")
     query = db.query(models.ActivityLog).filter(models.ActivityLog.id == activity_id, models.ActivityLog.type == "download")
-    query = query.filter(models.ActivityLog.user_id == user_id)
+    query = query.filter(models.ActivityLog.user_id == user_id, models.ActivityLog.archived.is_(False))
     log = query.first()
     if not log or not log.file_content:
         raise HTTPException(status_code=404, detail="Saved download not found")
@@ -2350,6 +2391,7 @@ def preview_saved_file(activity_id: int, user_id: int = None, db: Session = Depe
         models.ActivityLog.id == activity_id,
         models.ActivityLog.user_id == user_id,
         models.ActivityLog.type == "download",
+        models.ActivityLog.archived.is_(False),
     ).first()
     if not log or not log.file_content:
         raise HTTPException(status_code=404, detail="Saved download not found")
@@ -2476,9 +2518,25 @@ def delete_saved_file(activity_id: int, user_id: int = None, db: Session = Depen
     ).first()
     if not log:
         raise HTTPException(status_code=404, detail="Saved download not found")
-    db.delete(log)
+    log.archived = True
     db.commit()
-    return {"message": "Download deleted"}
+    return {"message": "Download moved to recycle bin"}
+
+@app.delete("/api/recycle-bin/downloads/{activity_id}")
+def permanently_delete_download(activity_id: int, user_id: int = None, db: Session = Depends(get_db)):
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User identification is required")
+    download = db.query(models.ActivityLog).filter(
+        models.ActivityLog.id == activity_id,
+        models.ActivityLog.user_id == user_id,
+        models.ActivityLog.type == "download",
+        models.ActivityLog.archived.is_(True),
+    ).first()
+    if not download:
+        raise HTTPException(status_code=404, detail="Archived download not found")
+    db.delete(download)
+    db.commit()
+    return {"message": "Download permanently deleted"}
 
 
 @app.put("/api/questions/{question_id}")

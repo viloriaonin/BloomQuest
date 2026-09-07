@@ -10,7 +10,7 @@ import {
   Legend
 } from "chart.js";
 import { Bar, Doughnut } from "react-chartjs-2";
-import { ArrowRight, BookOpen, CheckCircle2, ClipboardList, Download, Plus } from "lucide-react";
+import { ArrowRight, BookOpen, ClipboardList, Download, Lightbulb, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend);
@@ -246,6 +246,24 @@ const Dashboard = ({ onToggleSidebar }) => {
     ? doughnutChartData
     : { ...doughnutChartData, datasets: [{ ...doughnutChartData.datasets[0], data: [1], backgroundColor: ['#E2E8F0'] }] };
 
+  const leastRepresentedBloom = Object.entries(bloomsData)
+    .sort(([, firstCount], [, secondCount]) => firstCount - secondCount)[0]?.[0] || "Create";
+
+  const recommendation = stats.totalSubjects === 0
+    ? {
+        title: "Upload your course materials first",
+        detail: "Add a module and syllabus so BloomQuest can create a focused question pool for your course.",
+      }
+    : stats.totalQuestions === 0
+      ? {
+          title: "Generate your first question set",
+          detail: "Your course is ready. Run an analysis to build questions that you can review and refine.",
+        }
+      : {
+          title: `Strengthen your ${leastRepresentedBloom} questions`,
+          detail: `${leastRepresentedBloom} is currently the least represented Bloom level in your ${stats.totalQuestions}-question pool. Add or review items at this level to create a more balanced assessment.`,
+        };
+
   return (
     <div className="bq-page" style={{ fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" }}>
       <div className="bq-page-inner">
@@ -270,7 +288,7 @@ const Dashboard = ({ onToggleSidebar }) => {
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+            <div>
               <div className="rounded-2xl border p-5" style={{ background: "linear-gradient(120deg, #fff7f5, #ffffff)", borderColor: "rgba(180,69,74,0.18)" }}>
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -281,24 +299,16 @@ const Dashboard = ({ onToggleSidebar }) => {
                   <button type="button" onClick={() => navigate("/input")} className="bq-primary-button shrink-0"><Plus size={16} /> New analysis</button>
                 </div>
               </div>
-              <button type="button" onClick={() => navigate("/history")} className="bq-panel flex min-w-44 items-center justify-between gap-4 p-5 text-left hover:border-red-200">
-                <span><span className="block text-xs font-bold uppercase tracking-wider" style={{ color: textMuted }}>Recent work</span><span className="mt-2 block text-sm font-semibold" style={{ color: textPrimary }}>Review your history</span></span>
-                <ArrowRight size={17} style={{ color: accent }} />
-              </button>
             </div>
 
-            <div className="bq-panel p-5">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div><p className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: accent }}>Getting started</p><h2 className="mt-1 text-lg font-bold" style={{ color: textPrimary }}>Your assessment workflow</h2></div>
-                <span className="text-xs font-semibold" style={{ color: textMuted }}>3 simple steps</span>
+            <div className="bq-panel overflow-hidden p-0">
+              <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: accentSoft, color: accent }}><Lightbulb size={19} /></span>
+                  <div><p className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: accent }}>Prescriptive recommendation</p><h2 className="mt-1 text-lg font-bold" style={{ color: textPrimary }}>{recommendation.title}</h2><p className="mt-1 max-w-2xl text-sm leading-6" style={{ color: textMuted }}>{recommendation.detail}</p></div>
+                </div>
               </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                {[
-                  ["1", "Add course material", "Upload your module and syllabus.", "/input"],
-                  ["2", "Review questions", "Approve generated items inside Question Bank.", "/question-bank"],
-                  ["3", "Build assessment", "Select questions and preview the export.", "/question-bank"],
-                ].map(([number, title, detail, path]) => <button key={number} type="button" onClick={() => navigate(path)} className="flex items-start gap-3 rounded-xl border border-slate-200 p-4 text-left transition-colors hover:border-red-200 hover:bg-red-50/40"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-50 text-xs font-bold text-[#B4454A]">{number}</span><span><span className="block text-sm font-semibold" style={{ color: textPrimary }}>{title}</span><span className="mt-1 block text-xs leading-5" style={{ color: textMuted }}>{detail}</span></span><CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-slate-300" /></button>)}
-              </div>
+              <div className="border-t px-5 py-3 text-xs" style={{ borderColor: border, color: textMuted }}>Based on your current workspace activity. Recommendations are currently rule-based.</div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

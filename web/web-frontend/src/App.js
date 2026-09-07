@@ -52,7 +52,7 @@ const MainLayout = ({ children }) => {
       />
       <div className="min-w-0 flex-1 h-full overflow-hidden">
         <TopBar onToggleSidebar={toggleSidebar} />
-        <div className="h-[calc(100vh-52px)] overflow-y-auto">
+        <div className="h-[calc(100vh-76px)] overflow-y-auto">
           {React.isValidElement(children)
             ? React.cloneElement(children, {
                 onToggleSidebar: toggleSidebar,

@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import LoadingSpinner from "../../components/LoadingSpinner";
 import LegalModal from "../../components/LegalModal";
+import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
 const API_URL = "http://localhost:8000/api/login";
 
 const paper = '#F7F6F3';
@@ -12,6 +13,29 @@ const ruleSoft = 'rgba(20, 20, 15, 0.08)';
 const textMuted = '#6F6C64';
 const accent = '#B4454A';
 const accentHover = '#8F1C2B';
+
+const TypewriterText = ({ children, className = "" }) => {
+  const [text, setText] = useState("");
+
+  useEffect(() => {
+    const fullText = String(children);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setText(fullText);
+      return undefined;
+    }
+
+    let index = 0;
+    const timer = window.setInterval(() => {
+      index += 1;
+      setText(fullText.slice(0, index));
+      if (index >= fullText.length) window.clearInterval(timer);
+    }, 32);
+
+    return () => window.clearInterval(timer);
+  }, [children]);
+
+  return <span className={`bq-typewriter ${className}`}>{text}</span>;
+};
 
 const Login = () => {
   const navigate = useNavigate();
@@ -80,7 +104,7 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col page-transition relative" style={{ minHeight: '100vh', overflow: 'hidden', backgroundColor: paper }}>
+    <div className="h-screen flex flex-col page-transition relative overflow-hidden" style={{ height: '100vh', backgroundColor: paper }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
 
@@ -150,17 +174,106 @@ const Login = () => {
           font-weight: 600;
           letter-spacing: 0.03em;
         }
+        .bq-brand-mark {
+          width: min(100%, 22rem);
+          height: auto;
+          filter: drop-shadow(0 12px 18px rgba(20, 20, 15, 0.16));
+          animation: bq-auth-float 5s ease-in-out 700ms infinite;
+        }
+        .bq-login-backdrop {
+          background-image: linear-gradient(rgba(180, 69, 74, 0.09) 1px, transparent 1px), linear-gradient(90deg, rgba(180, 69, 74, 0.09) 1px, transparent 1px);
+          background-size: 44px 44px;
+          mask-image: linear-gradient(to bottom, black, transparent 72%);
+          animation: bq-grid-wave 9s ease-in-out infinite;
+        }
+        .bq-login-card {
+          box-shadow: 0 24px 60px rgba(20, 20, 15, 0.09), 0 3px 12px rgba(20, 20, 15, 0.04);
+          border-radius: 12px;
+          animation: bq-auth-rise 520ms ease-out both;
+        }
+        .bq-auth-layout {
+          display: grid;
+          grid-template-columns: minmax(180px, 0.72fr) minmax(0, 28rem);
+          align-items: center;
+          gap: clamp(2rem, 6vw, 6rem);
+          width: min(100%, 70rem);
+        }
+        .bq-auth-brand {
+          animation: bq-auth-brand-in 620ms 80ms ease-out both;
+        }
+        .bq-typewriter::after {
+          content: "|";
+          margin-left: 2px;
+          color: ${accent};
+          animation: bq-caret-blink 800ms steps(1, end) infinite;
+        }
+        @keyframes bq-auth-rise {
+          from { opacity: 0; transform: translateY(16px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes bq-auth-brand-in {
+          from { opacity: 0; transform: translateX(-18px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes bq-caret-blink {
+          0%, 45% { opacity: 1; }
+          46%, 100% { opacity: 0; }
+        }
+        @keyframes bq-grid-wave {
+          0%, 100% { background-position: 0 0, 0 0; background-size: 44px 44px; opacity: 0.86; }
+          50% { background-position: 18px 10px, 10px 18px; background-size: 48px 48px; opacity: 1; }
+        }
+        @keyframes bq-auth-float {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-7px); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .bq-auth-brand, .bq-login-card, .bq-brand-mark, .bq-login-backdrop { animation: none; }
+        }
+        @media (max-width: 768px) {
+          .bq-auth-layout { grid-template-columns: 1fr; gap: 0.75rem; max-width: 28rem; }
+          .bq-auth-brand { display: flex; align-items: center; justify-content: center; gap: 0.75rem; text-align: left; }
+          .bq-auth-brand-copy { display: none; }
+        }
+
+        @media (max-height: 760px) {
+          .bq-login-eyebrow { padding-top: 0.5rem; padding-bottom: 0; }
+          .bq-brand-mark { width: min(100%, 18rem); }
+          .bq-login-center { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+          .bq-login-card { padding: 1rem 1.5rem; }
+          .bq-login-card-header { margin-bottom: 1rem; }
+          .bq-login-card-title { font-size: 2.25rem; }
+          .bq-login-fields { gap: 0.75rem; }
+          .bq-login-field-label { margin-bottom: 0.25rem; }
+          .bq-login-card .bq-field { padding-top: 0.55rem; padding-bottom: 0.55rem; }
+          .bq-login-footer { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+        }
+
+        @media (max-height: 600px) {
+          .bq-login-center { overflow-y: auto; align-items: flex-start; }
+          .bq-brand-mark { width: min(100%, 15rem); }
+          .bq-login-card { padding: 0.75rem 1.25rem; }
+          .bq-login-card-header { margin-bottom: 0.75rem; }
+          .bq-login-card-title { font-size: 2rem; }
+          .bq-login-fields { gap: 0.5rem; }
+          .bq-login-footer { font-size: 0.6875rem; }
+        }
       `}</style>
 
-      {/* Quiet eyebrow, top of page */}
-      <div className="w-full flex justify-center pt-10 pb-2">
-        <span className="bq-eyebrow">BloomQuest &nbsp;·&nbsp; Workspace Access</span>
-      </div>
+      <div className="bq-login-backdrop pointer-events-none absolute inset-0 -z-10" />
 
       {/* Centered Login Card */}
-      <div className="flex-1 flex items-center justify-center px-4 py-6">
-        <div
-          className="bq-card w-full max-w-md p-8 md:p-10"
+      <div className="bq-login-center min-h-0 flex-1 flex items-center justify-center overflow-hidden px-4 py-4 sm:py-6">
+        <div className="bq-auth-layout">
+          <div className="bq-auth-brand flex flex-col items-start gap-4 text-left">
+            <img src={bloomquestLogo} alt="BloomQuest" className="bq-brand-mark" />
+            <div className="bq-auth-brand-copy">
+              <p className="bq-eyebrow">Workspace access</p>
+              <p className="mt-3 max-w-xs text-sm leading-6" style={{ color: textMuted }}><TypewriterText>A focused workspace for building thoughtful, measurable assessments.</TypewriterText></p>
+            </div>
+          </div>
+          <div
+          className="bq-login-card bq-card w-full max-w-md shrink-0 p-5 sm:p-6 md:p-8"
           style={{ backgroundColor: surface, border: `1px solid ${rule}` }}
         >
           <span className="bq-corner bq-corner-tl" />
@@ -168,8 +281,8 @@ const Login = () => {
           <span className="bq-corner bq-corner-bl" />
           <span className="bq-corner bq-corner-br" />
 
-          <div className="mb-8">
-            <h2 className="bq-headline text-4xl" style={{ color: ink }}>
+          <div className="bq-login-card-header mb-5 sm:mb-6">
+            <h2 className="bq-login-card-title bq-headline text-3xl sm:text-4xl" style={{ color: ink }}>
               Welcome back
             </h2>
             <div style={{ width: '36px', height: '2px', backgroundColor: accent, marginTop: '14px', marginBottom: '14px' }} />
@@ -187,10 +300,10 @@ const Login = () => {
             </div>
           )}
 
-          <div className="space-y-6">
+          <div className="bq-login-fields space-y-4 sm:space-y-5">
 
             <div>
-              <label className="bq-label block mb-2">
+              <label className="bq-login-field-label bq-label block mb-2">
                 Email Address
               </label>
               <input
@@ -204,7 +317,7 @@ const Login = () => {
             </div>
 
             <div>
-              <label className="bq-label block mb-2">
+              <label className="bq-login-field-label bq-label block mb-2">
                 Password
               </label>
               <div className="relative">
@@ -216,15 +329,17 @@ const Login = () => {
                   placeholder="Enter your password"
                   className="bq-field pr-20"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 bq-label"
-                  style={{ color: accent, letterSpacing: '0.08em' }}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? "Hide" : "Show"}
-                </button>
+                {password && (
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 bq-label"
+                    style={{ color: accent, letterSpacing: '0.08em' }}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? "Hide" : "Show"}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -274,11 +389,12 @@ const Login = () => {
 
           </div>
 
+          </div>
         </div>
       </div>
 
       <footer
-        className="w-full py-4 px-6 flex flex-col sm:flex-row items-center justify-between gap-2"
+        className="bq-login-footer w-full shrink-0 py-4 px-6 flex flex-col sm:flex-row items-center justify-between gap-2"
         style={{ backgroundColor: paper, borderTop: `1px solid ${ruleSoft}`, fontFamily: 'Inter, sans-serif' }}
       >
         <p className="text-xs" style={{ color: textMuted }}>
