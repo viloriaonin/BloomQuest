@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import random
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -64,7 +65,12 @@ QUESTION_TYPE_RULES = {
     "Identification": "Generate Identification questions. No options. Correct answer should be concise.",
     "Essay": "Generate Essay questions. No options. Require critical thinking. Should not be answerable by one word.",
     "Enumeration": "Generate Enumeration questions. State clearly how many answers are expected.",
-    "Matching Type": "Generate Matching Type questions. Return left_items, right_items, correct_answer",
+    "Matching Type": (
+        "Generate Matching Type questions with at least five pairs. "
+        "Return left_items and right_items with the same length, plus a "
+        "complete correct_answer object mapping every left item to its exact "
+        "right-item text."
+    ),
     "Situational": "Generate scenario-based questions. The scenario must come from the uploaded module. Require application or analysis."
 }
 
@@ -386,6 +392,24 @@ def validate_question(question):
         if len(options) != 4:
             logger.warning("MCQ does not have four options.")
             return False
+
+    if question["question_type"] == "Matching Type":
+        left_items = question.get("left_items")
+        right_items = question.get("right_items")
+        correct_answer = question.get("correct_answer")
+        if (
+            not isinstance(left_items, list)
+            or not isinstance(right_items, list)
+            or len(left_items) < 5
+            or len(left_items) != len(right_items)
+            or len(set(left_items)) != len(left_items)
+            or len(set(right_items)) != len(right_items)
+            or not isinstance(correct_answer, dict)
+            or set(correct_answer) != set(left_items)
+            or set(correct_answer.values()) != set(right_items)
+        ):
+            logger.warning("Matching Type must contain at least five unique, complete pairs.")
+            return False
     return True
 
 
@@ -522,6 +546,8 @@ def generate_questions_from_tos(subject, module_text, tos_data):
         )
         for q in questions:
             q["topic_name"] = topic["topic_name"]
+            if q.get("question_type") == "Matching Type":
+                random.shuffle(q["right_items"])
         generated_questions.extend(questions)
 
         if i < len(jobs) - 1:
@@ -538,6 +564,8 @@ def build_preview(generated_questions):
     preview = []
     for q in generated_questions:
         preview.append({
+            "preview_id": q.get("preview_id"),
+            "duplicate_existing_id": q.get("duplicate_existing_id"),
             "question": q["question"],
             "correct_answer": q["correct_answer"],
             "bloom_level": q["bloom_level"],

@@ -6,7 +6,7 @@ import openpyxl
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, status, BackgroundTasks, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text, or_
 from dotenv import load_dotenv
@@ -1629,6 +1629,7 @@ async def generate_questions(
                 tos_id=tos_record.id,
                 subject_id=upload.subject_id,
                 user_id=upload.user_id,
+                topic_name=q.get("topic_name", ""),
                 bloom_level=bloom_level,
                 question_type=q.get("type"),
                 question=q["question"],
@@ -1670,10 +1671,59 @@ class DepartmentUpdateRequest(BaseModel):
     code: str | None = None
 
 class ManualQuestionRequest(BaseModel):
-    question: str
-    question_type: str
-    subject_id: int
-    user_id: int | None = None
+    question: str = Field(..., min_length=10)
+    correct_answer: str = Field(..., min_length=1, max_length=2000)
+    question_type: str = Field(..., max_length=32)
+    options: list[str] | dict[str, list[str]] | None = None
+    subject_id: int = Field(..., ge=1)
+    user_id: int | None = Field(default=None, ge=1)
+
+    @field_validator("question")
+    @classmethod
+    def validate_question_structure(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if len(normalized) < 10:
+            raise ValueError(
+                "The question should use a proper format or structure and contain at least 10 meaningful characters."
+            )
+        if not any(character.isalpha() for character in normalized):
+            raise ValueError(
+                "The question should use a proper format or structure with meaningful words."
+            )
+        if any(ord(character) < 32 and character not in "\t\n\r" for character in normalized):
+            raise ValueError("The question contains invalid control characters and cannot be classified or saved.")
+        return normalized
+
+    @field_validator("question_type")
+    @classmethod
+    def validate_question_type(cls, value: str) -> str:
+        allowed_types = {
+            "MCQ", "True or False", "Identification", "Matching Type",
+            "Enumeration", "Essay", "Situational",
+        }
+        if value not in allowed_types:
+            raise ValueError("Select a valid question type before classifying and saving.")
+        return value
+
+    @field_validator("correct_answer")
+    @classmethod
+    def validate_answer_key(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("Enter an answer key before classifying and saving the question.")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_options(self):
+        if self.question_type == "MCQ":
+            if not isinstance(self.options, list) or len(self.options) < 2:
+                raise ValueError("Enter at least two answer choices for a multiple-choice question.")
+            if any(not str(option).strip() for option in self.options):
+                raise ValueError("Each multiple-choice answer choice must contain text.")
+        elif self.question_type == "Matching Type":
+            if not re.fullmatch(r"[A-Za-z](?:\s*,\s*[A-Za-z])*(?:\s*)", self.correct_answer):
+                raise ValueError("For Matching Type, enter answer letters only, such as A, C, B, D.")
+        return self
 
 class QuestionSetCreateRequest(BaseModel):
     name: str
@@ -2057,28 +2107,19 @@ def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Sessio
     if not subject:
         raise HTTPException(status_code=404, detail="Subject context not found.")
 
-    # 1. Run semantic similarity logic / duplicate validation against existing items
-    duplicate_check = db.query(models.GeneratedQuestion).filter(
-        models.GeneratedQuestion.subject_id == payload.subject_id,
-        func.lower(models.GeneratedQuestion.question) == payload.question.strip().lower()
-    ).first()
+    # Classify the question before saving it to the question bank.
+    bloom_level = classify_question(payload.question)
 
-    if duplicate_check:
-        raise HTTPException(status_code=400, detail="This identical question text already exists inside this subject pool.")
-
-    # 2. Leverage your classifier pipeline engine to evaluate Bloom's Taxonomy tier
-    bloom_level = classify_question(payload.question.strip())
-
-    # 3. Save entry directly to database row structures
+    # Save entry directly to database row structures.
     new_question = models.GeneratedQuestion(
         subject_id=payload.subject_id,
         user_id=payload.user_id,
         bloom_level=bloom_level,
         question_type=payload.question_type,
-        question=payload.question.strip(),
-        options=None,
-        correct_answer="Evaluated text payload.",
-        explanation="Manually classified entry item."
+        question=payload.question,
+        options=payload.options,
+        correct_answer=payload.correct_answer,
+        explanation="Added manually."
     )
     db.add(new_question)
     db.commit()
@@ -2089,7 +2130,7 @@ def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Sessio
     return {
         "id": new_question.id,
         "bloom_level": bloom_level,
-        "message": f"Successfully classified question under {bloom_level} tier!"
+        "message": f"Question saved in the Question Bank under {bloom_level}."
     }
 
 @app.get("/api/subjects")
@@ -2108,11 +2149,27 @@ def get_subjects(user_id: int = None, db: Session = Depends(get_db)):
             | (models.GeneratedQuestion.user_id == user_id)
         ).distinct()
     subjects = query.all()
+    question_count_query = db.query(
+        models.GeneratedQuestion.subject_id,
+        func.count(func.distinct(models.GeneratedQuestion.id)),
+    ).filter(models.GeneratedQuestion.archived.is_(False))
+    if user_id:
+        question_count_query = question_count_query.outerjoin(
+            models.TableOfSpecification,
+            models.TableOfSpecification.id == models.GeneratedQuestion.tos_id,
+        ).outerjoin(
+            models.UploadedFile,
+            models.UploadedFile.id == models.TableOfSpecification.upload_id,
+        ).outerjoin(
+            models.Subject,
+            models.Subject.id == models.GeneratedQuestion.subject_id,
+        ).filter(
+            (models.GeneratedQuestion.user_id == user_id)
+            | (models.UploadedFile.user_id == user_id)
+            | (models.Subject.user_id == user_id)
+        )
     question_counts = dict(
-        db.query(models.GeneratedQuestion.subject_id, func.count(models.GeneratedQuestion.id))
-        .filter(models.GeneratedQuestion.archived.is_(False))
-        .group_by(models.GeneratedQuestion.subject_id)
-        .all()
+        question_count_query.group_by(models.GeneratedQuestion.subject_id).all()
     )
     departments = {department.id: department.name for department in db.query(models.Department).all()}
     faculty = {user.id: (user.name or user.email) for user in db.query(models.User).filter(models.User.role.ilike("faculty")).all()}
@@ -2357,6 +2414,17 @@ def get_history(user_id: int = None, email: str = None, db: Session = Depends(ge
         }
         for log in logs
     ]
+
+
+@app.get("/api/history/export-count")
+def get_export_count(user_id: int, db: Session = Depends(get_db)):
+    count = db.query(func.count(models.ActivityLog.id)).filter(
+        models.ActivityLog.user_id == user_id,
+        models.ActivityLog.status == "success",
+        models.ActivityLog.archived.is_(False),
+        models.ActivityLog.type.in_(("download", "export")),
+    ).scalar()
+    return {"count": count or 0}
 
 
 @app.get("/api/downloads/{activity_id}")
@@ -2696,12 +2764,22 @@ def export_question_bank_tos(
     if not subject or not questions:
         raise HTTPException(status_code=404, detail="No questions selected for this subject")
 
+    tos_records = db.query(models.TableOfSpecification).filter(
+        models.TableOfSpecification.id.in_({question.tos_id for question in questions if question.tos_id})
+    ).all()
+    ilo_by_topic = {
+        topic.get("topic_name"): topic.get("ilo", "")
+        for tos_record in tos_records
+        for topic in (tos_record.tos_data or [])
+        if topic.get("topic_name")
+    }
+
     topics = {}
     for number, question in enumerate(questions, start=1):
         topic_name = question.topic_name or "General"
         topic = topics.setdefault(topic_name, {
             "topic_name": topic_name,
-            "ilo": "",
+            "ilo": ilo_by_topic.get(topic_name, ""),
             "hours_a": 1.0,
             "items": 0,
             "weight": 0,

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { UploadCloud, FileText, FileSpreadsheet, Presentation, X, CheckCircle2, AlertCircle, Sparkles, PencilLine, FolderUp, RotateCcw, Plus } from 'lucide-react';
+import { UploadCloud, FileText, FileSpreadsheet, Presentation, X, CheckCircle2, AlertCircle, Sparkles, PencilLine, FolderUp, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { usePopup } from '../../components/PopupProvider';
 
 const API_URL = '/api';
 const EXAM_TYPE_OPTIONS = ['Midterm Exam', 'Final Exam', 'Quiz', 'Long Exam'];
@@ -288,6 +289,7 @@ const UploadSlot = ({ policyKey, file, onFileSelected, onRemove, stepBadge, lock
 
 const InputQuestion = () => {
   const navigate = useNavigate();
+  const { showAlert } = usePopup();
   const [activeTab, setActiveTab] = useState('upload');
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -302,9 +304,9 @@ const InputQuestion = () => {
 
   // Manual Tab States
   const [manualQuestion, setManualQuestion] = useState('');
+  const [manualAnswerKey, setManualAnswerKey] = useState('');
   const [manualQuestionType, setManualQuestionType] = useState('MCQ');
   const [classifying, setClassifying] = useState(false);
-  const [duplicateWarning, setDuplicateWarning] = useState('');
 
   // Upload & Auto-Gen Tab States
   const [moduleFile, setModuleFile] = useState(null);
@@ -329,6 +331,7 @@ const InputQuestion = () => {
   const [selectedQuestionTypes, setSelectedQuestionTypes] = useState([]);
   const [generating, setGenerating] = useState(false);
   const [generationResult, setGenerationResult] = useState(null);
+  const [excludedQuestionIds, setExcludedQuestionIds] = useState([]);
   const [previewBloomTab, setPreviewBloomTab] = useState('Remember'); // Syntax Error Fixed Here
   const [generationProgress, setGenerationProgress] = useState(0);
   const uploadAbortControllerRef = useRef(null);
@@ -360,6 +363,7 @@ const InputQuestion = () => {
       if (parsed.syllabusFile) setSyllabusFile(restoreFile(parsed.syllabusFile));
       if (parsed.uploadResult) setUploadResult(parsed.uploadResult);
       if (parsed.generationResult) setGenerationResult(parsed.generationResult);
+      if (Array.isArray(parsed.excludedQuestionIds)) setExcludedQuestionIds(parsed.excludedQuestionIds);
       if (Array.isArray(parsed.selectedTopics)) setSelectedTopics(parsed.selectedTopics);
       if (parsed.subcolumnAValues) setSubcolumnAValues(parsed.subcolumnAValues);
       if (Array.isArray(parsed.selectedQuestionTypes)) setSelectedQuestionTypes(parsed.selectedQuestionTypes);
@@ -389,6 +393,7 @@ const InputQuestion = () => {
       generating,
       uploadResult,
       generationResult,
+      excludedQuestionIds,
       selectedTopics,
       subcolumnAValues,
       selectedQuestionTypes,
@@ -412,6 +417,7 @@ const InputQuestion = () => {
     generating,
     uploadResult,
     generationResult,
+    excludedQuestionIds,
     selectedTopics,
     subcolumnAValues,
     selectedQuestionTypes,
@@ -464,39 +470,6 @@ const InputQuestion = () => {
     }
   };
 
-  // Continuous loopahead verification check to eliminate identical duplicate item additions
-  useEffect(() => {
-    if (manualQuestion.trim().length < 10 || !selectedSubject) {
-      setDuplicateWarning('');
-      return;
-    }
-
-    const delayDebounceCheck = setTimeout(async () => {
-      try {
-        const response = await fetch(`${API_URL}/questions?subject_id=${selectedSubject}`);
-        if (response.ok) {
-          const matchingQuestionBankItems = await parseApiResponse(response);
-          const targetInputText = manualQuestion.trim().toLowerCase();
-
-          const isDuplicateThought = matchingQuestionBankItems.some(q =>
-            q.question.toLowerCase().includes(targetInputText) ||
-            targetInputText.includes(q.question.toLowerCase())
-          );
-
-          if (isDuplicateThought) {
-            setDuplicateWarning('⚠️ A question item with this identical concept or matching core text already exists within this subject layout block.');
-          } else {
-            setDuplicateWarning('');
-          }
-        }
-      } catch (err) {
-        console.error("Lookahead query safety verification exception:", err);
-      }
-    }, 600);
-
-    return () => clearTimeout(delayDebounceCheck);
-  }, [manualQuestion, selectedSubject]);
-
   const handleSubjectDropdownChange = (e) => {
     const val = e.target.value;
     if (val === 'add_new') {
@@ -543,15 +516,44 @@ const InputQuestion = () => {
       setError('You must select a subject tracking reference framework before classifying items.');
       return;
     }
-    if (!manualQuestion.trim()) {
-      setError('Question workspace cannot be submitted while empty.');
+    const normalizedManualQuestion = manualQuestion.trim().replace(/\s+/g, ' ');
+    if (!normalizedManualQuestion || normalizedManualQuestion.length < 10 || !/[A-Za-z]/.test(normalizedManualQuestion)) {
+      setError('The question should be in a proper format or structure. This question will not be classified or saved in the Question Bank.');
       return;
     }
-    if (duplicateWarning) {
-      setError('Cannot proceed: Conceptual duplicate detected within this course pool.');
+    const normalizedManualAnswerKey = manualAnswerKey.trim().replace(/\s+/g, ' ');
+    if (!normalizedManualAnswerKey) {
+      setError('Please enter an answer key before classifying and saving the question.');
       return;
     }
-
+    const choicesFromQuestion = (value) => {
+      const choices = [];
+      const choicePattern = /(?:^|\s)([A-H])[.)]\s+(.+?)(?=\s+[A-H][.)]\s+|$)/g;
+      let match;
+      while ((match = choicePattern.exec(value)) !== null) choices.push(match[2].trim());
+      return choices;
+    };
+    let manualOptions = null;
+    let answerKeyToSave = normalizedManualAnswerKey;
+    let questionToSave = normalizedManualQuestion;
+    if (manualQuestionType === 'MCQ') {
+      const detectedChoices = choicesFromQuestion(normalizedManualQuestion);
+      if (detectedChoices.length < 2) {
+        setError('Include the multiple-choice options in the question using A. Choice, B. Choice, and so on. The answer key should be one letter.');
+        return;
+      }
+      const firstChoiceMarker = normalizedManualQuestion.search(/(?:^|\s)[A-H][.)]\s+/i);
+      if (firstChoiceMarker !== -1) {
+        questionToSave = normalizedManualQuestion.slice(0, firstChoiceMarker).trim();
+      }
+      manualOptions = detectedChoices;
+    }
+    if (manualQuestionType === 'Matching Type') {
+      if (!/^[A-Za-z](?:\s*,\s*[A-Za-z])*\s*$/.test(normalizedManualAnswerKey)) {
+        setError('For Matching Type, enter answer letters only, such as A, C, B, D.');
+        return;
+      }
+    }
     setError('');
     setSuccessMessage('');
     setClassifying(true);
@@ -561,17 +563,28 @@ const InputQuestion = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          question: manualQuestion.trim(),
+          question: questionToSave,
+          correct_answer: answerKeyToSave,
           question_type: manualQuestionType,
+          options: manualOptions,
           subject_id: parseInt(selectedSubject),
           user_id: Number(localStorage.getItem('user_id')) || null,
         }),
       });
 
       const data = await parseApiResponse(response);
-      if (!response.ok) throw new Error(getErrorMessage(data) || 'Classification engine execution failed.');
-      setSuccessMessage(`🎉 Success! Machine Learning model analyzed the structure and placed the item into the "${data.bloom_level}" taxonomy rank tier inside your question bank.`);
+      if (!response.ok) {
+        const validationMessage = getErrorMessage(data);
+        throw new Error(
+          validationMessage ||
+          'The question should be in a proper format or structure. It was not classified or saved in the Question Bank.'
+        );
+      }
+      const savedMessage = `Question saved in the Question Bank under ${data.bloom_level}.`;
+      setSuccessMessage(savedMessage);
+      showAlert(savedMessage, 'Saved');
       setManualQuestion('');
+      setManualAnswerKey('');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -589,6 +602,7 @@ const InputQuestion = () => {
     setGenerating(false);
     setUploadResult(null);
     setGenerationResult(null);
+    setExcludedQuestionIds([]);
     setSelectedTopics([]);
     setSubcolumnAValues({});
     setWizardStep(1);
@@ -599,6 +613,7 @@ const InputQuestion = () => {
       generating: false,
       uploadResult: null,
       generationResult: null,
+      excludedQuestionIds: [],
       wizardStep: 1,
       selectedTopics: [],
       subcolumnAValues: {},
@@ -609,12 +624,14 @@ const InputQuestion = () => {
   const resetUploadState = () => {
     setUploadResult(null);
     setGenerationResult(null);
+    setExcludedQuestionIds([]);
     setSelectedTopics([]);
     setSubcolumnAValues({});
     setWizardStep(1);
     persistInputQuestionSession({
       uploadResult: null,
       generationResult: null,
+      excludedQuestionIds: [],
       wizardStep: 1,
       selectedTopics: [],
       subcolumnAValues: {},
@@ -637,10 +654,11 @@ const InputQuestion = () => {
     setNewSubjectName('');
     setNewSubjectCode('');
     setManualQuestion('');
+    setManualAnswerKey('');
     setManualQuestionType('MCQ');
-    setDuplicateWarning('');
     setUploadResult(null);
     setGenerationResult(null);
+    setExcludedQuestionIds([]);
     setSelectedTopics([]);
     setSubcolumnAValues({});
     setTotalPoints('50');
@@ -698,6 +716,7 @@ const InputQuestion = () => {
       generating: false,
       uploadResult: null,
       generationResult: null,
+      excludedQuestionIds: [],
       selectedTopics: [],
       subcolumnAValues: {},
     });
@@ -860,28 +879,18 @@ const InputQuestion = () => {
         throw new Error(message);
       }
 
-      setGenerationProgress(80); // Progress: preview received, confirming...
-      const confirmResponse = await fetch(`${API_URL}/questions/confirm-generation`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ upload_id: uploadResult.upload_id }),
-      });
-
-      if (!confirmResponse.ok) {
-        const errData = await parseApiResponse(confirmResponse);
-        throw new Error(getErrorMessage(errData) || `Saving failed with server status code: ${confirmResponse.status}`);
-      }
-
-      setGenerationProgress(95); // Progress: almost done
-      const data = await parseApiResponse(confirmResponse);
+      setGenerationProgress(85); // Preview received; wait for review.
+      const data = await parseApiResponse(previewResponse);
       setGenerationResult(data);
-      setGenerationProgress(100); // Complete!
-      setSuccessMessage('🎉 Matrix TOS mapped and questions populated to the database store successfully!');
+      setExcludedQuestionIds([]);
+      setGenerationProgress(100);
+      setSuccessMessage('Review the generated questions. Similar questions are marked and can be excluded before saving.');
       persistInputQuestionSession({
         activeTab: 'upload',
         uploading: false,
         generating: false,
         generationResult: data,
+        excludedQuestionIds: [],
       });
     } catch (err) {
       const normalizedError = getErrorMessage(err) || 'An unexpected error occurred during matrix generation.';
@@ -904,6 +913,40 @@ const InputQuestion = () => {
         uploading: false,
         generating: false,
       });
+    }
+  };
+
+  const handleConfirmGeneration = async () => {
+    if (!uploadResult?.upload_id || !generationResult?.questions_preview?.length) return;
+    const includedPreviewIds = generationResult.questions_preview
+      .map((question) => question.preview_id)
+      .filter((previewId) => !excludedQuestionIds.includes(previewId));
+    if (!includedPreviewIds.length) {
+      setError('Keep at least one question before saving the assessment.');
+      return;
+    }
+
+    setError('');
+    setSuccessMessage('');
+    setGenerating(true);
+    setGenerationProgress(35);
+    try {
+      const response = await fetch(`${API_URL}/questions/confirm-generation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ upload_id: uploadResult.upload_id, included_preview_ids: includedPreviewIds }),
+      });
+      const data = await parseApiResponse(response);
+      if (!response.ok) throw new Error(getErrorMessage(data) || `Saving failed with server status code: ${response.status}`);
+      setGenerationResult(data);
+      setGenerationProgress(100);
+      setSuccessMessage('Questions saved successfully to the Question Bank.');
+      persistInputQuestionSession({ generationResult: data, excludedQuestionIds });
+    } catch (err) {
+      setError(getErrorMessage(err) || 'Unable to save the generated questions.');
+    } finally {
+      setGenerating(false);
+      setTimeout(() => setGenerationProgress(0), 500);
     }
   };
 
@@ -1048,20 +1091,31 @@ const InputQuestion = () => {
             <div className="relative">
               <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Question Input Content Area</label>
               <textarea
-                className={`w-full h-44 p-4 border rounded-md focus:ring-1 outline-none resize-none text-gray-700 text-sm transition-all ${duplicateWarning ? 'border-orange-400 bg-orange-50/10' : 'border-gray-200 focus:border-red-500'}`}
+                className="w-full h-44 p-4 border border-gray-200 rounded-md focus:ring-1 focus:border-red-500 outline-none resize-none text-gray-700 text-sm transition-all"
                 placeholder="Type your manual assessment question here..."
-                maxLength={500}
                 value={manualQuestion}
                 onChange={(e) => setManualQuestion(e.target.value)}
               />
               <div className="flex justify-between items-center mt-1">
-                <span className="text-xs font-medium text-orange-600">{duplicateWarning}</span>
-                <span className="text-xs text-gray-400 ml-auto">{manualQuestion.length} / 500 characters</span>
+                <span />
+                <span className="text-xs text-gray-400 ml-auto">{manualQuestion.length} characters</span>
               </div>
             </div>
 
+            <div>
+              <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Answer Key</label>
+              <textarea
+                className="w-full min-h-20 p-3 border border-gray-200 rounded-md focus:ring-1 focus:border-red-500 outline-none resize-y text-gray-700 text-sm"
+                placeholder="Enter the correct answer or answer key..."
+                maxLength={2000}
+                value={manualAnswerKey}
+                onChange={(e) => setManualAnswerKey(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-gray-400">For MCQ, enter one letter such as A or B. For Matching Type, enter answer letters only, such as A, C, B, D.</p>
+            </div>
+
             <div className="flex justify-end">
-              <button onClick={handleManualClassification} disabled={classifying || !!duplicateWarning || !manualQuestion.trim() || !selectedSubject} className="bg-[#b90000] hover:bg-[#990000] text-white font-medium text-sm py-2.5 px-6 rounded-md disabled:bg-gray-200 disabled:text-gray-400 transition-colors flex items-center gap-2">
+              <button onClick={handleManualClassification} disabled={classifying || !manualQuestion.trim() || !manualAnswerKey.trim() || !selectedSubject} className="bg-[#b90000] hover:bg-[#990000] text-white font-medium text-sm py-2.5 px-6 rounded-md disabled:bg-gray-200 disabled:text-gray-400 transition-colors flex items-center gap-2">
                 {classifying ? (
                   <>
                     <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
@@ -1251,14 +1305,9 @@ const InputQuestion = () => {
                       <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-5">
                         <button type="button" onClick={() => setWizardStep(3)} disabled={generating} className="flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700">&larr; Back</button>
                         <div className="flex flex-wrap items-center justify-end gap-2">
-                          {generationResult && (
-                            <button type="button" onClick={handleCreateTest} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition-colors hover:border-[#B4454A]/40 hover:text-[#B4454A]">
-                              <Plus className="h-4 w-4" /> Create Test
-                            </button>
-                          )}
                           <button
-                            onClick={handleGenerate}
-                            disabled={generating || selectedTopics.length === 0 || !totalItems || !!generationResult}
+                            onClick={generationResult?.saved ? undefined : (generationResult ? handleConfirmGeneration : handleGenerate)}
+                            disabled={generating || (!generationResult && (selectedTopics.length === 0 || !totalItems))}
                             className="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-slate-300"
                             style={{ backgroundColor: PRIMARY, minWidth: generating ? 280 : undefined }}
                           >
@@ -1267,7 +1316,7 @@ const InputQuestion = () => {
                             ) : (
                               <>
                                 <CheckCircle2 className="h-4 w-4" />
-                                {generationResult ? 'Matrix TOS & Assessment Generated' : 'Generate Matrix TOS & Assessment'}
+                                {generationResult?.saved ? 'Questions Saved' : (generationResult ? 'Save Questions' : 'Generate Questions')}
                               </>
                             )}
                           </button>
@@ -1296,17 +1345,17 @@ const InputQuestion = () => {
               <div className="rounded-lg p-5 space-y-6" style={{ backgroundColor: 'rgba(220, 252, 231, 0.35)', border: `1px solid rgba(34, 197, 94, 0.25)` }}>
                   <div className="flex flex-col justify-between gap-3 border-b pb-4 sm:flex-row sm:items-center">
                   <div>
-                    <h3 className="font-bold text-green-800 text-sm">✓ Table of Specifications & Question Sheets Matrix Saved</h3>
-                    <p className="text-xs text-gray-500">Items successfully saved inside the primary Question Bank registry rows.</p>
+                    <h3 className="font-bold text-green-800 text-sm">{generationResult.saved ? '✓ Questions Saved to the Question Bank' : 'Review Generated Questions'}</h3>
+                    <p className="text-xs text-gray-500">{generationResult.saved ? 'The selected questions are available in the Question Bank.' : 'Similar questions are marked below. Exclude any question you do not want to save.'}</p>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button onClick={handleCreateTest} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition-colors hover:border-[#B4454A]/40 hover:text-[#B4454A]">
-                      <Plus className="h-4 w-4" /> Create Test
-                    </button>
-                    <button onClick={() => downloadFile('tos', `${downloadSubjectCode}-${downloadExamType}-TOS.xlsx`)} className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Institutional TOS (.xlsx)</button>
-                    <button onClick={() => downloadFile('assessment/docx', `${downloadSubjectCode}-${downloadExamType}-Test.docx`)} className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.docx)</button>
-                    <button onClick={() => downloadFile('assessment/pdf', `${downloadSubjectCode}-${downloadExamType}-Test.pdf`)} className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.pdf)</button>
-                  </div>
+                  {generationResult.saved && <div className="flex flex-wrap items-center justify-end gap-3">
+                    <button onClick={() => downloadFile('tos', `${downloadSubjectCode}-${downloadExamType}-TOS.xlsx`)} className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download TOS (.xlsx)</button>
+                    <div className="flex flex-wrap items-center gap-2 border-l border-slate-200 pl-3">
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">Assessment</span>
+                      <button onClick={() => downloadFile('assessment/docx', `${downloadSubjectCode}-${downloadExamType}-Test.docx`)} className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.docx)</button>
+                      <button onClick={() => downloadFile('assessment/pdf', `${downloadSubjectCode}-${downloadExamType}-Test.pdf`)} className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.pdf)</button>
+                    </div>
+                  </div>}
                 </div>
 
                 {/* TOS Summary Section */}
@@ -1366,12 +1415,26 @@ const InputQuestion = () => {
                     {(generationResult.questions_preview || [])
                       .filter(q => q.bloom_level === previewBloomTab)
                       .map((q, idx) => (
-                        <div key={idx} className="p-3 rounded-md bg-gray-50/50 text-sm" style={{ border: `1px solid rgba(226, 232, 240, 0.95)` }}>
+                        <div key={q.preview_id ?? idx} className={`p-3 rounded-md bg-gray-50/50 text-sm ${excludedQuestionIds.includes(q.preview_id) ? 'opacity-60' : ''}`} style={{ border: `1px solid ${q.duplicate_existing_id ? '#FBBF24' : 'rgba(226, 232, 240, 0.95)'}` }}>
                           <div className="flex justify-between text-[11px] text-gray-400 mb-1">
                             <span>Syllabus Reference: <strong className="text-gray-600">{safeRenderValue(q.topic_name)}</strong></span>
-                            <span className="bg-red-50 text-red-600 font-bold px-1.5 py-0.5 rounded uppercase">{safeRenderValue(q.type)}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="bg-red-50 text-red-600 font-bold px-1.5 py-0.5 rounded uppercase">{safeRenderValue(q.type)}</span>
+                              {q.duplicate_existing_id && <span className="rounded bg-amber-100 px-1.5 py-0.5 font-bold uppercase text-amber-800">Similar exists in Question Bank</span>}
+                            </div>
                           </div>
                           <p className="font-medium text-gray-800">{idx + 1}. {safeRenderValue(q.question)}</p>
+                          {q.duplicate_existing_id && !generationResult.saved && (
+                            <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs font-semibold text-amber-800">
+                              <input
+                                type="checkbox"
+                                checked={excludedQuestionIds.includes(q.preview_id)}
+                                onChange={() => setExcludedQuestionIds((current) => current.includes(q.preview_id) ? current.filter((id) => id !== q.preview_id) : [...current, q.preview_id])}
+                                className="h-4 w-4 rounded border-amber-400 accent-amber-600"
+                              />
+                              Exclude this similar question
+                            </label>
+                          )}
                           {q.type === 'MCQ' && Array.isArray(q.options) && (
                             <div className="mt-2 space-y-1 text-xs text-gray-600">
                               {q.options.map((option, optionIndex) => (

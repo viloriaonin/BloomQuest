@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from routers import questions
 
 app = FastAPI()
 
@@ -19,3 +20,6 @@ def read_root():
 @app.get("/api/hello")
 def hello():
     return {"message": "Hello from the Python backend!"}
+
+
+app.include_router(questions.router)

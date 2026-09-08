@@ -4,6 +4,7 @@ import re
 import json
 import logging
 import uuid
+from difflib import SequenceMatcher
 import openpyxl
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
@@ -617,6 +618,30 @@ async def upload_and_analyze_syllabus(
         record_activity(db, "Upload Failed", f"Could not analyze '{module_file.filename}'.", "upload", status="error", user_id=user_id)
         raise HTTPException(status_code=400, detail=f"Analysis Engine Error: {str(e)}")
 
+    subject_row = db.query(models.Subject).filter(models.Subject.code == detected_subject["code"]).first()
+    if not subject_row:
+        subject_row = models.Subject(
+            name=detected_subject["name"],
+            code=detected_subject["code"],
+            description=detected_subject.get("description"),
+            user_id=user_id,
+        )
+        db.add(subject_row)
+        db.flush()
+
+    upload_record = models.UploadedFile(
+        user_id=user_id,
+        subject_id=subject_row.id,
+        module_filename=module_file.filename,
+        syllabus_filename=syllabus_file.filename,
+        module_text=module_text,
+        syllabus_text="",
+    )
+    db.add(upload_record)
+    db.commit()
+    db.refresh(upload_record)
+    upload_id = str(upload_record.id)
+
     FILE_CACHE[f"{upload_id}_metadata"] = {"subject": detected_subject, "topics": detected_topics, "module_text": module_text}
     record_activity(db, "Uploaded Learning Materials", f"Analyzed '{module_file.filename}' and '{syllabus_file.filename}'.", "upload", user_id=user_id)
 
@@ -630,6 +655,27 @@ async def upload_and_analyze_syllabus(
 # --- STEP 2: MULTI-LEVEL TOS GENERATION AND DB CACHING ---
 class ConfirmGenerationPayload(BaseModel):
     upload_id: str = Field(..., min_length=1, max_length=128)
+    included_preview_ids: list[int] | None = None
+
+
+def _normalize_question_text(value):
+    return " ".join(str(value or "").casefold().split())
+
+
+def _find_similar_question_id(question_text, existing_questions, existing_by_text):
+    normalized = _normalize_question_text(question_text)
+    if not normalized:
+        return None
+    exact_id = existing_by_text.get(normalized)
+    if exact_id:
+        return exact_id
+    if len(normalized) < 40:
+        return None
+    for existing in existing_questions:
+        existing_text = _normalize_question_text(existing.question)
+        if SequenceMatcher(None, normalized, existing_text).ratio() >= 0.9:
+            return existing.id
+    return None
 
 
 def _attach_bloom_question_numbers(tos_data, generated_questions):
@@ -659,7 +705,10 @@ async def generate_preview(
     out of the question bank -- just discard and regenerate."""
     meta = FILE_CACHE.get(f"{payload.upload_id}_metadata")
     if not meta:
-        raise HTTPException(status_code=404, detail="Upload session expired.")
+        raise HTTPException(
+            status_code=410,
+            detail="Upload session expired. Please upload the module and syllabus again before generating questions.",
+        )
 
     selected_topics_data = compute_tos(
         topics=meta["topics"],
@@ -684,6 +733,24 @@ async def generate_preview(
             status_code=502,
             detail=f"Question generation failed while contacting the AI service. Details: {str(e)}",
         )
+
+    subject_row = db.query(models.Subject).filter(models.Subject.code == meta["subject"]["code"]).first()
+    existing_questions = db.query(models.GeneratedQuestion).filter(
+        models.GeneratedQuestion.subject_id == subject_row.id,
+        models.GeneratedQuestion.archived.is_(False),
+    ).all() if subject_row else []
+    existing_by_text = {
+        _normalize_question_text(question.question): question.id
+        for question in existing_questions
+        if _normalize_question_text(question.question)
+    }
+    for preview_id, question in enumerate(generated_questions):
+        question["preview_id"] = preview_id
+        existing_id = _find_similar_question_id(
+            question.get("question"), existing_questions, existing_by_text
+        )
+        if existing_id:
+            question["duplicate_existing_id"] = existing_id
 
     _attach_bloom_question_numbers(selected_topics_data, generated_questions)
 
@@ -737,6 +804,29 @@ async def confirm_generation(
     user_id = pending.get("user_id")
     subject = pending["subject"]
 
+    if payload.included_preview_ids is None:
+        included_preview_ids = {question.get("preview_id") for question in generated_questions}
+    else:
+        included_preview_ids = set(payload.included_preview_ids)
+        valid_preview_ids = {question.get("preview_id") for question in generated_questions}
+        if not included_preview_ids.issubset(valid_preview_ids):
+            raise HTTPException(status_code=400, detail="The selected questions are no longer valid. Please generate a new preview.")
+    generated_questions = [
+        question for question in generated_questions
+        if question.get("preview_id") in included_preview_ids
+    ]
+    if not generated_questions:
+        raise HTTPException(status_code=400, detail="Keep at least one question before saving the assessment.")
+
+    for topic in selected_topics_data:
+        topic_questions = [question for question in generated_questions if question.get("topic_name") == topic.get("topic_name")]
+        topic["items"] = len(topic_questions)
+        topic["bloom_counts"] = {
+            level: sum(1 for question in topic_questions if question.get("bloom_level") == level)
+            for level in ("Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create")
+        }
+    _attach_bloom_question_numbers(selected_topics_data, generated_questions)
+
     subject_row = db.query(models.Subject).filter(models.Subject.code == subject["code"]).first()
     if not subject_row:
         subject_row = models.Subject(name=subject["name"], code=subject["code"], user_id=user_id)
@@ -745,6 +835,14 @@ async def confirm_generation(
         db.refresh(subject_row)
     elif user_id and subject_row.user_id is None:
         subject_row.user_id = user_id
+
+    tos_record = models.TableOfSpecification(
+        upload_id=int(payload.upload_id),
+        tos_data=selected_topics_data,
+        total_items=whole_total_points,
+    )
+    db.add(tos_record)
+    db.flush()
 
     rows = prepare_database_rows(generated_questions, subject_row.id)
     for row in rows:
@@ -776,6 +874,7 @@ async def confirm_generation(
             correct_ans = [str(correct_ans)]
 
         q = models.GeneratedQuestion(
+            tos_id=tos_record.id,
             subject_id=row["subject_id"],
             user_id=user_id,
             topic_name=row["topic_name"],
@@ -815,6 +914,7 @@ async def confirm_generation(
 
     return {
         "message": "Assessment saved successfully.",
+        "saved": True,
         "tos": _build_tos_response_rows(selected_topics_data),
         "questions_preview": preview,
         "statistics": stats,
@@ -849,9 +949,24 @@ async def export_institutional_tos(upload_id: str, user_id: int | None = None, d
     Retrieves the generated openpyxl Excel spreadsheet payload matching
     the active session token directly from the shared memory cache.
     """
+    meta = FILE_CACHE.get(f"{upload_id}_metadata")
     tos_binary = FILE_CACHE.get(f"{upload_id}_tos")
 
-    meta = FILE_CACHE.get(f"{upload_id}_metadata")
+    if not tos_binary and upload_id.isdigit():
+        upload = db.query(models.UploadedFile).filter(models.UploadedFile.id == int(upload_id)).first()
+        tos_record = db.query(models.TableOfSpecification).filter(models.TableOfSpecification.upload_id == int(upload_id)).order_by(models.TableOfSpecification.id.desc()).first()
+        subject = upload.subject if upload else None
+        if tos_record and subject:
+            workbook = generate_tos_from_excel_template(
+                selected_topics_data=tos_record.tos_data or [],
+                course_code=subject.code,
+                course_title=subject.name,
+                whole_total_points=tos_record.total_items or 0,
+            )
+            stream = io.BytesIO()
+            workbook.save(stream)
+            tos_binary = stream.getvalue()
+            meta = {"subject": {"code": subject.code, "name": subject.name}}
 
     if not tos_binary:
         raise HTTPException(
@@ -885,6 +1000,22 @@ async def export_institutional_tos(upload_id: str, user_id: int | None = None, d
 async def export_assessment_docx(upload_id: str, user_id: int | None = None, db: Session = Depends(get_db)):
     questions = FILE_CACHE.get(f"{upload_id}_questions")
     meta = FILE_CACHE.get(f"{upload_id}_metadata")
+    if (not questions or not meta) and upload_id.isdigit():
+        upload = db.query(models.UploadedFile).filter(models.UploadedFile.id == int(upload_id)).first()
+        tos_record = db.query(models.TableOfSpecification).filter(models.TableOfSpecification.upload_id == int(upload_id)).order_by(models.TableOfSpecification.id.desc()).first()
+        if upload and tos_record:
+            questions = [
+                {
+                    "question": question.question,
+                    "question_type": question.question_type,
+                    "options": question.options,
+                    "correct_answer": question.correct_answer,
+                    "explanation": question.explanation,
+                }
+                for question in db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.tos_id == tos_record.id).order_by(models.GeneratedQuestion.id).all()
+            ]
+            subject = upload.subject
+            meta = {"subject": {"code": subject.code, "name": subject.name}} if subject else None
     if not questions or not meta:
         raise HTTPException(status_code=404, detail="Generated assessment not found or session expired.")
 
@@ -908,6 +1039,22 @@ async def export_assessment_docx(upload_id: str, user_id: int | None = None, db:
 async def export_assessment_pdf(upload_id: str, user_id: int | None = None, db: Session = Depends(get_db)):
     questions = FILE_CACHE.get(f"{upload_id}_questions")
     meta = FILE_CACHE.get(f"{upload_id}_metadata")
+    if (not questions or not meta) and upload_id.isdigit():
+        upload = db.query(models.UploadedFile).filter(models.UploadedFile.id == int(upload_id)).first()
+        tos_record = db.query(models.TableOfSpecification).filter(models.TableOfSpecification.upload_id == int(upload_id)).order_by(models.TableOfSpecification.id.desc()).first()
+        if upload and tos_record:
+            questions = [
+                {
+                    "question": question.question,
+                    "question_type": question.question_type,
+                    "options": question.options,
+                    "correct_answer": question.correct_answer,
+                    "explanation": question.explanation,
+                }
+                for question in db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.tos_id == tos_record.id).order_by(models.GeneratedQuestion.id).all()
+            ]
+            subject = upload.subject
+            meta = {"subject": {"code": subject.code, "name": subject.name}} if subject else None
     if not questions or not meta:
         raise HTTPException(status_code=404, detail="Generated assessment not found or session expired.")
 

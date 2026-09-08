@@ -77,18 +77,13 @@ const Dashboard = ({ onToggleSidebar }) => {
           fetch(`${API_URL}/api/subjects?user_id=${encodeURIComponent(userId)}`),
           fetch(`${API_URL}/api/questions?user_id=${encodeURIComponent(userId)}`),
           fetch(`${API_URL}/api/history?user_id=${encodeURIComponent(userId)}`),
+          fetch(`${API_URL}/api/history/export-count?user_id=${encodeURIComponent(userId)}`),
         ]);
-        const [subjectsRes, questionsRes, historyRes] = responses;
+        const [subjectsRes, questionsRes, historyRes, exportCountRes] = responses;
         const subjectsData = subjectsRes.ok ? asList(await subjectsRes.json(), ['subjects', 'items']) : [];
         let questionsData = questionsRes.ok ? asList(await questionsRes.json(), ['questions', 'items']) : [];
         const historyData = historyRes.ok ? asList(await historyRes.json(), ['history', 'items']) : [];
-
-        // Older generated records were saved before ownership was persisted.
-        // Use the same visible bank for those records until they are migrated.
-        if (questionsData.length === 0) {
-          const legacyQuestionsRes = await fetch(`${API_URL}/api/questions`);
-          if (legacyQuestionsRes.ok) questionsData = asList(await legacyQuestionsRes.json(), ['questions', 'items']);
-        }
+        const exportCountData = exportCountRes.ok ? await exportCountRes.json() : { count: 0 };
 
         if (subjectsRes.ok || questionsRes.ok || historyRes.ok) {
 
@@ -137,7 +132,7 @@ const Dashboard = ({ onToggleSidebar }) => {
             ...prev,
             totalSubjects: subjectsData.length,
             totalQuestions: questionsData.length,
-            assessmentsGenerated: historyData.filter(item => /export|assessment/i.test(item.action || '')).length
+            assessmentsGenerated: Number(exportCountData.count) || 0
           }));
 
           // Build recent activity from the current user's activity log.

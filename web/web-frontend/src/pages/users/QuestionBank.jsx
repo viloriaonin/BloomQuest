@@ -84,6 +84,27 @@ const getOptionLetter = (question, answerValue) => {
   return '';
 };
 
+const shuffleMatchingRightItems = (items, question) => {
+  const shuffled = [...items];
+  let seed = Array.from(`${question?.id ?? ''}:${shuffled.join('|')}`).reduce(
+    (value, character) => ((value * 31) + character.charCodeAt(0)) >>> 0,
+    7,
+  );
+
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    const swapIndex = seed % (index + 1);
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+
+  // Avoid leaving older questions in their original consecutive order.
+  if (shuffled.length > 1 && shuffled.every((item, index) => item === items[index])) {
+    [shuffled[0], shuffled[1]] = [shuffled[1], shuffled[0]];
+  }
+
+  return shuffled;
+};
+
 const getMatchingChoices = (question) => {
   const parsedOptions = normalizeJsonLike(question?.options);
 
@@ -120,7 +141,7 @@ const getMatchingChoices = (question) => {
   if (existingLeft.length && existingRight.length) {
     return {
       leftItems: existingLeft.map(cleanText),
-      rightItems: existingRight.map(cleanText),
+      rightItems: shuffleMatchingRightItems(existingRight.map(cleanText), question),
     };
   }
 
@@ -194,12 +215,20 @@ const getMatchingChoices = (question) => {
 
   return {
     leftItems,
-    rightItems,
+    rightItems: shuffleMatchingRightItems(rightItems, question),
   };
 };
 
 const formatAnswerKey = (answer, question) => {
   if (question?.question_type === 'Matching Type') {
+  const lettersOnlyAnswer = String(question?.correct_answer ?? '').trim();
+  if (/^[A-Za-z](?:\s*,\s*[A-Za-z])*\s*$/.test(lettersOnlyAnswer)) {
+    return lettersOnlyAnswer
+      .split(',')
+      .map((letter) => letter.trim().toUpperCase())
+      .join(', ');
+  }
+
   const { leftItems, rightItems } = getMatchingChoices(question);
 
   if (!leftItems.length || !rightItems.length) {
@@ -392,7 +421,8 @@ const QuestionBank = () => {
   useEffect(() => {
     const fetchSubjects = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/subjects`);
+        const userId = localStorage.getItem('user_id') || '';
+        const res = await fetch(`${API_URL}/api/subjects?user_id=${encodeURIComponent(userId)}`);
         if (!res.ok) throw new Error('Failed to fetch subjects');
         const data = await res.json();
         setSubjects(data);
@@ -425,12 +455,15 @@ const QuestionBank = () => {
     setError('');
     if (!preserveSelection) setSelectedQuestions([]);
     try {
-      const subjectQuery = subjectId ? `?subject_id=${subjectId}` : '';
+      const userId = localStorage.getItem('user_id') || '';
+      const params = new URLSearchParams({ user_id: userId });
+      if (subjectId) params.set('subject_id', subjectId);
+      const subjectQuery = `?${params.toString()}`;
       const res = await fetch(`${API_URL}/api/questions${subjectQuery}`);
       if (!res.ok) throw new Error('Failed to fetch questions');
       const data = await res.json();
       setQuestions(data);
-      const subjectsRes = await fetch(`${API_URL}/api/subjects`);
+      const subjectsRes = await fetch(`${API_URL}/api/subjects?user_id=${encodeURIComponent(userId)}`);
       if (subjectsRes.ok) setSubjects(await subjectsRes.json());
     } catch (err) {
       setError('Could not load questions.');
