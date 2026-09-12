@@ -178,6 +178,7 @@ def serialize_question(question):
         "topic_name": question.topic_name,
         "bloom_level": question.bloom_level,
         "question_type": question.question_type,
+        "points": question.points,
         "question": question.question,
         "options": options,
         "correct_answer": question.correct_answer,
@@ -203,6 +204,7 @@ with engine.begin() as conn:
     conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS lifecycle_status VARCHAR(32) NOT NULL DEFAULT 'draft'"))
     conn.execute(text("UPDATE generated_questions SET lifecycle_status = CASE review_status WHEN 'approved' THEN 'approved' WHEN 'in_review' THEN 'review' ELSE 'draft' END WHERE lifecycle_status IS NULL OR lifecycle_status = 'draft'"))
     conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS user_id INTEGER"))
+    conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS points FLOAT"))
     conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS exam_title VARCHAR(255)"))
     conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS instructions TEXT"))
     conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS total_points INTEGER"))
@@ -1675,6 +1677,10 @@ class ManualQuestionRequest(BaseModel):
     correct_answer: str = Field(..., min_length=1, max_length=2000)
     question_type: str = Field(..., max_length=32)
     options: list[str] | dict[str, list[str]] | None = None
+    points: float = Field(..., gt=0, le=1000)
+    exam_type: str = Field(default="Final Exam", max_length=64)
+    semester: str = Field(default="First Semester", max_length=32)
+    academic_year: str = Field(default="", max_length=32)
     subject_id: int = Field(..., ge=1)
     user_id: int | None = Field(default=None, ge=1)
 
@@ -1703,6 +1709,20 @@ class ManualQuestionRequest(BaseModel):
         }
         if value not in allowed_types:
             raise ValueError("Select a valid question type before classifying and saving.")
+        return value
+
+    @field_validator("exam_type")
+    @classmethod
+    def validate_exam_type(cls, value: str) -> str:
+        if value not in {"Midterm Exam", "Preliminary Exam", "Final Exam", "Quiz", "Long Exam"}:
+            raise ValueError("Select a valid exam type before classifying and saving the question.")
+        return value
+
+    @field_validator("semester")
+    @classmethod
+    def validate_semester(cls, value: str) -> str:
+        if value not in {"First Semester", "Second Semester", "Midterm Class"}:
+            raise ValueError("Select a valid semester before classifying and saving the question.")
         return value
 
     @field_validator("correct_answer")
@@ -1968,8 +1988,30 @@ def permanently_delete_subject(subject_id: int, user_id: int = None, db: Session
     if not subject or (user_id and subject.user_id not in (None, user_id)):
         raise HTTPException(status_code=404, detail="Archived subject not found.")
     subject_name = subject.name
-    db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.subject_id == subject_id).update({"subject_id": None}, synchronize_session=False)
-    db.query(models.UploadedFile).filter(models.UploadedFile.subject_id == subject_id).update({"subject_id": None}, synchronize_session=False)
+
+    question_ids = [question_id for (question_id,) in db.query(models.GeneratedQuestion.id).filter(
+        models.GeneratedQuestion.subject_id == subject_id,
+    ).all()]
+    if question_ids:
+        db.query(models.QuestionVersion).filter(models.QuestionVersion.question_id.in_(question_ids)).delete(synchronize_session=False)
+        db.query(models.QuestionSetItem).filter(models.QuestionSetItem.question_id.in_(question_ids)).delete(synchronize_session=False)
+        db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.id.in_(question_ids)).delete(synchronize_session=False)
+
+    question_set_ids = [question_set_id for (question_set_id,) in db.query(models.QuestionSet.id).filter(
+        models.QuestionSet.subject_id == subject_id,
+    ).all()]
+    if question_set_ids:
+        db.query(models.QuestionSetExport).filter(models.QuestionSetExport.question_set_id.in_(question_set_ids)).delete(synchronize_session=False)
+        db.query(models.QuestionSetItem).filter(models.QuestionSetItem.question_set_id.in_(question_set_ids)).delete(synchronize_session=False)
+        db.query(models.QuestionSet).filter(models.QuestionSet.id.in_(question_set_ids)).delete(synchronize_session=False)
+
+    upload_ids = [upload_id for (upload_id,) in db.query(models.UploadedFile.id).filter(
+        models.UploadedFile.subject_id == subject_id,
+    ).all()]
+    if upload_ids:
+        db.query(models.TableOfSpecification).filter(models.TableOfSpecification.upload_id.in_(upload_ids)).delete(synchronize_session=False)
+        db.query(models.UploadedFile).filter(models.UploadedFile.id.in_(upload_ids)).delete(synchronize_session=False)
+
     db.delete(subject)
     db.commit()
     log_activity(db, "Subject Permanently Deleted", f"Permanently deleted subject '{subject_name}'.", "delete", user_id=user_id)
@@ -2116,6 +2158,7 @@ def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Sessio
         user_id=payload.user_id,
         bloom_level=bloom_level,
         question_type=payload.question_type,
+        points=payload.points,
         question=payload.question,
         options=payload.options,
         correct_answer=payload.correct_answer,
@@ -2153,6 +2196,15 @@ def get_subjects(user_id: int = None, db: Session = Depends(get_db)):
         models.GeneratedQuestion.subject_id,
         func.count(func.distinct(models.GeneratedQuestion.id)),
     ).filter(models.GeneratedQuestion.archived.is_(False))
+    question_count_query = question_count_query.outerjoin(
+        models.Subject,
+        models.Subject.id == models.GeneratedQuestion.subject_id,
+    ).filter(
+        or_(
+            models.GeneratedQuestion.subject_id.is_(None),
+            models.Subject.archived.is_(False),
+        )
+    )
     if user_id:
         question_count_query = question_count_query.outerjoin(
             models.TableOfSpecification,
@@ -2160,9 +2212,6 @@ def get_subjects(user_id: int = None, db: Session = Depends(get_db)):
         ).outerjoin(
             models.UploadedFile,
             models.UploadedFile.id == models.TableOfSpecification.upload_id,
-        ).outerjoin(
-            models.Subject,
-            models.Subject.id == models.GeneratedQuestion.subject_id,
         ).filter(
             (models.GeneratedQuestion.user_id == user_id)
             | (models.UploadedFile.user_id == user_id)
@@ -2208,7 +2257,7 @@ def update_subject_noapi(subject_id: int, payload: SubjectCreateRequest, db: Ses
 
 @app.delete("/subjects/{subject_id}")
 def delete_subject_noapi(subject_id: int, db: Session = Depends(get_db)):
-    return delete_subject(subject_id, db)
+    return delete_subject(subject_id, db=db)
 
 
 @app.get("/api/questions")
@@ -2218,7 +2267,16 @@ def get_questions(
     user_id: int = None,
     db: Session = Depends(get_db)
 ):
-    query = db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.archived.is_(False))
+    query = db.query(models.GeneratedQuestion).outerjoin(
+        models.Subject,
+        models.Subject.id == models.GeneratedQuestion.subject_id,
+    ).filter(
+        models.GeneratedQuestion.archived.is_(False),
+        or_(
+            models.GeneratedQuestion.subject_id.is_(None),
+            models.Subject.archived.is_(False),
+        ),
+    )
     if user_id:
         query = query.outerjoin(
             models.TableOfSpecification,
@@ -2226,9 +2284,6 @@ def get_questions(
         ).outerjoin(
             models.UploadedFile,
             models.UploadedFile.id == models.TableOfSpecification.upload_id,
-        ).outerjoin(
-            models.Subject,
-            models.Subject.id == models.GeneratedQuestion.subject_id,
         ).filter(or_(
             models.GeneratedQuestion.user_id == user_id,
             models.UploadedFile.user_id == user_id,

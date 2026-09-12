@@ -80,7 +80,7 @@ class QuestionGenerationValidator:
     @staticmethod
     def validate_exam_type(exam_type: str) -> tuple[bool, str]:
         """Validate exam type is recognized"""
-        valid_types = {'Midterm Exam', 'Final Exam', 'Quiz', 'Long Exam'}
+        valid_types = {'Midterm Exam', 'Preliminary Exam', 'Final Exam', 'Quiz', 'Long Exam'}
         
         if not exam_type:
             return False, "Exam type is required"
@@ -92,7 +92,7 @@ class QuestionGenerationValidator:
     @staticmethod
     def validate_semester(semester: str) -> tuple[bool, str]:
         """Validate semester is recognized"""
-        valid_semesters = {'First Semester', 'Second Semester', 'Summer'}
+        valid_semesters = {'First Semester', 'Second Semester', 'Midterm Class'}
         
         if not semester:
             return False, "Semester is required"

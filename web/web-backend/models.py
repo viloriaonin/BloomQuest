@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, JSON, LargeBinary, UniqueConstraint
+from sqlalchemy import Column, Float, Integer, String, Text, Boolean, DateTime, ForeignKey, JSON, LargeBinary, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -61,6 +61,7 @@ class GeneratedQuestion(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     bloom_level = Column(String)
     question_type = Column(String)
+    points = Column(Float, nullable=True)
     question = Column(Text)
     options = Column(JSON, nullable=True)
     correct_answer = Column(Text)

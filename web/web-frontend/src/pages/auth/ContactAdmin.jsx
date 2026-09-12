@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import LoadingSpinner from "../../components/LoadingSpinner";
 import LegalModal from "../../components/LegalModal";
+import PublicNav from "../../components/PublicNav";
 import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
 
 // Connects directly to your local backend server environment
@@ -191,6 +192,7 @@ const ContactAdmin = () => {
 
   return (
     <div className="h-screen flex flex-col page-transition relative overflow-hidden" style={{ height: '100vh', backgroundColor: paper }}>
+      <PublicNav />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
 
@@ -467,7 +469,7 @@ const ContactAdmin = () => {
           </div>
 
           <p className="text-center text-sm" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
-            Back to login? <button type="button" onClick={() => navigate("/")} className="font-semibold hover:underline" style={{ color: accent }}>Sign in here</button>
+            Back to login? <button type="button" onClick={() => navigate("/login")} className="font-semibold hover:underline" style={{ color: accent }}>Sign in here</button>
           </p>
           </div>
         </div>

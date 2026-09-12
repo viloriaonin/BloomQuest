@@ -76,12 +76,15 @@ class TOSGenerationPayload(BaseModel):
     subcolumn_a_hours: dict[str, str] = Field(default_factory=dict)
     exam_type: str = Field(default="Examination", max_length=64)
     semester: str = Field(default="First Semester", max_length=32)
+    academic_year: str = Field(default="", max_length=32)
+    question_type_points: dict[str, float] = Field(default_factory=dict)
+    question_type_items: dict[str, int] = Field(default_factory=dict)
     user_id: int | None = Field(default=None, ge=1)
 
     @field_validator("exam_type")
     @classmethod
     def validate_exam_type(cls, value: str) -> str:
-        allowed = {"Midterm Exam", "Final Exam", "Quiz", "Long Exam", "Examination"}
+        allowed = {"Midterm Exam", "Preliminary Exam", "Final Exam", "Quiz", "Long Exam", "Examination"}
         value = (value or "").strip()
         if not value:
             return "Examination"
@@ -92,10 +95,34 @@ class TOSGenerationPayload(BaseModel):
     @field_validator("semester")
     @classmethod
     def validate_semester(cls, value: str) -> str:
-        allowed = {"First Semester", "Second Semester", "Summer"}
+        allowed = {"First Semester", "Second Semester", "Midterm Class"}
         value = (value or "").strip()
         if value not in allowed:
             raise ValueError("Unsupported semester provided.")
+        return value
+
+    @field_validator("question_type_points")
+    @classmethod
+    def validate_question_type_points(cls, value: dict[str, float]) -> dict[str, float]:
+        allowed = {
+            "MCQ", "True or False", "True/False", "Identification", "Essay",
+            "Enumeration", "Matching Type", "Situational", "Short Answer",
+        }
+        for question_type, points in value.items():
+            if question_type not in allowed or points <= 0 or points > 1000:
+                raise ValueError("Each question type must have a valid points value between 0 and 1000.")
+        return value
+
+    @field_validator("question_type_items")
+    @classmethod
+    def validate_question_type_items(cls, value: dict[str, int]) -> dict[str, int]:
+        allowed = {
+            "MCQ", "True or False", "True/False", "Identification", "Essay",
+            "Enumeration", "Matching Type", "Situational", "Short Answer",
+        }
+        for question_type, items in value.items():
+            if question_type not in allowed or not isinstance(items, int) or items < 1 or items > 200:
+                raise ValueError("Each question type must have a valid number of questions between 1 and 200.")
         return value
 
     @field_validator("question_types")
@@ -716,6 +743,7 @@ async def generate_preview(
         hours_dict=payload.subcolumn_a_hours,
         total_items=payload.total_items,
         question_types=payload.question_types,
+        question_type_items=payload.question_type_items,
     )
 
     try:
@@ -733,6 +761,11 @@ async def generate_preview(
             status_code=502,
             detail=f"Question generation failed while contacting the AI service. Details: {str(e)}",
         )
+
+    for question in generated_questions:
+        question_type = question.get("question_type")
+        if question_type in payload.question_type_points:
+            question["points"] = payload.question_type_points[question_type]
 
     subject_row = db.query(models.Subject).filter(models.Subject.code == meta["subject"]["code"]).first()
     existing_questions = db.query(models.GeneratedQuestion).filter(
@@ -761,15 +794,18 @@ async def generate_preview(
         "selected_topics_data": selected_topics_data,
         "generated_questions": generated_questions,
         "whole_total_points": payload.whole_total_points,
+        "whole_total_items": payload.total_items,
         "exam_type": payload.exam_type,
         "semester": payload.semester,
+        "academic_year": payload.academic_year,
+        "question_type_points": payload.question_type_points,
         "user_id": payload.user_id,
         "subject": meta["subject"],
     }
 
     preview = build_preview(generated_questions)
     stats = statistics(generated_questions)
-    actual_total, tos_warning = check_totals_mismatch(selected_topics_data, payload.whole_total_points)
+    actual_total, tos_warning = check_totals_mismatch(selected_topics_data, payload.total_items)
 
     return {
         "message": "Preview generated. Review it, then confirm to save.",
@@ -799,10 +835,19 @@ async def confirm_generation(
     selected_topics_data = pending["selected_topics_data"]
     generated_questions = pending["generated_questions"]
     whole_total_points = pending["whole_total_points"]
+    whole_total_items = pending["whole_total_items"]
     exam_type = pending["exam_type"]
     semester = pending["semester"]
+    academic_year = pending.get("academic_year", "")
     user_id = pending.get("user_id")
     subject = pending["subject"]
+
+    upload = db.query(models.UploadedFile).filter(
+        models.UploadedFile.id == int(payload.upload_id)
+    ).first()
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload session record not found. Please upload the instructional materials again.")
+    user_id = user_id or upload.user_id
 
     if payload.included_preview_ids is None:
         included_preview_ids = {question.get("preview_id") for question in generated_questions}
@@ -827,19 +872,29 @@ async def confirm_generation(
         }
     _attach_bloom_question_numbers(selected_topics_data, generated_questions)
 
-    subject_row = db.query(models.Subject).filter(models.Subject.code == subject["code"]).first()
+    subject_row = None
+    if upload.subject_id:
+        subject_row = db.query(models.Subject).filter(
+            models.Subject.id == upload.subject_id
+        ).first()
+    if subject_row is None:
+        subject_row = db.query(models.Subject).filter(
+            models.Subject.code == subject["code"]
+        ).first()
     if not subject_row:
         subject_row = models.Subject(name=subject["name"], code=subject["code"], user_id=user_id)
         db.add(subject_row)
-        db.commit()
-        db.refresh(subject_row)
-    elif user_id and subject_row.user_id is None:
+        db.flush()
+    if subject_row.archived:
+        subject_row.archived = False
+    if user_id and subject_row.user_id is None:
         subject_row.user_id = user_id
+    upload.subject_id = subject_row.id
 
     tos_record = models.TableOfSpecification(
         upload_id=int(payload.upload_id),
         tos_data=selected_topics_data,
-        total_items=whole_total_points,
+        total_items=whole_total_items,
     )
     db.add(tos_record)
     db.flush()
@@ -881,16 +936,24 @@ async def confirm_generation(
             question=row["question"],
             bloom_level=row["bloom_level"],
             question_type=row["question_type"],
+            points=row.get("points"),
             options=(
-                {"left_items": row.get("left_items", []), "right_items": row.get("right_items", [])}
+                row["options"]
                 if row["question_type"] == "Matching Type"
                 else row["options"]
             ),
-            correct_answer=correct_ans,  # Swapped with our safely formatted array structure
+            correct_answer=json.dumps(correct_ans, ensure_ascii=False),
             explanation=row["explanation"],
         )
         db.add(q)
     db.commit()
+
+    saved_question_count = db.query(models.GeneratedQuestion).filter(
+        models.GeneratedQuestion.tos_id == tos_record.id,
+        models.GeneratedQuestion.subject_id == subject_row.id,
+    ).count()
+    if saved_question_count != len(generated_questions):
+        raise HTTPException(status_code=500, detail="Question generation completed, but the saved question count could not be verified.")
 
     FILE_CACHE[f"{payload.upload_id}_questions"] = generated_questions
     record_activity(db, "Generated Question Set", f"Generated {len(generated_questions)} questions for {subject_row.name}.", "generate", user_id=user_id)
@@ -899,9 +962,10 @@ async def confirm_generation(
         selected_topics_data=selected_topics_data,
         course_code=subject_row.code,
         course_title=subject_row.name,
-        whole_total_points=whole_total_points,
+        whole_total_items=whole_total_items,
         exam_type=exam_type,
         semester=semester,
+        academic_year=academic_year,
     )
     stream = io.BytesIO()
     workbook.save(stream)
@@ -919,6 +983,8 @@ async def confirm_generation(
         "questions_preview": preview,
         "statistics": stats,
         "total_questions": len(generated_questions),
+        "saved_question_count": saved_question_count,
+        "subject_id": subject_row.id,
     }
 
 
@@ -961,7 +1027,7 @@ async def export_institutional_tos(upload_id: str, user_id: int | None = None, d
                 selected_topics_data=tos_record.tos_data or [],
                 course_code=subject.code,
                 course_title=subject.name,
-                whole_total_points=tos_record.total_items or 0,
+                whole_total_items=tos_record.total_items or 0,
             )
             stream = io.BytesIO()
             workbook.save(stream)

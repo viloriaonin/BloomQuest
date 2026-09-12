@@ -1,4 +1,5 @@
 import math
+from copy import copy
 from collections import defaultdict
 from pathlib import Path
 
@@ -40,11 +41,8 @@ SUPPORTED_QUESTION_TYPES = [
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "tos_template.xlsx"
 
 
-def check_totals_mismatch(selected_topics_data, whole_total_points):
-    """Compare the actual sum of Bloom's item counts against the target total
-    points. Used both to embed a warning cell in the generated Excel file and
-    to surface the same warning in the API response, so it isn't only visible
-    to someone who opens the file after the fact.
+def check_totals_mismatch(selected_topics_data, whole_total_items):
+    """Compare Bloom's generated item count with total intended items.
 
     Returns (actual_total, mismatch_message_or_None).
     """
@@ -52,10 +50,10 @@ def check_totals_mismatch(selected_topics_data, whole_total_points):
         sum(t.get("bloom_counts", {}).get(level, 0) for level in BLOOM_LEVELS)
         for t in selected_topics_data
     )
-    if whole_total_points and actual_total != whole_total_points:
+    if whole_total_items and actual_total != whole_total_items:
         message = (
             f"Bloom's item counts sum to {actual_total}, but the target "
-            f"Total No. of Points was {whole_total_points}. Re-check the "
+            f"Total Intended Test Items was {whole_total_items}. Re-check the "
             f"TOS matrix before distributing this file."
         )
         return actual_total, message
@@ -130,6 +128,23 @@ def _resize_topic_row_block(ws, boundary_row, delta):
         ws.merge_cells(start_row=new_min_row, start_column=min_col, end_row=new_max_row, end_column=max_col)
 
 
+def _copy_row_format(ws, source_row, target_row, min_col=2, max_col=19):
+    """Copy the template topic-row presentation to rows inserted for extra topics."""
+    if source_row == target_row:
+        return
+    if ws.row_dimensions[source_row].height is not None:
+        ws.row_dimensions[target_row].height = ws.row_dimensions[source_row].height
+    for col in range(min_col, max_col + 1):
+        source = ws.cell(row=source_row, column=col)
+        target = ws.cell(row=target_row, column=col)
+        if source.has_style:
+            target._style = copy(source._style)
+        if source.number_format:
+            target.number_format = source.number_format
+        if source.protection:
+            target.protection = copy(source.protection)
+
+
 def _guess_template_columns(ws, header_row):
     cols = {}
     normalized = [_normalize_header(ws.cell(row=header_row, column=c).value) for c in range(1, 41)]
@@ -178,7 +193,7 @@ def _write_course_label(ws, label_key, value):
                 return
 
 
-def _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_total_points):
+def _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_total_items):
     topic_col = cols.get("topic_name", 2)
     ilo_col = cols.get("ilo", 3)
     hours_col = cols.get("hours_a", 4)
@@ -200,6 +215,7 @@ def _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_t
 
     for i, topic in enumerate(selected_topics_data):
         current_row = start_row + i
+        _copy_row_format(ws, start_row, current_row)
         ws.cell(row=current_row, column=topic_col, value=topic["topic_name"])
         ws.cell(row=current_row, column=ilo_col, value=topic.get("ilo", f"ILO {topic.get('ilo_num', 1)}"))
         ws.cell(row=current_row, column=hours_col, value=float(topic["hours_a"]))
@@ -224,6 +240,26 @@ def _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_t
             pct_cell = ws.cell(row=current_row, column=pct_col,
                                  value=f"=IFERROR(({count_formula}/$S${total_row_index})*100,0)")
             pct_cell.number_format = '0.00"%"'
+
+        for col in (topic_col, ilo_col):
+            ws.cell(row=current_row, column=col).alignment = Alignment(
+                horizontal="left",
+                vertical="center",
+                wrap_text=True,
+            )
+        for col in range(hours_col, total_col + 1):
+            if col not in (topic_col, ilo_col):
+                ws.cell(row=current_row, column=col).alignment = Alignment(
+                    horizontal="center",
+                    vertical="center",
+                    wrap_text=True,
+                )
+        topic_text = str(topic.get("topic_name", ""))
+        ilo_text = str(topic.get("ilo", ""))
+        ws.row_dimensions[current_row].height = max(
+            ws.row_dimensions[current_row].height or 15,
+            15 * max(1, math.ceil(len(topic_text) / 24), math.ceil(len(ilo_text) / 14)),
+        )
 
         count_terms = [
             f'IF({get_column_letter(col)}{current_row}="",0,LEN({get_column_letter(col)}{current_row})-LEN(SUBSTITUTE({get_column_letter(col)}{current_row},",",""))+1)'
@@ -274,11 +310,14 @@ def _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_t
                  value=f"=SUM({get_column_letter(pct_col)}{start_row}:{get_column_letter(pct_col)}{last_data_row})")
         pct_total_cell.number_format = '0.00"%"'
 
-    actual_total, mismatch_message = check_totals_mismatch(selected_topics_data, whole_total_points)
+    actual_total, mismatch_message = check_totals_mismatch(selected_topics_data, whole_total_items)
     if mismatch_message:
         warning_row = total_row_index + 2
-        warning_cell = ws.cell(row=warning_row, column=2, value=f"⚠ WARNING: {mismatch_message}")
+        ws.merge_cells(start_row=warning_row, start_column=2, end_row=warning_row, end_column=total_col)
+        warning_cell = ws.cell(row=warning_row, column=2, value=f"WARNING: {mismatch_message}")
         warning_cell.font = Font(name="Calibri", size=11, bold=True, color="CC0000")
+        warning_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+        ws.row_dimensions[warning_row].height = 32
 
 
 def normalize_question_types(question_types):
@@ -396,7 +435,7 @@ def compute_bloom_distribution(item_count):
     return bloom_counts
 
 
-def allocate_question_types(bloom_counts, selected_types, start_pointer=0):
+def allocate_question_types(bloom_counts, selected_types, start_pointer=0, remaining_type_counts=None):
     """
     Assigns a question type to every generated question.
 
@@ -429,13 +468,19 @@ def allocate_question_types(bloom_counts, selected_types, start_pointer=0):
 
         for _ in range(count):
 
-            allocation[bloom].append(
-
-                selected_types[
-                    pointer % len(selected_types)
+            if remaining_type_counts:
+                available_types = [
+                    question_type for question_type in selected_types
+                    if remaining_type_counts.get(question_type, 0) > 0
                 ]
+                if not available_types:
+                    continue
+                question_type = available_types[pointer % len(available_types)]
+                remaining_type_counts[question_type] -= 1
+            else:
+                question_type = selected_types[pointer % len(selected_types)]
 
-            )
+            allocation[bloom].append(question_type)
 
             pointer += 1
 
@@ -448,6 +493,7 @@ def compute_tos(
     hours_dict,
     total_items,
     question_types,
+    question_type_items=None,
 ):
     """
     Main TOS computation used by both
@@ -477,6 +523,7 @@ def compute_tos(
     # Carried across every topic in this loop (see allocate_question_types
     # docstring above) instead of resetting to 0 per topic.
     type_pointer = 0
+    remaining_type_counts = dict(question_type_items or {})
 
     for topic, hrs, items in zip(
         selected_topics,
@@ -493,6 +540,7 @@ def compute_tos(
             bloom_counts,
             question_types,
             start_pointer=type_pointer,
+            remaining_type_counts=remaining_type_counts or None,
         )
 
         results.append({
@@ -528,7 +576,7 @@ def compute_tos(
         
     return results
 
-def generate_tos_from_institutional_template(selected_topics_data, course_code, course_title, whole_total_points):
+def generate_tos_from_institutional_template(selected_topics_data, course_code, course_title, whole_total_items):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "TOS"
@@ -596,10 +644,11 @@ def generate_tos_from_institutional_template(selected_topics_data, course_code, 
     
     for i, topic in enumerate(selected_topics_data):
         current_row = start_row + i
+        _copy_row_format(ws, start_row, current_row, min_col=2, max_col=19)
         
-        ws.cell(row=current_row, column=2, value=topic["topic_name"]).alignment = Alignment(horizontal="left")
+        ws.cell(row=current_row, column=2, value=topic["topic_name"]).alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
         ws.cell(row=current_row, column=3, value=topic.get("ilo", f"ILO {topic.get('ilo_num', 1)}"))
-        ws.cell(row=current_row, column=3).alignment = Alignment(horizontal="left", wrap_text=True)
+        ws.cell(row=current_row, column=3).alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
         ws.cell(row=current_row, column=4, value=float(topic["hours_a"]))
 
         # Column B* = "minutes allotted to answer the test item/s" per the
@@ -621,7 +670,13 @@ def generate_tos_from_institutional_template(selected_topics_data, course_code, 
             cell.font = font_body_data
             cell.border = grid_border
             if c >= 4:
-                cell.alignment = Alignment(horizontal="right")
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        topic_text = str(topic.get("topic_name", ""))
+        ilo_text = str(topic.get("ilo", ""))
+        ws.row_dimensions[current_row].height = max(
+            ws.row_dimensions[current_row].height or 15,
+            15 * max(1, math.ceil(len(topic_text) / 24), math.ceil(len(ilo_text) / 14)),
+        )
 
     # Bottom Aggregate row configurations
     ws.cell(row=total_row_index, column=2, value="Total").font = font_main_label
@@ -662,15 +717,19 @@ def generate_tos_from_institutional_template(selected_topics_data, course_code, 
     ws.cell(row=legend_row + 2, column=2, value="*B - No. of minutes alloted to answer the test item/s")
     ws.cell(row=legend_row + 3, column=2, value="**Weight (%) = (no. of  points for a given topic /total no. of points)* 100")
 
-    # whole_total_points is the target the caller confirmed in the Step 3 TOS
+    # whole_total_items is the target the caller confirmed in the Step 2 TOS
     # preview. The sheet's own formulas compute the actual total independently
     # (S{total_row_index}) -- if they disagree, something upstream (e.g. a
     # manual edit that wasn't re-validated) let a mismatched matrix through.
     # Flag it loudly rather than shipping a TOS that quietly doesn't add up.
-    actual_total, mismatch_message = check_totals_mismatch(selected_topics_data, whole_total_points)
+    actual_total, mismatch_message = check_totals_mismatch(selected_topics_data, whole_total_items)
     if mismatch_message:
-        warning_cell = ws.cell(row=legend_row + 5, column=2, value=f"⚠ WARNING: {mismatch_message}")
+        warning_row = legend_row + 5
+        ws.merge_cells(start_row=warning_row, start_column=2, end_row=warning_row, end_column=19)
+        warning_cell = ws.cell(row=warning_row, column=2, value=f"WARNING: {mismatch_message}")
         warning_cell.font = Font(name="Calibri", size=11, bold=True, color="CC0000")
+        warning_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+        ws.row_dimensions[warning_row].height = 32
 
     ws.column_dimensions['B'].width = 40
     ws.column_dimensions['S'].width = 24
@@ -678,7 +737,7 @@ def generate_tos_from_institutional_template(selected_topics_data, course_code, 
     return wb
 
 
-def _write_exam_type_label(ws, exam_type, semester):
+def _write_exam_type_label(ws, exam_type, semester, academic_year=""):
     """The template's header cell bakes in 'TABLE OF SPECIFICATIONS\\n<exam
     type>\\n<semester/year>' as one multi-line string. Replace just the exam
     type line so the file actually reflects Midterm/Final/Quiz/etc. instead
@@ -692,20 +751,20 @@ def _write_exam_type_label(ws, exam_type, semester):
                 else:
                     lines.append(exam_type)
                 if len(lines) >= 3:
-                    year = lines[2].split(",", 1)[-1].strip() if "," in lines[2] else "AY 2026 - 2027"
+                    year = academic_year or (lines[2].split(",", 1)[-1].strip() if "," in lines[2] else "AY 2026 - 2027")
                     lines[2] = f"{semester}, {year}"
                 cell.value = "\n".join(lines)
                 return
 
 
-def generate_tos_from_excel_template(selected_topics_data, course_code, course_title, whole_total_points, exam_type="Final Exam", semester="First Semester"):
+def generate_tos_from_excel_template(selected_topics_data, course_code, course_title, whole_total_items, exam_type="Final Exam", semester="First Semester", academic_year=""):
     wb = _load_tos_template_workbook()
     ws = wb.active
     ws.views.sheetView[0].showGridLines = True
 
     _write_course_label(ws, "course code", course_code or "IT 332")
     _write_course_label(ws, "course title", course_title or "Integrative Programming and Technologies")
-    _write_exam_type_label(ws, exam_type, semester)
+    _write_exam_type_label(ws, exam_type, semester, academic_year)
 
     header_row = _find_header_row(ws)
     if header_row is None:
@@ -748,7 +807,7 @@ def generate_tos_from_excel_template(selected_topics_data, course_code, course_t
         elif delta < 0:
             _resize_topic_row_block(ws, start_row + num_topics, delta)
 
-    _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_total_points)
+    _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_total_items)
 
     # The template's column widths are inconsistent -- some %-columns (e.g.
     # Understand, Apply) are a hair too narrow for a formatted value like

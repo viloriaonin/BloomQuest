@@ -601,6 +601,7 @@ def prepare_database_rows(generated_questions, subject_id):
             "question": q["question"],
             "bloom_level": q["bloom_level"],
             "question_type": question_type,
+            "points": q.get("points"),
             "options": options,
             "correct_answer": q["correct_answer"],
             "explanation": q.get("explanation", "")

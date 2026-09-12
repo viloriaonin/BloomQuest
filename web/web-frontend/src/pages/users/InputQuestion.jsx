@@ -4,8 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { usePopup } from '../../components/PopupProvider';
 
 const API_URL = '/api';
-const EXAM_TYPE_OPTIONS = ['Midterm Exam', 'Final Exam', 'Quiz', 'Long Exam'];
-const SEMESTER_OPTIONS = ['First Semester', 'Second Semester', 'Summer'];
+const EXAM_TYPE_OPTIONS = ['Midterm Exam', 'Preliminary Exam', 'Final Exam', 'Quiz', 'Long Exam'];
+const SEMESTER_OPTIONS = ['First Semester', 'Second Semester', 'Midterm Class'];
 const PRIMARY = '#8F1424';
 const pageBg = '#F6F7F9';
 
@@ -306,6 +306,7 @@ const InputQuestion = () => {
   const [manualQuestion, setManualQuestion] = useState('');
   const [manualAnswerKey, setManualAnswerKey] = useState('');
   const [manualQuestionType, setManualQuestionType] = useState('MCQ');
+  const [manualQuestionPoints, setManualQuestionPoints] = useState('');
   const [classifying, setClassifying] = useState(false);
 
   // Upload & Auto-Gen Tab States
@@ -317,24 +318,45 @@ const InputQuestion = () => {
   const WIZARD_STEPS = [
     { number: 1, label: 'Upload' },
     { number: 2, label: 'Question Types' },
-    { number: 3, label: 'Items & Points' },
+    { number: 3, label: 'Assessment Details' },
     { number: 4, label: 'Topics & Generate' },
   ];
 
   // Interactive Step Variables for TOS
   const [selectedTopics, setSelectedTopics] = useState([]);
-  const [totalPoints, setTotalPoints] = useState('50');
+  const [totalPoints, setTotalPoints] = useState('');
   const [subcolumnAValues, setSubcolumnAValues] = useState({});
   const [totalItems, setTotalItems] = useState('');
   const [examType, setExamType] = useState('Final Exam');
   const [semester, setSemester] = useState('First Semester');
+  const [academicYear, setAcademicYear] = useState('');
   const [selectedQuestionTypes, setSelectedQuestionTypes] = useState([]);
+  const [questionTypePoints, setQuestionTypePoints] = useState({});
+  const [questionTypeItems, setQuestionTypeItems] = useState({});
   const [generating, setGenerating] = useState(false);
   const [generationResult, setGenerationResult] = useState(null);
   const [excludedQuestionIds, setExcludedQuestionIds] = useState([]);
   const [previewBloomTab, setPreviewBloomTab] = useState('Remember'); // Syntax Error Fixed Here
   const [generationProgress, setGenerationProgress] = useState(0);
   const uploadAbortControllerRef = useRef(null);
+
+  useEffect(() => {
+    const calculatedTotalItems = selectedQuestionTypes.reduce(
+      (sum, type) => sum + (Number.parseInt(questionTypeItems[type], 10) || 0),
+      0,
+    );
+    const calculatedTotalPoints = selectedQuestionTypes.reduce(
+      (sum, type) => {
+        const points = Number(questionTypePoints[type]);
+        const items = Number.parseInt(questionTypeItems[type], 10);
+        return sum + (Number.isFinite(points) && Number.isInteger(items) ? points * items : 0);
+      },
+      0,
+    );
+
+    setTotalItems(calculatedTotalItems > 0 ? String(calculatedTotalItems) : '');
+    setTotalPoints(calculatedTotalPoints > 0 ? String(calculatedTotalPoints) : '');
+  }, [selectedQuestionTypes, questionTypePoints, questionTypeItems]);
 
   useEffect(() => {
     fetchSubjects();
@@ -371,6 +393,9 @@ const InputQuestion = () => {
       if (parsed.totalItems !== undefined) setTotalItems(parsed.totalItems);
       if (parsed.examType) setExamType(parsed.examType);
       if (parsed.semester) setSemester(parsed.semester);
+      if (parsed.academicYear !== undefined) setAcademicYear(parsed.academicYear);
+      if (parsed.questionTypePoints) setQuestionTypePoints(parsed.questionTypePoints);
+      if (parsed.questionTypeItems) setQuestionTypeItems(parsed.questionTypeItems);
       if (parsed.previewBloomTab) setPreviewBloomTab(parsed.previewBloomTab);
       if (parsed.uploading !== undefined) setUploading(parsed.uploading);
       if (parsed.generating !== undefined) setGenerating(parsed.generating);
@@ -401,6 +426,9 @@ const InputQuestion = () => {
       totalItems,
       examType,
       semester,
+      academicYear,
+      questionTypePoints,
+      questionTypeItems,
       previewBloomTab,
       error,
       successMessage,
@@ -425,6 +453,9 @@ const InputQuestion = () => {
     totalItems,
     examType,
     semester,
+    academicYear,
+    questionTypePoints,
+    questionTypeItems,
     previewBloomTab,
     error,
     successMessage,
@@ -448,6 +479,9 @@ const InputQuestion = () => {
     totalItems,
     examType,
     semester,
+    academicYear,
+    questionTypePoints,
+    questionTypeItems,
     previewBloomTab,
     uploading,
     generating,
@@ -526,6 +560,11 @@ const InputQuestion = () => {
       setError('Please enter an answer key before classifying and saving the question.');
       return;
     }
+    const manualPoints = Number(manualQuestionPoints);
+    if (!Number.isFinite(manualPoints) || manualPoints <= 0 || manualPoints > 1000) {
+      setError('Enter a valid points value between 0.01 and 1000 for this question type.');
+      return;
+    }
     const choicesFromQuestion = (value) => {
       const choices = [];
       const choicePattern = /(?:^|\s)([A-H])[.)]\s+(.+?)(?=\s+[A-H][.)]\s+|$)/g;
@@ -567,6 +606,10 @@ const InputQuestion = () => {
           correct_answer: answerKeyToSave,
           question_type: manualQuestionType,
           options: manualOptions,
+          points: manualPoints,
+          exam_type: examType,
+          semester,
+          academic_year: academicYear.trim(),
           subject_id: parseInt(selectedSubject),
           user_id: Number(localStorage.getItem('user_id')) || null,
         }),
@@ -656,14 +699,20 @@ const InputQuestion = () => {
     setManualQuestion('');
     setManualAnswerKey('');
     setManualQuestionType('MCQ');
+    setManualQuestionPoints('');
     setUploadResult(null);
     setGenerationResult(null);
     setExcludedQuestionIds([]);
     setSelectedTopics([]);
     setSubcolumnAValues({});
-    setTotalPoints('50');
+    setTotalPoints('');
     setTotalItems('');
+    setExamType('Final Exam');
+    setSemester('First Semester');
+    setAcademicYear('');
     setSelectedQuestionTypes([]);
+    setQuestionTypePoints({});
+    setQuestionTypeItems({});
     setWizardStep(1);
     setUploading(false);
     setGenerating(false);
@@ -823,6 +872,29 @@ const InputQuestion = () => {
       setError('Please select at least one question type to include in the generated assessment.');
       return;
     }
+    const invalidQuestionTypePoints = selectedQuestionTypes.some((type) => {
+      const points = Number(questionTypePoints[type]);
+      return !Number.isFinite(points) || points <= 0 || points > 1000;
+    });
+    if (invalidQuestionTypePoints) {
+      setError('Please enter a valid points value between 0.01 and 1000 for each selected question type.');
+      return;
+    }
+    const questionTypeItemCounts = Object.fromEntries(
+      selectedQuestionTypes.map((type) => [type, parseInt(questionTypeItems[type], 10)])
+    );
+    const invalidQuestionTypeItems = selectedQuestionTypes.some((type) => {
+      const items = questionTypeItemCounts[type];
+      return !Number.isInteger(items) || items < 1 || items > 200;
+    });
+    if (invalidQuestionTypeItems) {
+      setError('Please enter a valid number of questions between 1 and 200 for each selected question type.');
+      return;
+    }
+    if (Object.values(questionTypeItemCounts).reduce((sum, items) => sum + items, 0) !== intTotalItems) {
+      setError('The total intended items must equal the sum of the questions entered for each question type.');
+      return;
+    }
     const allowedQuestionTypes = QUESTION_TYPE_OPTIONS.map((opt) => opt.value);
     if (!selectedQuestionTypes.every((type) => allowedQuestionTypes.includes(type))) {
       setError('One or more selected question types are invalid.');
@@ -859,6 +931,11 @@ const InputQuestion = () => {
         ),
         exam_type: examType,
         semester,
+        academic_year: academicYear.trim(),
+        question_type_points: Object.fromEntries(
+          selectedQuestionTypes.map((type) => [type, Number(questionTypePoints[type])])
+        ),
+        question_type_items: questionTypeItemCounts,
         user_id: Number(localStorage.getItem('user_id')) || null,
       };
 
@@ -1071,6 +1148,26 @@ const InputQuestion = () => {
                   {QUESTION_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Points for Question Type</label>
+                <input type="number" min="0.01" step="0.01" max="1000" value={manualQuestionPoints} onChange={(e) => setManualQuestionPoints(e.target.value)} placeholder="e.g. 2" className="w-full border border-gray-200 rounded-md p-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-400" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Kind of Exam</label>
+                <select value={examType} onChange={(e) => setExamType(e.target.value)} className="w-full border border-gray-200 rounded-md p-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-400">
+                  {EXAM_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Semester</label>
+                <select value={semester} onChange={(e) => setSemester(e.target.value)} className="w-full border border-gray-200 rounded-md p-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-400">
+                  {SEMESTER_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Academic Year</label>
+                <input type="text" value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} placeholder="e.g. 2026-2027" className="w-full border border-gray-200 rounded-md p-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-400" />
+              </div>
 
             </div>
 
@@ -1194,37 +1291,53 @@ const InputQuestion = () => {
                       {QUESTION_TYPE_OPTIONS.map((option) => {
                         const isChecked = selectedQuestionTypes.includes(option.value);
                         return (
-                          <label
-                            key={option.value}
-                            className={`flex cursor-pointer items-center gap-2 rounded-xl border p-3 text-xs font-semibold transition-all ${isChecked ? 'border-red-500 bg-red-50 text-red-700 shadow-sm' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-slate-100'}`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {
-                                setSelectedQuestionTypes((curr) => curr.includes(option.value) ? curr.filter((x) => x !== option.value) : [...curr, option.value]);
-                              }}
-                              className="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
-                            />
-                            <span>{option.label}</span>
-                          </label>
+                          <div key={option.value} className={`rounded-xl border p-3 transition-all ${isChecked ? 'border-red-500 bg-red-50 text-red-700 shadow-sm' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-slate-100'}`}>
+                            <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  setSelectedQuestionTypes((curr) => curr.includes(option.value) ? curr.filter((x) => x !== option.value) : [...curr, option.value]);
+                                }}
+                                className="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
+                              />
+                              <span>{option.label}</span>
+                            </label>
+                            {isChecked && (
+                              <div className="mt-2 space-y-2">
+                                <input type="number" min="0.01" step="0.01" max="1000" value={questionTypePoints[option.value] || ''} onChange={(e) => setQuestionTypePoints((current) => ({ ...current, [option.value]: e.target.value }))} placeholder="Points per question" className="w-full rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-red-400" />
+                                {questionTypePoints[option.value] && <input type="number" min="1" step="1" max="200" value={questionTypeItems[option.value] || ''} onChange={(e) => setQuestionTypeItems((current) => ({ ...current, [option.value]: e.target.value }))} placeholder="Number of questions" className="w-full rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-red-400" />}
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
 
+                    <div className="mt-6 grid grid-cols-1 gap-4 border-t border-slate-200 pt-5 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">Total Points</label>
+                        <input type="number" value={totalPoints} readOnly placeholder="Calculated from points and question counts" className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-3.5 py-2.5 text-sm text-slate-700 outline-none" />
+                      </div>
+                      <div>
+                        <label className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">Total Intended Test Items</label>
+                        <input type="number" value={totalItems} readOnly placeholder="Calculated from question counts" className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-3.5 py-2.5 text-sm text-slate-700 outline-none" />
+                      </div>
+                    </div>
+
                     <div className="mt-8 flex items-center justify-between border-t border-slate-200 pt-5">
                       <button type="button" onClick={() => setWizardStep(1)} className="bq-secondary-button">Back</button>
-                      <button type="button" onClick={() => setWizardStep(3)} disabled={selectedQuestionTypes.length === 0} className="bq-primary-button disabled:cursor-not-allowed disabled:bg-gray-300">Next: Items &amp; Points</button>
+                      <button type="button" onClick={() => setWizardStep(3)} disabled={selectedQuestionTypes.length === 0} className="bq-primary-button disabled:cursor-not-allowed disabled:bg-gray-300">Next: Assessment Details</button>
                     </div>
                   </div>
                 )}
 
-                {/* Step 3: Number of Items & Points */}
+                {/* Step 3: Assessment Details */}
                 {wizardStep === 3 && (
                   <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
                     <div className="mb-5">
                       <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Step 3</p>
-                      <h3 className="mt-1 text-lg font-bold text-slate-800">Number of Items &amp; Points</h3>
+                      <h3 className="mt-1 text-lg font-bold text-slate-800">Assessment Details</h3>
                     </div>
 
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1241,12 +1354,8 @@ const InputQuestion = () => {
                         </select>
                       </div>
                       <div>
-                        <label className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">Total Points</label>
-                        <input type="number" value={totalPoints} onChange={(e) => setTotalPoints(e.target.value)} placeholder="e.g. 50" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:bg-white" />
-                      </div>
-                      <div>
-                        <label className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">Total Intended Test Items</label>
-                        <input type="number" value={totalItems} onChange={(e) => setTotalItems(e.target.value)} placeholder="e.g. 50" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:bg-white" />
+                        <label className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">Academic Year</label>
+                        <input type="text" value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} placeholder="e.g. 2026-2027" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:bg-white" />
                       </div>
                     </div>
 

@@ -44,6 +44,22 @@ def test_tos_generation_payload_accepts_frontend_question_types():
     assert payload.question_types == ["MCQ", "True or False", "Identification", "Matching Type", "Enumeration", "Essay", "Situational"]
 
 
+def test_tos_generation_payload_accepts_new_assessment_metadata():
+    payload = TOSGenerationPayload(
+        upload_id="demo-upload",
+        total_items=10,
+        whole_total_points=50,
+        question_types=["MCQ"],
+        question_type_points={"MCQ": 2},
+        exam_type="Preliminary Exam",
+        semester="Midterm Class",
+        academic_year="2026-2027",
+    )
+
+    assert payload.question_type_points == {"MCQ": 2}
+    assert payload.academic_year == "2026-2027"
+
+
 def test_group_questions_by_type_keeps_same_question_types_together():
     questions = [
         SimpleNamespace(id=1, question_type="Essay", question="Explain the process."),
