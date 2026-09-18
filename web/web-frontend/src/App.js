@@ -29,6 +29,13 @@ import AdminDashboard from "./pages/admin/admindashboard";
 const MainLayout = ({ children }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = React.useState(false);
+  const [theme, setTheme] = React.useState(() => localStorage.getItem("bloomquest-theme") || "dark");
+
+  React.useEffect(() => {
+    const handleThemeUpdated = (event) => setTheme(event.detail?.theme || localStorage.getItem("bloomquest-theme") || "dark");
+    window.addEventListener("theme-updated", handleThemeUpdated);
+    return () => window.removeEventListener("theme-updated", handleThemeUpdated);
+  }, []);
 
   const toggleSidebar = () => {
     setSidebarCollapsed(prev => !prev);
@@ -36,7 +43,7 @@ const MainLayout = ({ children }) => {
   };
 
   return (
-    <div className="bq-shell flex h-screen w-full overflow-hidden">
+    <div className={`bq-shell bq-user-shell ${theme === "light" ? "bq-user-light" : "bq-user-dark"} flex h-screen w-full overflow-hidden`}>
       {mobileSidebarOpen && (
         <button
           type="button"
@@ -51,12 +58,18 @@ const MainLayout = ({ children }) => {
         onNavigate={() => setMobileSidebarOpen(false)}
         onToggleCollapsed={toggleSidebar}
       />
-      <div className="min-w-0 flex-1 h-full overflow-hidden">
+      <div className="bq-user-main min-w-0 flex-1 h-full overflow-hidden">
         <TopBar onToggleSidebar={toggleSidebar} />
-        <div className="h-[calc(100vh-76px)] overflow-y-auto">
+        <div className="bq-user-content h-[calc(100vh-76px)] overflow-y-auto">
           {React.isValidElement(children)
             ? React.cloneElement(children, {
                 onToggleSidebar: toggleSidebar,
+                theme,
+                onThemeChange: (nextTheme) => {
+                  localStorage.setItem("bloomquest-theme", nextTheme);
+                  setTheme(nextTheme);
+                  window.dispatchEvent(new CustomEvent("theme-updated", { detail: { theme: nextTheme } }));
+                },
               })
             : children}
         </div>
@@ -82,6 +95,28 @@ const UserRoute = ({ children }) => {
   const role = getUserRole();
   if (!role) return <Navigate to="/" replace />;
   return role === "admin" ? <Navigate to="/admin/dashboard" replace /> : children;
+};
+
+const QuestionBankRoute = () => {
+  if (getUserRole() === "admin") {
+    return (
+      <AdminRoute>
+        <PageContainer>
+          <AdminDashboard />
+        </PageContainer>
+      </AdminRoute>
+    );
+  }
+
+  return (
+    <UserRoute>
+      <PageContainer>
+        <MainLayout>
+          <QuestionBank />
+        </MainLayout>
+      </PageContainer>
+    </UserRoute>
+  );
 };
 
 // ---------------------------------------------------------
@@ -127,27 +162,11 @@ function App() {
         />
         <Route 
           path="/question-bank" 
-          element={
-            <UserRoute>
-              <PageContainer>
-                <MainLayout>
-                  <QuestionBank />
-                </MainLayout>
-              </PageContainer>
-            </UserRoute>
-          }
+          element={<QuestionBankRoute />}
         />
         <Route
           path="/question-bank/:subjectId"
-          element={
-            <UserRoute>
-              <PageContainer>
-                <MainLayout>
-                  <QuestionBank />
-                </MainLayout>
-              </PageContainer>
-            </UserRoute>
-          }
+          element={<QuestionBankRoute />}
         />
         <Route
           path="/history"

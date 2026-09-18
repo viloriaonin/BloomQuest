@@ -6,7 +6,9 @@ import { AcademicMgmtContent } from "./AcademicMgmt";
 import { UserMgmtContent } from "./UserMgmt";
 import { ReportsContent } from "./Reports";
 import Governance from "./Governance";
+import RecycleBin from "./RecycleBin";
 import UserDetailPage from "./UserDetailPage";
+import AdminSettings from "./AdminSettings";
 import { Bar, Doughnut } from "react-chartjs-2";
 import { Radio, ShieldCheck, ChevronRight, Bell } from "lucide-react";
 import { ArcElement, BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from "chart.js";
@@ -38,12 +40,20 @@ const TAB_META = {
     label: "Content Governance",
     description: "Review, recover, and restore question-bank content.",
   },
+  recycle: {
+    label: "Recycle Bin",
+    description: "Restore deleted content or remove it permanently.",
+  },
+  settings: {
+    label: "Settings",
+    description: "Manage your profile and account preferences.",
+  },
 };
 
 const AdminDashboard = () => {
   const location = useLocation();
   const [activeTab, setActiveTab] = useState(
-    location.pathname.startsWith("/admin/questions")
+    location.pathname.startsWith("/admin/questions") || location.pathname.startsWith("/question-bank")
       ? "question-bank"
       : location.pathname.startsWith("/admin/users/")
         ? "users"
@@ -51,11 +61,12 @@ const AdminDashboard = () => {
   );
   const [userEmail, setUserEmail] = useState("admin@bloomquest.edu");
   const [userRole, setUserRole] = useState("Administrator");
-  const [dashboardData, setDashboardData] = useState({ questions: 0, assessments: 0, faculty: 0, successRate: 0, avgQuestionsPerFaculty: 0, mostActiveDepartment: "N/A", departments: [], notifications: [], activity: [] });
+  const [adminTheme, setAdminTheme] = useState(() => localStorage.getItem("bloomquest-admin-theme") || "dark");
+  const [dashboardData, setDashboardData] = useState({ questions: 0, assessments: 0, activeAccounts: 0, avgQuestionsPerFaculty: 0, mostActiveDepartment: "N/A", departments: [], notifications: [], activity: [] });
   const [dashboardLoading, setDashboardLoading] = useState(true);
 
   useEffect(() => {
-    if (location.pathname.startsWith("/admin/questions")) {
+    if (location.pathname.startsWith("/admin/questions") || location.pathname.startsWith("/question-bank")) {
       setActiveTab("question-bank");
     } else if (location.pathname.startsWith("/admin/users/")) {
       setActiveTab("users");
@@ -77,6 +88,14 @@ const AdminDashboard = () => {
         const logs = logsRes.ok ? await logsRes.json() : [];
         const usersPayload = usersRes.ok ? await usersRes.json() : [];
         const users = Array.isArray(usersPayload) ? usersPayload : usersPayload.users || [];
+        const isManagedUser = (item) => {
+          if (!item || typeof item.role !== "string") return true;
+          const role = item.role.toLowerCase();
+          return role === "faculty" || role === "student";
+        };
+        const activeUsers = Array.isArray(usersPayload)
+          ? users.filter((item) => isManagedUser(item) && !item.archived && item.is_active !== false)
+          : (usersPayload.active || []).filter(isManagedUser);
         const insights = insightsRes.ok ? await insightsRes.json() : {};
         const visibleLogs = logs.filter((item) => String(item.role || '').toLowerCase() !== 'admin' && String(item.name || '').toLowerCase() !== 'system');
         const generatedQuestions = visibleLogs.filter((item) => String(item.type || '').toLowerCase() === 'generate').length;
@@ -87,12 +106,10 @@ const AdminDashboard = () => {
           return counts;
         }, {});
         const mostActiveDepartment = Object.entries(departmentCounts).sort(([, first], [, second]) => second - first)[0]?.[0] || 'N/A';
-        const successfulLogs = visibleLogs.filter((item) => String(item.status || '').toLowerCase() === 'success').length;
         setDashboardData({
           questions: questions.length || generatedQuestions,
-          assessments: visibleLogs.filter((item) => /export|download|assessment|question_set/i.test(`${item.type} ${item.action}`)).length,
-          faculty: users.filter((item) => String(item.role || "").toLowerCase() === "faculty" && item.is_active !== false && !item.archived).length,
-          successRate: visibleLogs.length ? Math.round((successfulLogs / visibleLogs.length) * 100) : 0,
+          assessments: logs.filter((item) => /export|download/i.test(`${item.type} ${item.action}`)).length,
+          activeAccounts: activeUsers.length,
           avgQuestionsPerFaculty: facultyNames.size ? Math.round(generatedQuestions / facultyNames.size) : 0,
           mostActiveDepartment,
           departments: insights.departments || [],
@@ -113,10 +130,9 @@ const AdminDashboard = () => {
   const renderDashboardContent = () => {
     const stats = [
       ["01", "Total Questions", dashboardData.questions, "Question bank", "accent"],
-      ["02", "Success Rate", `${dashboardData.successRate}%`, "Activity", "good"],
-      ["03", "Most Active Dept.", dashboardData.mostActiveDepartment, `${dashboardData.avgQuestionsPerFaculty} questions / faculty`, "warn"],
-      ["04", "Total Assessments", dashboardData.assessments, "Generated / exported", "accent"],
-      ["05", "Active Faculty", dashboardData.faculty, "Active accounts", "muted"],
+      ["02", "Most Active Dept.", dashboardData.mostActiveDepartment, `${dashboardData.avgQuestionsPerFaculty} questions / faculty`, "warn"],
+      ["03", "Total Assessments", dashboardData.assessments, "Generated / exported", "accent"],
+      ["04", "Active Accounts", dashboardData.activeAccounts, "User management", "muted"],
     ];
     return (
       <div className="bq-admin-overview space-y-4">
@@ -125,8 +141,8 @@ const AdminDashboard = () => {
         </div>
 
         <div className="grid gap-4 xl:grid-cols-3">
-          <section className="bq-admin-panel xl:col-span-2"><div className="flex items-center justify-between"><h2>Descriptive Analytics</h2><span className="bq-admin-mono">RAW COUNTS</span></div><div className="mt-4 h-64"><Bar data={{ labels: ["Questions", "Assessments", "Faculty"], datasets: [{ data: [dashboardData.questions, dashboardData.assessments, dashboardData.faculty], backgroundColor: ["#C4485A", "#E0A458", "#3A3E48"], borderRadius: 3, barThickness: 54 }] }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: "#14161C", borderColor: "#262A34", borderWidth: 1 } }, scales: { x: { ticks: { color: "#8B8F99" }, grid: { display: false } }, y: { beginAtZero: true, ticks: { color: "#8B8F99", precision: 0 }, grid: { color: "#1E2027" } } } }} /></div></section>
-          <section className="bq-admin-panel"><h2>Predictive Analytics</h2><div className="mt-4 h-48"><Doughnut data={{ labels: ["Questions", "Assessments", "Faculty"], datasets: [{ data: [dashboardData.questions || 1, dashboardData.assessments || 1, dashboardData.faculty || 1], backgroundColor: ["#C4485A", "#E0A458", "#3A3E48"], borderColor: "#14161C", borderWidth: 2 }] }} options={{ responsive: true, maintainAspectRatio: false, cutout: "62%", plugins: { legend: { position: "bottom", labels: { color: "#8B8F99", boxWidth: 10, padding: 14 } } } }} /></div></section>
+          <section className="bq-admin-panel xl:col-span-2"><div className="flex items-center justify-between"><h2>Descriptive Analytics</h2><span className="bq-admin-mono">RAW COUNTS</span></div><div className="mt-4 h-64"><Bar data={{ labels: ["Questions", "Assessments", "Accounts"], datasets: [{ data: [dashboardData.questions, dashboardData.assessments, dashboardData.activeAccounts], backgroundColor: ["#C4485A", "#E0A458", "#3A3E48"], borderRadius: 3, barThickness: 54 }] }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: "#14161C", borderColor: "#262A34", borderWidth: 1 } }, scales: { x: { ticks: { color: "#8B8F99" }, grid: { display: false } }, y: { beginAtZero: true, ticks: { color: "#8B8F99", precision: 0 }, grid: { color: "#1E2027" } } } }} /></div></section>
+          <section className="bq-admin-panel"><h2>Predictive Analytics</h2><div className="mt-4 h-48"><Doughnut data={{ labels: ["Questions", "Assessments", "Accounts"], datasets: [{ data: [dashboardData.questions || 1, dashboardData.assessments || 1, dashboardData.activeAccounts || 1], backgroundColor: ["#C4485A", "#E0A458", "#3A3E48"], borderColor: "#14161C", borderWidth: 2 }] }} options={{ responsive: true, maintainAspectRatio: false, cutout: "62%", plugins: { legend: { position: "bottom", labels: { color: "#8B8F99", boxWidth: 10, padding: 14 } } } }} /></div></section>
         </div>
 
         <section className="bq-admin-panel"><div className="flex items-center justify-between"><h2>Prescriptive Recommendations</h2><span className="bq-admin-mono">SYSTEM-GENERATED</span></div><div className="bq-admin-advisory mt-4"><span className="bq-admin-tag bq-admin-tag-warn">ADVISORY</span><p>Faculty activity is low across departments. Consider prompting inactive faculty accounts to populate the question bank.</p></div></section>
@@ -156,13 +172,17 @@ const AdminDashboard = () => {
         return <ReportsContent />;
       case "governance":
         return <Governance />;
+      case "recycle":
+        return <RecycleBin />;
+      case "settings":
+        return <AdminSettings theme={adminTheme} onThemeChange={setAdminTheme} />;
       default:
         return renderDashboardContent();
     }
   };
 
   return (
-    <div className="bq-shell bq-admin-shell bq-admin-dark h-screen w-full overflow-hidden">
+    <div className={`bq-shell bq-admin-shell ${adminTheme === "light" ? "bq-admin-light" : "bq-admin-dark"} h-screen w-full overflow-hidden`}>
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
       <main className="bq-admin-main flex flex-1 flex-col overflow-auto">
         <header

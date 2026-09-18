@@ -308,7 +308,13 @@ def get_admin_insights(db: Session = Depends(get_db), _admin: models.User = Depe
         bucket["published_questions"] += item["published_questions"]
         bucket["quality_scores"].append(item["content_quality_score"])
         bucket["activity"] += sum(1 for entry in db.query(models.ActivityLog).filter(models.ActivityLog.user_id == item["faculty_id"]).all())
-    departments = [{**item, "quality_score": round(sum(item.pop("quality_scores")) / len(item["quality_scores"])) if item["quality_scores"] else 0} for item in department_metrics.values()]
+    departments = []
+    for item in department_metrics.values():
+        quality_scores = item.get("quality_scores", [])
+        departments.append({
+            **{key: value for key, value in item.items() if key != "quality_scores"},
+            "quality_score": round(sum(quality_scores) / len(quality_scores)) if quality_scores else 0,
+        })
     pending_count = db.query(models.AccountRequest).filter(models.AccountRequest.status == "pending").count()
     review_count = sum(1 for question in all_active if (question.lifecycle_status or "draft") in {"draft", "review"})
     failed_count = db.query(models.ActivityLog).filter(models.ActivityLog.status == "error").count()

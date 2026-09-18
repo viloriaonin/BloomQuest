@@ -198,6 +198,8 @@
 .bq-admin-shell {
   display: flex;
   align-items: stretch;
+  min-height: 100vh;
+  background: #0b0c10 !important;
 }
 
 .bq-admin-sidebar {
@@ -271,7 +273,8 @@
   --admin-raised: #1b1e26;
   --admin-border: #262a34;
   --admin-text: #ecedef;
-  --admin-muted: #8b8f99;
+  visibility: visible;
+  background: #0b0c10 !important;
   background: var(--admin-bg) !important;
   color: #ecedef;
   font-family: "Space Grotesk", "Trebuchet MS", sans-serif;
@@ -391,9 +394,10 @@
 
 /* Keep every admin tab on the same workspace surface. */
 .bq-admin-dark .bq-admin-main > .bq-page,
+.bq-admin-dark .bq-admin-main .bq-page,
 .bq-admin-dark .bq-admin-main .bq-page-inner {
-  background: var(--admin-bg);
-  color: #ecedef;
+  background: var(--admin-bg) !important;
+  color: #ecedef !important;
 }
 
 .bq-admin-dark .bq-admin-main .bq-panel,
@@ -429,6 +433,7 @@
 .bq-admin-dark .bq-admin-main .text-slate-400 {
   color: var(--admin-muted) !important;
 }
+
 
 .bq-admin-dark .bq-admin-main input,
 .bq-admin-dark .bq-admin-main textarea,
@@ -477,6 +482,28 @@
   color: #ecedef;
 }
 
+/* Portaled admin dialogs sit outside .bq-admin-main but retain the same theme. */
+.bq-admin-dark .bq-modal-panel {
+  background: var(--admin-panel) !important;
+  border-color: var(--admin-border) !important;
+  color: #ecedef !important;
+}
+.bq-admin-dark .bq-modal-panel h2,
+.bq-admin-dark .bq-modal-panel label {
+  color: #ecedef !important;
+}
+.bq-admin-dark .bq-modal-panel .bq-field,
+.bq-admin-dark .bq-modal-panel input {
+  background: #0d0e13 !important;
+  border-color: var(--admin-border) !important;
+  color: #ecedef !important;
+}
+.bq-admin-dark .bq-modal-panel .bq-secondary-button {
+  background: var(--admin-raised) !important;
+  border-color: var(--admin-border) !important;
+  color: #ecedef !important;
+}
+
 .bq-admin-dark .bq-admin-main .border-gray-100,
 .bq-admin-dark .bq-admin-main .border-gray-200,
 .bq-admin-dark .bq-admin-main .border-gray-300,
@@ -489,6 +516,277 @@
 .bq-admin-dark .bq-admin-main .text-red-600,
 .bq-admin-dark .bq-admin-main .text-\[\#B4454A\] {
   color: #c4485a !important;
+}
+
+.bq-admin-light {
+  --admin-bg: #f5f7fb;
+  --admin-sidebar: #ffffff;
+  --admin-panel: #ffffff;
+  --admin-raised: #f8fafc;
+  --admin-border: rgba(15, 23, 42, 0.1);
+  --admin-text: #0f172a;
+  --admin-muted: #64748b;
+  background: var(--admin-bg) !important;
+  color: var(--admin-text);
+}
+.bq-admin-light .bq-admin-sidebar { background: #ffffff !important; border-color: var(--admin-border) !important; }
+.bq-admin-light .bq-admin-sidebar > div { border-color: var(--admin-border) !important; }
+.bq-admin-light .bq-admin-sidebar h1 { color: #0f172a !important; }
+.bq-admin-light .bq-admin-sidebar p,
+.bq-admin-light .bq-admin-sidebar > div:nth-child(2) span { color: #64748b !important; }
+.bq-admin-light .bq-admin-sidebar nav button,
+.bq-admin-light .bq-admin-sidebar nav button span,
+.bq-admin-light .bq-admin-sidebar nav button svg { color: #64748b !important; }
+.bq-admin-light .bq-admin-sidebar nav button:hover { background: #f8fafc !important; color: #b4454a !important; }
+.bq-admin-light .bq-admin-sidebar nav button[style*="background: var(--bq-accent)"],
+.bq-admin-light .bq-admin-sidebar nav button[style*="background: var(--bq-accent)"] span,
+.bq-admin-light .bq-admin-sidebar nav button[style*="background: var(--bq-accent)"] svg { background: #b4454a !important; color: #fff !important; }
+.bq-admin-light .bq-admin-main,
+.bq-admin-light .bq-admin-main > .bq-page,
+.bq-admin-light .bq-admin-main .bq-page-inner { background: var(--admin-bg) !important; color: var(--admin-text); }
+.bq-admin-light .bq-admin-header { background: rgba(255, 255, 255, 0.94); border-color: var(--admin-border) !important; }
+.bq-admin-light .bq-admin-title { color: #0f172a; }
+.bq-admin-light .bq-admin-muted,
+.bq-admin-light .bq-admin-mono { color: #64748b; }
+.bq-admin-light .bq-admin-header .text-sm { color: #0f172a; }
+.bq-admin-light .bq-admin-panel,
+.bq-admin-light .bq-admin-stat { background: #ffffff; border-color: var(--admin-border); color: #0f172a; }
+.bq-admin-light .bq-admin-panel h2,
+.bq-admin-light .bq-admin-panel h3,
+.bq-admin-light .bq-admin-panel .text-\[\#ECEDEF\],
+.bq-admin-light .bq-admin-settings-row strong { color: #0f172a !important; }
+.bq-admin-light .bq-admin-settings-row { background: #f8fafc; color: #64748b; }
+.bq-admin-light .bq-admin-settings-row small { color: #64748b; }
+.bq-admin-light .bq-admin-settings-row.border-t { border-color: var(--admin-border) !important; }
+.bq-admin-light .bq-admin-settings .border-\[\#262A34\] { border-color: var(--admin-border) !important; }
+.bq-admin-light .bq-admin-settings .bg-\[\#1B1E26\] { background: #f8fafc !important; }
+.bq-admin-light .bq-admin-settings .text-\[\#8B8F99\] { color: #64748b !important; }
+.bq-admin-light .bq-admin-settings [role="radio"] .text-\[\#ECEDEF\] { color: #0f172a !important; }
+.bq-admin-light .bq-admin-sidebar nav button span { font-weight: 600 !important; }
+
+/* Bring the legacy admin tabs onto the same light surface as the user workspace. */
+.bq-admin-light .bq-admin-user-management,
+.bq-admin-light .bq-academic-attached { color: #0f172a; }
+.bq-admin-light .bq-admin-user-management .bg-white,
+.bq-admin-light .bq-admin-user-management .bq-admin-user-section,
+.bq-admin-light .bq-academic-attached .bq-panel { background: #ffffff !important; border-color: rgba(15, 23, 42, 0.1) !important; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06) !important; }
+.bq-admin-light .bq-admin-user-management .bg-gray-50,
+.bq-admin-light .bq-admin-user-management .bg-\[\#faf7f7\],
+.bq-admin-light .bq-academic-attached .bg-\[\#faf7f7\] { background: #f8fafc !important; }
+.bq-admin-light .bq-admin-user-management .text-gray-900,
+.bq-admin-light .bq-admin-user-management .text-gray-800,
+.bq-admin-light .bq-admin-user-management .text-gray-700,
+.bq-admin-light .bq-academic-attached .text-slate-900,
+.bq-admin-light .bq-academic-attached .text-slate-800,
+.bq-admin-light .bq-academic-attached .text-slate-700 { color: #0f172a !important; }
+.bq-admin-light .bq-admin-user-management .text-gray-600,
+.bq-admin-light .bq-admin-user-management .text-gray-500,
+.bq-admin-light .bq-admin-user-management .text-gray-400,
+.bq-admin-light .bq-academic-attached .text-slate-600,
+.bq-admin-light .bq-academic-attached .text-slate-500,
+.bq-admin-light .bq-academic-attached .text-slate-400 { color: #64748b !important; }
+.bq-admin-light .bq-admin-user-management .border-gray-100,
+.bq-admin-light .bq-admin-user-management .border-gray-200,
+.bq-admin-light .bq-admin-user-management .border-gray-300,
+.bq-admin-light .bq-academic-attached .border-gray-100,
+.bq-admin-light .bq-academic-attached .border-gray-200 { border-color: rgba(15, 23, 42, 0.1) !important; }
+.bq-admin-light .bq-admin-user-management .bq-admin-user-stat { background: #ffffff !important; border-color: rgba(15, 23, 42, 0.1) !important; }
+.bq-admin-light .bq-admin-user-management .bq-admin-user-stat p { color: #64748b !important; }
+.bq-admin-light .bq-admin-user-management .bq-admin-user-stat .text-3xl { color: #0f172a !important; }
+.bq-admin-light .bq-admin-user-management .bq-user-stat-icon { background: #f8fafc !important; }
+
+/* Complete the dark treatment for legacy user pages that still use inline light tokens. */
+.bq-user-dark .bq-user-content .bq-panel,
+.bq-user-dark .bq-user-content .bg-white,
+.bq-user-dark .bq-user-content .bg-gray-50,
+.bq-user-dark .bq-user-content .bg-gray-50\/30,
+.bq-user-dark .bq-user-content .bg-slate-50,
+.bq-user-dark .bq-user-content .bg-slate-100 { background: var(--user-panel) !important; }
+.bq-user-dark .bq-user-content .bg-gray-100,
+.bq-user-dark .bq-user-content .bg-gray-200,
+.bq-user-dark .bq-user-content .bg-gray-50\/50,
+.bq-user-dark .bq-user-content .bg-slate-200,
+.bq-user-dark .bq-user-content .bg-slate-100\/50 { background: var(--user-raised) !important; }
+.bq-user-dark .bq-user-content .bg-red-50,
+.bq-user-dark .bq-user-content .bg-red-50\/20,
+.bq-user-dark .bq-user-content .bg-emerald-50 { background: rgba(196, 72, 90, 0.14) !important; }
+.bq-user-dark .bq-user-content .bg-gradient-to-r { background: var(--user-raised) !important; background-image: none !important; }
+.bq-user-dark .bq-user-content .text-gray-900,
+.bq-user-dark .bq-user-content .text-gray-800,
+.bq-user-dark .bq-user-content .text-gray-700,
+.bq-user-dark .bq-user-content .text-slate-900,
+.bq-user-dark .bq-user-content .text-slate-800,
+.bq-user-dark .bq-user-content .text-slate-700 { color: var(--user-text) !important; }
+.bq-user-dark .bq-user-content .text-gray-600,
+.bq-user-dark .bq-user-content .text-gray-500,
+.bq-user-dark .bq-user-content .text-gray-400,
+.bq-user-dark .bq-user-content .text-slate-600,
+.bq-user-dark .bq-user-content .text-slate-500,
+.bq-user-dark .bq-user-content .text-slate-400 { color: var(--user-muted) !important; }
+.bq-user-dark .bq-user-content .border-gray-100,
+.bq-user-dark .bq-user-content .border-gray-200,
+.bq-user-dark .bq-user-content .border-gray-300,
+.bq-user-dark .bq-user-content .border-slate-100,
+.bq-user-dark .bq-user-content .border-slate-200,
+.bq-user-dark .bq-user-content .border-slate-300 { border-color: var(--user-border) !important; }
+.bq-user-dark .bq-user-content [style*="#fff7f5"],
+.bq-user-dark .bq-user-content [style*="#ffffff"],
+.bq-user-dark .bq-user-content [style*="#FFFFFF"],
+.bq-user-dark .bq-user-content [style*="rgb(255, 255, 255)"],
+.bq-user-dark .bq-user-content [style*="rgb(245, 247, 251)"],
+.bq-user-dark .bq-user-content [style*="rgb(248, 250, 252)"] { background: var(--user-panel) !important; }
+.bq-user-dark .bq-user-content [style*="#0F172A"],
+.bq-user-dark .bq-user-content [style*="rgb(15, 23, 42)"] { color: var(--user-text) !important; }
+.bq-user-dark .bq-user-content [style*="#64748B"],
+.bq-user-dark .bq-user-content [style*="rgb(100, 116, 139)"] { color: var(--user-muted) !important; }
+.bq-user-dark .bq-user-content [style*="rgba(15,23,42"],
+.bq-user-dark .bq-user-content [style*="rgba(15, 23, 42"] { border-color: var(--user-border) !important; }
+.bq-user-dark .bq-user-content .rounded-2xl.border,
+.bq-user-dark .bq-user-content .rounded-xl.border,
+.bq-user-dark .bq-user-content .rounded-lg.border { border-color: var(--user-border) !important; }
+.bq-user-dark .bq-user-content > .page-transition,
+.bq-user-dark .bq-user-content .page-transition > .min-h-full,
+.bq-user-dark .bq-user-content .min-h-screen { background: var(--user-bg) !important; color: var(--user-text); }
+.bq-user-dark .bq-user-content table,
+.bq-user-dark .bq-user-content thead,
+.bq-user-dark .bq-user-content tbody,
+.bq-user-dark .bq-user-content tr { border-color: var(--user-border) !important; }
+.bq-user-dark .bq-user-content option { background: var(--user-panel); color: var(--user-text); }
+
+/* The user workspace follows the admin workspace's charcoal dark palette. */
+.bq-user-dark {
+  --bq-bg: #0b0c10;
+  --bq-surface: #14161c;
+  --bq-surface-muted: #1b1e26;
+  --bq-ink: #ecedef;
+  --bq-muted: #8b8f99;
+  --bq-border: #262a34;
+  --bq-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
+  --user-bg: #0b0c10;
+  --user-sidebar: #0d0e13;
+  --user-panel: #14161c;
+  --user-raised: #1b1e26;
+  --user-border: #262a34;
+  --user-text: #ecedef;
+  --user-muted: #8b8f99;
+  background: var(--user-bg) !important;
+  color: var(--user-text);
+}
+.bq-user-dark .bq-user-main,
+.bq-user-dark .bq-user-content { background: var(--user-bg) !important; color: var(--user-text); }
+.bq-user-dark .bq-user-content .bq-page,
+.bq-user-dark .bq-user-content .bq-page-inner { background: var(--user-bg) !important; color: var(--user-text); }
+.bq-user-dark .bq-user-content .bq-page-title { color: var(--user-text) !important; }
+.bq-user-dark .bq-user-content .bq-page-description { color: var(--user-muted) !important; }
+.bq-user-dark .bq-user-content .bq-field,
+.bq-user-dark .bq-user-content .bq-secondary-button { background: var(--user-panel) !important; border-color: var(--user-border) !important; color: var(--user-text) !important; }
+.bq-user-dark .bq-user-sidebar { background: var(--user-sidebar) !important; border-color: #1e2027 !important; }
+.bq-user-dark .bq-user-sidebar > div { border-color: #1e2027 !important; }
+.bq-user-dark .bq-user-sidebar h1,
+.bq-user-dark .bq-user-sidebar button:not([style*="backgroundColor: #B4454A"]),
+.bq-user-dark .bq-user-sidebar button span { color: #9195a0 !important; }
+.bq-user-dark .bq-user-sidebar h1 { color: var(--user-text) !important; }
+.bq-user-dark .bq-user-sidebar button.text-white,
+.bq-user-dark .bq-user-sidebar button.text-white span { color: #ecedef !important; }
+.bq-user-sidebar nav button,
+.bq-user-sidebar > div:last-child button {
+  transition: background-color 150ms ease, color 150ms ease, transform 150ms ease;
+}
+.bq-user-sidebar nav button:hover,
+.bq-user-sidebar > div:last-child button:hover { transform: translateX(3px); }
+.bq-user-sidebar nav button.text-white:hover { transform: none; }
+.bq-user-dark .bq-user-sidebar button:hover { background-color: var(--user-raised) !important; color: var(--user-text) !important; }
+.bq-user-dark .bq-user-topbar { background: rgba(11, 12, 16, 0.92) !important; border-color: #1e2027 !important; }
+.bq-user-dark .bq-user-topbar h1,
+.bq-user-dark .bq-user-topbar .text-sm { color: var(--user-text) !important; }
+.bq-user-dark .bq-user-topbar p,
+.bq-user-dark .bq-user-topbar button { color: var(--user-muted) !important; }
+.bq-user-dark .bq-user-topbar > div:last-child > div:last-child { background: var(--user-raised) !important; border-color: #c4485a !important; }
+.bq-user-dark .bq-user-content .bg-white,
+.bq-user-dark .bq-user-content .bg-slate-50 { background: var(--user-panel) !important; }
+.bq-user-dark .bq-user-content .text-slate-900,
+.bq-user-dark .bq-user-content .text-gray-900 { color: var(--user-text) !important; }
+.bq-user-dark .bq-user-content .text-slate-600,
+.bq-user-dark .bq-user-content .text-slate-500,
+.bq-user-dark .bq-user-content .text-gray-600,
+.bq-user-dark .bq-user-content .text-gray-500 { color: var(--user-muted) !important; }
+.bq-user-dark .bq-user-content input,
+.bq-user-dark .bq-user-content textarea,
+.bq-user-dark .bq-user-content select { background: var(--user-raised) !important; border-color: var(--user-border) !important; color: var(--user-text) !important; }
+.bq-user-dark .bq-user-content input::placeholder,
+.bq-user-dark .bq-user-content textarea::placeholder { color: #5c606b !important; }
+.bq-user-dark .bq-user-content [style*="#F5F7FB"],
+.bq-user-dark .bq-user-content [style*="#F8FAFC"],
+.bq-user-dark .bq-user-content [style*="#fff"],
+.bq-user-dark .bq-user-content [style*="#FFFFFF"] { background-color: var(--user-bg) !important; }
+.bq-user-dark .bq-user-content [style*="#0F172A"] { color: var(--user-text) !important; }
+.bq-user-dark .bq-user-content [style*="#64748B"] { color: var(--user-muted) !important; }
+.bq-user-dark .bq-user-content [style*="rgba(15,23,42"] { border-color: var(--user-border) !important; }
+.bq-user-dark .bq-user-content .border-slate-200,
+.bq-user-dark .bq-user-content .border-slate-100 { border-color: var(--user-border) !important; }
+.bq-user-dark .bq-user-content .hover\:bg-slate-50:hover,
+.bq-user-dark .bq-user-content .hover\:bg-white:hover { background: var(--user-raised) !important; }
+.bq-admin-light .bq-academic-attached .text-slate-100,
+.bq-admin-light .bq-academic-attached .text-slate-200,
+.bq-admin-light .bq-academic-attached .text-slate-900 { color: #0f172a !important; }
+.bq-admin-light .bq-academic-attached .text-slate-400,
+.bq-admin-light .bq-academic-attached .text-slate-500,
+.bq-admin-light .bq-academic-attached .text-slate-600,
+.bq-admin-light .bq-academic-attached .text-slate-700 { color: #64748b !important; }
+.bq-admin-light .bq-academic-attached section > div.space-y-4 > div {
+  background: #f8fafc !important;
+  border-color: rgba(15, 23, 42, 0.1) !important;
+}
+.bq-admin-light .bq-academic-attached section > div.space-y-4 > div > div > div button { color: #64748b !important; }
+.bq-admin-light .bq-academic-attached section > div.space-y-4 > div > div > div button:last-child { color: #b4454a !important; }
+.bq-admin-light .bq-academic-attached .border-white\/10 { border-color: rgba(15, 23, 42, 0.1) !important; }
+.bq-admin-light .bq-academic-attached .bg-black\/10 { background: #ffffff !important; }
+.bq-admin-light .bq-admin-user-management table tbody tr:hover { background: #f8fafc !important; }
+.bq-admin-light .bq-admin-user-management .bq-field,
+.bq-admin-light .bq-academic-attached .bq-field,
+.bq-admin-light .bq-admin-user-management input,
+.bq-admin-light .bq-admin-user-management select { background: #ffffff !important; border-color: rgba(15, 23, 42, 0.12) !important; color: #0f172a !important; }
+.bq-admin-light .bq-admin-stat-value,
+.bq-admin-light .bq-admin-stat-label,
+.bq-admin-light .bq-admin-metric p,
+.bq-admin-light .bq-admin-metric strong { color: #0f172a; }
+.bq-admin-light .bq-admin-metric { background: #f8fafc; border-color: var(--admin-border); }
+.bq-admin-light .bq-admin-question-bank .text-\[\#ECEDEF\],
+.bq-admin-light .bq-admin-question-bank .text-slate-900,
+.bq-admin-light .bq-admin-question-bank .text-gray-900 { color: #0f172a !important; }
+.bq-admin-light .bq-modal-panel { background: #ffffff !important; border-color: var(--admin-border) !important; color: #0f172a !important; }
+.bq-admin-light .bq-modal-panel h2,
+.bq-admin-light .bq-modal-panel label { color: #0f172a !important; }
+.bq-admin-light .bq-modal-panel .bq-field,
+.bq-admin-light .bq-modal-panel input { background: #ffffff !important; border-color: var(--admin-border) !important; color: #0f172a !important; }
+
+.bq-admin-settings-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.75rem;
+  border: 0;
+  background: #1b1e26;
+  color: #c7c9cf;
+  padding: 0.9rem 1rem;
+  text-align: left;
+}
+.bq-admin-settings-row strong,
+.bq-admin-settings-row small { display: block; }
+.bq-admin-settings-row strong { color: #ecedef; font-size: 0.875rem; }
+.bq-admin-settings-row small { color: #8b8f99; font-size: 0.75rem; margin-top: 0.2rem; }
+.bq-admin-settings-row input { margin-left: auto; accent-color: #c4485a; }
+.bq-admin-settings-logout { display: inline-flex; align-items: center; gap: 0.5rem; border-radius: 0.375rem; background: #2d2d2d; color: #fff; font-size: 0.875rem; font-weight: 600; padding: 0.75rem 1rem; }
+
+.bq-admin-dark .bq-admin-question-bank .bg-slate-100,
+.bq-admin-dark .bq-admin-question-bank .bg-gray-100 {
+  background-color: #1b1e26 !important;
+  color: #c7c9cf !important;
+}
+
+.bq-admin-dark .bq-admin-question-bank .bg-red-50 {
+  background-color: rgba(196, 72, 90, 0.14) !important;
+  color: #f08a98 !important;
 }
 
 .bq-admin-user-management .bq-admin-user-stat {
@@ -620,3 +918,35 @@
     transform: rotate(360deg);
   }
 }
+
+/* Final light-mode overrides for legacy admin management tabs. */
+.bq-admin-light .bq-academic-attached .bq-panel {
+  background: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.1) !important;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06) !important;
+}
+.bq-admin-light .bq-academic-attached .bq-panel .text-slate-900,
+.bq-admin-light .bq-academic-attached .bq-panel .text-slate-800,
+.bq-admin-light .bq-academic-attached .bq-panel .text-slate-700 { color: #0f172a !important; }
+.bq-admin-light .bq-academic-attached .bq-panel .text-slate-600,
+.bq-admin-light .bq-academic-attached .bq-panel .text-slate-500,
+.bq-admin-light .bq-academic-attached .bq-panel .text-slate-400 { color: #64748b !important; }
+.bq-admin-light .bq-academic-attached .bq-panel > div > div > div > div {
+  border-color: rgba(15, 23, 42, 0.1) !important;
+  background: #f8fafc !important;
+}
+.bq-admin-light .bq-academic-attached .bq-panel > div > div > div > div button:first-child { color: #64748b !important; }
+.bq-admin-light .bq-academic-attached .bq-panel > div > div > div > div button:last-child { color: #b4454a !important; }
+.bq-admin-light .bq-admin-user-management .bq-admin-user-stat,
+.bq-admin-light .bq-admin-user-management .bq-admin-user-section {
+  background: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.1) !important;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06) !important;
+}
+.bq-admin-light .bq-admin-user-management .bq-admin-user-stat p,
+.bq-admin-light .bq-admin-user-management table thead th { color: #64748b !important; }
+.bq-admin-light .bq-admin-user-management .bq-admin-user-stat .text-3xl,
+.bq-admin-light .bq-admin-user-management .bq-admin-user-section h3 { color: #0f172a !important; }
+.bq-admin-light .bq-admin-user-management table tbody td { border-color: rgba(15, 23, 42, 0.1) !important; }
+.bq-admin-light .bq-admin-user-management table tbody tr:hover { background: #f8fafc !important; }
+.bq-admin-light .bq-admin-user-management .bq-user-stat-icon { background: #f8fafc !important; }

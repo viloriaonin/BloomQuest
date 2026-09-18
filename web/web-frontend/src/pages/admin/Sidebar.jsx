@@ -6,6 +6,7 @@ import UserMgmtBtn from "./UserMgmt";
 import ReportsBtn from "./Reports";
 import LogoutBtn from "./Logout";
 import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
+import { FolderArchive, Settings } from "lucide-react";
 
 const Sidebar = ({ activeTab, setActiveTab }) => {
   return (
@@ -41,6 +42,24 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
         <AcademicMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} />
         <UserMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} />
         <ReportsBtn activeTab={activeTab} setActiveTab={setActiveTab} />
+        <button
+          type="button"
+          onClick={() => setActiveTab("settings")}
+          className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150"
+          style={activeTab === "settings" ? { background: "var(--bq-accent)", color: "#ffffff" } : { color: "var(--bq-muted)", background: "transparent" }}
+        >
+          <Settings size={20} className={activeTab === "settings" ? "text-white" : "text-[#C4485A]"} />
+          <span className="text-sm font-medium tracking-wide">Settings</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("recycle")}
+          className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150"
+          style={activeTab === "recycle" ? { background: "var(--bq-accent)", color: "#ffffff" } : { color: "var(--bq-muted)", background: "transparent" }}
+        >
+          <FolderArchive size={20} className={activeTab === "recycle" ? "text-white" : "text-[#C4485A]"} />
+          <span className="text-sm font-medium tracking-wide">Recycle Bin</span>
+        </button>
       </nav>
 
       <div className="px-3 py-4" style={{ borderTop: "1px solid rgba(15, 23, 42, 0.08)" }}>

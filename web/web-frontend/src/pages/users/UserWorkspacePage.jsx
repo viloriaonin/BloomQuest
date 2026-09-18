@@ -26,7 +26,7 @@ const templates = [
   { name: "Department Master TOS", detail: "Your institution-wide starting point for new courses.", meta: "8 topics · 60 items" },
 ];
 
-const UserWorkspacePage = ({ section }) => {
+const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
   const navigate = useNavigate();
   const workspace = WORKSPACES[section] || WORKSPACES.reports;
   const [saved, setSaved] = useState(false);
@@ -208,6 +208,11 @@ const UserWorkspacePage = ({ section }) => {
 
   const passwordFieldClass = "mt-2 w-full rounded-lg border bg-white px-3 py-2.5 pr-10 text-sm font-normal outline-none transition focus:border-[#B4454A]";
 
+  const changeTheme = (nextTheme) => {
+    localStorage.setItem("bloomquest-theme", nextTheme);
+    onThemeChange?.(nextTheme);
+  };
+
   return (
     <div className="min-h-full p-6" style={{ backgroundColor: "#F5F7FB" }}>
       <div className="max-w-6xl mx-auto">
@@ -269,6 +274,7 @@ const UserWorkspacePage = ({ section }) => {
         )}
 
         {section === "settings" && (
+          <>
           <div className="grid max-w-5xl gap-4 lg:grid-cols-[1.2fr_0.8fr]">
             <div className="rounded-2xl border bg-white p-5 shadow-sm" style={{ borderColor: "rgba(15,23,42,0.08)" }}>
               <div className="flex items-center gap-3 border-b pb-4" style={{ borderColor: "rgba(15,23,42,0.08)" }}>
@@ -338,6 +344,25 @@ const UserWorkspacePage = ({ section }) => {
             </div>
 
           </div>
+
+          <div className="mt-4 max-w-5xl rounded-2xl border bg-white p-5 shadow-sm" style={{ borderColor: "rgba(15,23,42,0.08)" }}>
+            <div className="flex items-center gap-3 border-b pb-4" style={{ borderColor: "rgba(15,23,42,0.08)" }}>
+              <span className="text-lg" style={{ color: "#B4454A" }}>Aa</span>
+              <div>
+                <h2 className="font-semibold" style={{ color: "#0F172A" }}>Appearance</h2>
+                <p className="text-sm" style={{ color: "#64748B" }}>Choose the theme for your workspace.</p>
+              </div>
+            </div>
+            <div className="mt-5 grid max-w-md grid-cols-2 gap-3" role="radiogroup" aria-label="Workspace theme">
+              {[['dark', 'Dark', 'Charcoal workspace theme'], ['light', 'Light', 'Bright workspace theme']].map(([value, label, detail]) => (
+                <button key={value} type="button" role="radio" aria-checked={theme === value} onClick={() => changeTheme(value)} className="rounded-lg border p-4 text-left transition-colors" style={{ borderColor: theme === value ? "#C4485A" : "rgba(15,23,42,0.1)", backgroundColor: theme === value ? "rgba(196,72,90,0.1)" : "#F8FAFC" }}>
+                  <span className="block text-sm font-semibold" style={{ color: "#0F172A" }}>{label}</span>
+                  <span className="mt-1 block text-xs" style={{ color: "#64748B" }}>{detail}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          </>
         )}
       </div>
 

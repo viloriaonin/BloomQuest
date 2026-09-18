@@ -87,8 +87,13 @@ export const ReportsContent = () => {
   const [period, setPeriod] = useState(PERIODS[1].label); // Last 30 Days
   const [department, setDepartment] = useState("All Departments");
   const [faculty, setFaculty] = useState("All Faculty");
-  const [activeTab, setActiveTab] = useState("all");
+  const [activeTab, setActiveTab] = useState("logins");
   const [searchTerm, setSearchTerm] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportTabs, setExportTabs] = useState(["logins", "generated", "exports", "deleted"]);
+  const [exportFormat, setExportFormat] = useState("csv");
+  const [pageByTab, setPageByTab] = useState({ logins: 1, generated: 1, exports: 1, deleted: 1 });
+  const pageSize = 10;
 
   const [activityLog, setActivityLog] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -145,33 +150,87 @@ export const ReportsContent = () => {
         exports: ["export", "download"],
       };
       const rowType = String(row.type || "").toLowerCase();
-      const matchesTab = activeTab === "all" ? true : activeTab === "errors" ? row.status === "error" : categories[activeTab].includes(rowType);
+      const deleted = String(row.type || "").toLowerCase() === "delete" || /\bdeleted?\b|permanently removed/i.test(`${row.action || ""} ${row.detail || ""}`);
+      const matchesTab = activeTab === "deleted" ? deleted : categories[activeTab]?.includes(rowType);
       const text = `${row.name || ""} ${row.action || ""} ${row.detail || ""}`.toLowerCase();
       return !isAdminRow && matchesPeriod && matchesDept && matchesFaculty && matchesTab && text.includes(searchTerm.toLowerCase());
     }).sort((a, b) => new Date(`${b.date} ${b.time}`) - new Date(`${a.date} ${a.time}`));
   }, [activityLog, period, department, effectiveFaculty, activeTab, searchTerm]);
 
+  const currentPage = pageByTab[activeTab] || 1;
+  const pageCount = Math.max(1, Math.ceil(filteredLog.length / pageSize));
+  const paginatedLog = filteredLog.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    setPageByTab((current) => ({ ...current, [activeTab]: 1 }));
+  }, [activeTab, period, department, effectiveFaculty, searchTerm]);
+
+  useEffect(() => {
+    if (currentPage > pageCount) {
+      setPageByTab((current) => ({ ...current, [activeTab]: pageCount }));
+    }
+  }, [activeTab, currentPage, pageCount]);
+
   const reportTabs = [
-    { id: "all", label: "All activity", types: null },
     { id: "logins", label: "Users logged", types: ["login"] },
     { id: "generated", label: "Question generation", types: ["generate", "question", "question_set", "classify"] },
     { id: "exports", label: "Exports / downloads", types: ["export", "download"] },
-    { id: "errors", label: "Errors", status: "error" },
+    { id: "deleted", label: "Deleted", deleted: true },
   ];
 
-  const countForTab = (tab) => activityLog.filter((row) => tab.status ? row.status === tab.status : !tab.types || tab.types.includes(String(row.type || "").toLowerCase())).length;
+  const matchesReportTab = (row, tab) => {
+    if (tab.deleted) return String(row.type || "").toLowerCase() === "delete" || /\bdeleted?\b|permanently removed/i.test(`${row.action || ""} ${row.detail || ""}`);
+    return tab.types.includes(String(row.type || "").toLowerCase());
+  };
+
+  const countForTab = (tab) => activityLog.filter((row) => matchesReportTab(row, tab)).length;
+
+  const rowsForExport = () => {
+    const selected = reportTabs.filter((tab) => exportTabs.includes(tab.id));
+    return selected.map((tab) => ({
+      tab,
+      rows: activityLog
+        .filter((row) => matchesReportTab(row, tab) && !String(row.role || "").toLowerCase().includes("admin"))
+        .sort((first, second) => new Date(`${second.date} ${second.time}`) - new Date(`${first.date} ${first.time}`)),
+    }));
+  };
 
   const handleExport = () => {
+    if (!exportTabs.length) return;
+    const groupedRows = rowsForExport();
     const header = ["Faculty Name", "Dept", "Action", "Detail", "Type", "Status", "Date", "Time"];
-    const rows = filteredLog.map((r) => [r.name, r.dept, r.action, r.detail, r.type, r.status, r.date, r.time]);
-    const csv = [header, ...rows].map((r) => r.map((v) => `"${v}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
+    const escapeCsv = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const escapeHtml = (value) => String(value ?? "").replace(/[&<>]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[char]));
+    const csvSections = groupedRows.flatMap(({ tab, rows }) => [
+      [tab.label],
+      header,
+      ...rows.map((row) => [row.name, row.dept, row.action, row.detail, row.type, row.status, row.date, row.time]),
+      [],
+    ]);
+    const csv = csvSections.map((row) => row.map(escapeCsv).join(",")).join("\n");
+    const html = groupedRows.map(({ tab, rows }) => `<section><h2>${escapeHtml(tab.label)}</h2><table><thead><tr>${header.map((cell) => `<th>${cell}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${[row.name, row.dept, row.action, row.detail, row.type, row.status, row.date, row.time].map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></section>`).join("");
+    if (exportFormat === "pdf") {
+      const printWindow = window.open("", "_blank", "width=900,height=700");
+      if (!printWindow) return;
+      printWindow.document.write(`<html><head><title>Activity report</title><style>body{font:12px Arial;padding:24px}section{break-inside:avoid;margin-bottom:24px}h2{border-bottom:2px solid #333;padding-bottom:6px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:6px;text-align:left}th{background:#eee}</style></head><body><h1>Activity report</h1>${html}</body></html>`);
+      printWindow.document.close();
+      printWindow.focus();
+      printWindow.print();
+      return;
+    }
+    const extension = exportFormat === "word" ? "doc" : exportFormat === "excel" ? "xls" : "csv";
+    const content = exportFormat === "csv" ? csv : `<!doctype html><html><head><meta charset="utf-8"></head><body>${html}</body></html>`;
+    const mimeType = exportFormat === "csv" ? "text/csv" : exportFormat === "word" ? "application/msword" : "application/vnd.ms-excel";
+    const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "activity-report.csv";
+    a.download = `activity-report.${extension}`;
+    document.body.appendChild(a);
     a.click();
+    a.remove();
     URL.revokeObjectURL(url);
+    setExportOpen(false);
   };
 
   return (
@@ -182,7 +241,7 @@ export const ReportsContent = () => {
           <p className="mt-2 text-sm text-gray-600">Filter and export faculty activity, question contributions, and assessment trends.</p>
         </div>
         <button
-          onClick={handleExport}
+          onClick={() => setExportOpen(true)}
           className="inline-flex items-center gap-2 rounded-full bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-800 transition"
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -255,10 +314,13 @@ export const ReportsContent = () => {
           </div>
         ) : (
           <div className="relative ml-3 space-y-6 border-l-2 border-slate-100 pb-4 md:ml-6">
-            {filteredLog.map((row) => <div key={row.id} className="relative pl-8 md:pl-10"><div className={`absolute -left-[17px] top-1 flex h-8 w-8 items-center justify-center rounded-full border-4 border-white shadow-sm ${row.status === "error" ? "bg-red-50" : "bg-slate-50"}`}><span className={`h-2.5 w-2.5 rounded-full ${row.status === "error" ? "bg-red-500" : "bg-[#B4454A]"}`} /></div><div className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm hover:shadow-md"><div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><h3 className={`font-semibold ${row.status === "error" ? "text-red-600" : "text-slate-800"}`}>{row.action}</h3><span className="whitespace-nowrap rounded-full bg-slate-50 px-2.5 py-1 text-xs text-slate-400">{row.date} {row.time}</span></div><div className="flex flex-wrap items-center gap-2 text-sm text-slate-600"><span className="font-semibold text-slate-800">{row.name}</span><span>{row.dept}</span><span>{row.detail}</span><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${typeStyle(row.type)}`}>{row.type || "system"}</span><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${statusStyle(row.status)}`}>{row.status || "info"}</span></div></div></div>)}
+            {paginatedLog.map((row) => <div key={row.id} className="relative pl-8 md:pl-10"><div className={`absolute -left-[17px] top-1 flex h-8 w-8 items-center justify-center rounded-full border-4 border-white shadow-sm ${row.status === "error" ? "bg-red-50" : "bg-slate-50"}`}><span className={`h-2.5 w-2.5 rounded-full ${row.status === "error" ? "bg-red-500" : "bg-[#B4454A]"}`} /></div><div className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm hover:shadow-md"><div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><h3 className={`font-semibold ${row.status === "error" ? "text-red-600" : "text-slate-800"}`}>{row.action}</h3><span className="whitespace-nowrap rounded-full bg-slate-50 px-2.5 py-1 text-xs text-slate-400">{row.date} {row.time}</span></div><div className="flex flex-wrap items-center gap-2 text-sm text-slate-600"><span className="font-semibold text-slate-800">{row.name}</span><span>{row.dept}</span><span>{row.detail}</span><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${typeStyle(row.type)}`}>{row.type || "system"}</span><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${statusStyle(row.status)}`}>{row.status || "info"}</span></div></div></div>)}
           </div>
         )}
+        {!isLoading && !error && filteredLog.length > 0 && <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4"><span className="text-xs text-slate-500">Page {currentPage} of {pageCount}</span><div className="flex items-center gap-2"><button type="button" disabled={currentPage === 1} onClick={() => setPageByTab((current) => ({ ...current, [activeTab]: currentPage - 1 }))} className="bq-secondary-button px-3 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-40">Previous</button><button type="button" disabled={currentPage === pageCount} onClick={() => setPageByTab((current) => ({ ...current, [activeTab]: currentPage + 1 }))} className="bq-secondary-button px-3 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-40">Next</button></div></div>}
       </div>
+
+      {exportOpen && <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4"><section className="bq-modal-panel w-full max-w-lg p-6"><div className="mb-5 flex items-start justify-between gap-4"><div><h2>Export Report</h2><p className="bq-admin-muted mt-1">Choose one or more activity tabs to include.</p></div><button type="button" onClick={() => setExportOpen(false)} className="bq-secondary-button px-3 py-1 text-xs">Close</button></div><fieldset><legend className="mb-2 text-sm font-semibold">Activity tabs</legend><div className="grid gap-2 sm:grid-cols-2">{reportTabs.map((tab) => <label key={tab.id} className="flex items-center gap-2 rounded-md border border-slate-700 px-3 py-2 text-sm"><input type="checkbox" checked={exportTabs.includes(tab.id)} onChange={(event) => setExportTabs((current) => event.target.checked ? [...new Set([...current, tab.id])] : current.filter((id) => id !== tab.id))} className="h-4 w-4 accent-[#C4485A]" />{tab.label}</label>)}</div></fieldset><label className="mt-5 block text-sm font-semibold">File type<select value={exportFormat} onChange={(event) => setExportFormat(event.target.value)} className="bq-field mt-2 w-full px-3 py-2"><option value="csv">CSV</option><option value="word">Word document</option><option value="excel">Excel spreadsheet</option><option value="pdf">PDF</option></select></label><div className="mt-6 flex justify-end"><button type="button" onClick={handleExport} disabled={!exportTabs.length} className="bq-admin-action disabled:cursor-not-allowed disabled:opacity-50">Export selected tabs</button></div></section></div>}
 
     </div>
   );

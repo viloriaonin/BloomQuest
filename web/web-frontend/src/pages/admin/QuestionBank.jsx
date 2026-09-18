@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { usePopup } from "../../components/PopupProvider";
 import { useNavigate, useParams } from "react-router-dom";
 import { FlaskConical, Shield, Sigma, FileText } from "lucide-react";
+import UserQuestionBank from "../users/QuestionBank";
 
 const API_URL = "http://localhost:8000";
 
@@ -37,7 +38,7 @@ const LIFECYCLE_OPTIONS = [
   ["deprecated", "Deprecated"],
 ];
 
-export const QuestionBankContent = () => {
+const LegacyQuestionBankContent = () => {
   const { showConfirm, showAlert } = usePopup();
   const navigate = useNavigate();
   const { subjectId } = useParams();
@@ -1010,5 +1011,40 @@ const QuestionBankBtn = ({ activeTab, setActiveTab }) => {
     </button>
   );
 };
+
+const AdminQuestionBankPage = () => {
+  const [adminFetchReady, setAdminFetchReady] = useState(false);
+
+  useLayoutEffect(() => {
+    const originalFetch = window.fetch;
+    window.fetch = async (input, init) => {
+      let requestUrl = typeof input === "string" ? input : input.url;
+      if (requestUrl.includes("user_id")) {
+        const url = new URL(requestUrl, window.location.origin);
+        url.searchParams.delete("user_id");
+        requestUrl = `${url.pathname}${url.search}${url.hash}`;
+      }
+
+      if (init?.body instanceof FormData) {
+        init.body.delete("user_id");
+      }
+      if (typeof init?.body === "string" && init.body.includes('"user_id"')) {
+        const body = JSON.parse(init.body);
+        delete body.user_id;
+        init.body = JSON.stringify(body);
+      }
+
+      return originalFetch(requestUrl, init);
+    };
+    setAdminFetchReady(true);
+    return () => {
+      window.fetch = originalFetch;
+    };
+  }, []);
+
+  return adminFetchReady ? <div className="bq-admin-question-bank"><UserQuestionBank /></div> : <div className="bq-panel p-6 text-sm text-slate-500">Loading question bank...</div>;
+};
+
+export const QuestionBankContent = () => <AdminQuestionBankPage />;
 
 export default QuestionBankBtn;

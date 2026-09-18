@@ -60,7 +60,7 @@ const TopBar = ({ onToggleSidebar }) => {
   }, []);
 
   return (
-    <div className="flex min-h-[76px] items-center justify-between border-b px-6 py-4" style={{ backgroundColor: bg, borderColor: border }}>
+    <div className="bq-user-topbar flex min-h-[76px] items-center justify-between border-b px-6 py-4" style={{ backgroundColor: bg, borderColor: border }}>
       <div className="flex items-center gap-3">
         <button type="button" onClick={() => onToggleSidebar?.()} className="rounded-lg p-1.5 transition-colors hover:bg-white" style={{ color: textMuted }} aria-label="Toggle navigation"><Menu size={18} /></button>
         <div>
