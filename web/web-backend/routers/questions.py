@@ -1046,7 +1046,7 @@ async def export_institutional_tos(upload_id: str, user_id: int | None = None, d
             detail="Session metadata not found. Please re-upload your files."
         )
 
-    subject = meta["subject"]
+    subject = meta.get("subject") or {}
     subject_code = re.sub(r"[^A-Za-z0-9]+", "-", subject.get("code") or subject.get("name") or "assessment").strip("-")
     exam_type = re.sub(r"[^A-Za-z0-9]+", "-", meta.get("exam_type") or "Final Exam").strip("-")
     filename = f"{subject_code}-{exam_type}-TOS.xlsx"

@@ -17,6 +17,7 @@ client = genai.Client()
 MODEL_NAME = "gemini-flash-lite-latest"
 
 AI_DEV_MODE = False
+DEV_MODE_MAX_QUESTIONS_PER_TOPIC = 3
 MAX_MODULE_LENGTH = 6000
 MAX_RETRIES = 3
 MAX_WORKERS = 5
@@ -561,21 +562,46 @@ def generate_questions_from_tos(subject, module_text, tos_data):
 # ============================================================
 
 def build_preview(generated_questions):
+    from classifier import classify_question_ml  # local import to avoid any circular-import issues
+    import os
+    from datetime import datetime
+
+    log_path = os.path.join(os.path.dirname(__file__), "bloom_comparison_log.txt")
+
     preview = []
-    for q in generated_questions:
-        preview.append({
-            "preview_id": q.get("preview_id"),
-            "duplicate_existing_id": q.get("duplicate_existing_id"),
-            "question": q["question"],
-            "correct_answer": q["correct_answer"],
-            "bloom_level": q["bloom_level"],
-            "type": q["question_type"],
-            "topic_name": q.get("topic_name", ""),
-            "options": q.get("options", []),
-            "left_items": q.get("left_items", []),
-            "right_items": q.get("right_items", []),
-            "explanation": q.get("explanation", "")
-        })
+    with open(log_path, "a", encoding="utf-8") as log_file:
+        run_stamp = f"--- Run at {datetime.now().isoformat(timespec='seconds')} ---"
+        log_file.write(f"\n{run_stamp}\n")
+        logger.info(run_stamp)
+
+        for q in generated_questions:
+            gemini_guess = q["bloom_level"]
+            ml_guess = classify_question_ml(q["question"])
+            line = (
+                f"AI said: {gemini_guess:<12} | ML model said: {ml_guess:<12} "
+                f"| agree: {gemini_guess == ml_guess} | Q: {q['question'][:80]}"
+            )
+            log_file.write(line + "\n")
+            logger.info(line)
+
+            # The trained ML model is authoritative for the Bloom level.
+            # Gemini only writes the question text.
+            q["bloom_level"] = ml_guess
+
+            preview.append({
+                "preview_id": q.get("preview_id"),
+                "duplicate_existing_id": q.get("duplicate_existing_id"),
+                "question": q["question"],
+                "correct_answer": q["correct_answer"],
+                "bloom_level": q["bloom_level"],
+                "type": q["question_type"],
+                "topic_name": q.get("topic_name", ""),
+                "options": q.get("options", []),
+                "left_items": q.get("left_items", []),
+                "right_items": q.get("right_items", []),
+                "explanation": q.get("explanation", "")
+            })
+
     return preview
 
 

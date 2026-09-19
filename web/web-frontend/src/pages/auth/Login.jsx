@@ -4,7 +4,8 @@ import LoadingSpinner from "../../components/LoadingSpinner";
 import LegalModal from "../../components/LegalModal";
 import PublicNav from "../../components/PublicNav";
 import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
-const API_URL = "http://localhost:8000/api/login";
+
+const API_URL = "/api/login";
 
 const paper = '#F7F6F3';
 const surface = '#FFFFFF';
@@ -80,7 +81,16 @@ const Login = () => {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.detail || "Invalid email or password.");
+        let message = "Invalid email or password.";
+        if (typeof data.detail === "string") {
+          message = data.detail;
+        } else if (Array.isArray(data.detail) && data.detail.length > 0) {
+          // FastAPI validation errors (422) come back as an array of
+          // objects like { type, loc, msg, input, ctx } — pull out
+          // just the human-readable msg from each one.
+          message = data.detail.map((e) => e.msg || "Invalid input").join(" ");
+        }
+        setError(message);
         return;
       }
 

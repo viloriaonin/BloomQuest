@@ -14,7 +14,7 @@ from database import engine, get_db, SessionLocal
 from file_extractor import extract_text
 from ai_service import generate_questions_from_tos, build_preview, prepare_database_rows, statistics, parse_syllabus_text_with_ai
 from routers.tos_utils import compute_tos, generate_tos_from_excel_template
-from classifier import classify_question
+from classifier import classify_question, classify_question_ml, classify_question_dual
 import models
 from datetime import datetime, timedelta
 import logging
@@ -339,7 +339,7 @@ contact_admin_pending_requests = {}
 # Allow React frontend to talk to this backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173").split(","),
+    allow_origins=os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001,http://localhost:5173").split(","),
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -1632,7 +1632,8 @@ async def generate_questions(
             question_type_distribution[q["type"]] = question_type_distribution.get(q["type"], 0) + 1
 
         for q in questions:
-            bloom_level = classify_question(q["question"])
+            # ML model assigns the Bloom level; Gemini only wrote the question text.
+            bloom_level = classify_question_ml(q["question"])
             question = models.GeneratedQuestion(
                 tos_id=tos_record.id,
                 subject_id=upload.subject_id,
@@ -2155,17 +2156,25 @@ def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Sessio
     if not subject:
         raise HTTPException(status_code=404, detail="Subject context not found.")
 
-    # Classify the question before saving it to the question bank.
-    bloom_level = classify_question(payload.question)
+    normalized_question = " ".join(payload.question.split())
+    duplicate_check = db.query(models.GeneratedQuestion).filter(
+        models.GeneratedQuestion.subject_id == payload.subject_id,
+        models.GeneratedQuestion.archived.is_(False),
+        func.lower(models.GeneratedQuestion.question) == normalized_question.lower(),
+    ).first()
+    if duplicate_check:
+        raise HTTPException(status_code=400, detail="This identical question text already exists inside this subject pool.")
 
-    # Save entry directly to database row structures.
+    # ML model assigns the Bloom level for manually entered questions too.
+    bloom_level = classify_question_ml(normalized_question)
+
     new_question = models.GeneratedQuestion(
         subject_id=payload.subject_id,
         user_id=payload.user_id,
         bloom_level=bloom_level,
         question_type=payload.question_type,
         points=payload.points,
-        question=payload.question,
+        question=normalized_question,
         options=payload.options,
         correct_answer=payload.correct_answer,
         explanation="Added manually."
@@ -2174,7 +2183,7 @@ def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Sessio
     db.commit()
     db.refresh(new_question)
 
-    log_activity(db, "Classified Question", f"Manual Input: '{payload.question[:60]}' → Categorized as {bloom_level}.", "classify", user_id=payload.user_id)
+    log_activity(db, "Classified Question", f"Manual Input: '{normalized_question[:60]}' → Categorized as {bloom_level}.", "classify", user_id=payload.user_id)
 
     return {
         "id": new_question.id,

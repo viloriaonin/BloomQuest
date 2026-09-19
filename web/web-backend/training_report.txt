@@ -1,0 +1,35 @@
+Best model: LinearSVC (weighted F1: 0.773)
+
+=== LinearSVC ===
+accuracy: 0.774
+weighted F1: 0.773
+              precision    recall  f1-score   support
+
+         BT1      0.745     0.755     0.750       523
+         BT2      0.695     0.704     0.700       372
+         BT3      0.777     0.840     0.807       312
+         BT4      0.780     0.649     0.709       268
+         BT5      0.887     0.903     0.895       165
+         BT6      0.911     0.939     0.925       164
+
+    accuracy                          0.774      1804
+   macro avg      0.799     0.798     0.798      1804
+weighted avg      0.774     0.774     0.773      1804
+
+
+=== LogisticRegression ===
+accuracy: 0.765
+weighted F1: 0.764
+              precision    recall  f1-score   support
+
+         BT1      0.744     0.728     0.736       523
+         BT2      0.664     0.718     0.690       372
+         BT3      0.783     0.821     0.801       312
+         BT4      0.779     0.646     0.706       268
+         BT5      0.867     0.909     0.888       165
+         BT6      0.911     0.933     0.922       164
+
+    accuracy                          0.765      1804
+   macro avg      0.791     0.792     0.790      1804
+weighted avg      0.766     0.765     0.764      1804
+
