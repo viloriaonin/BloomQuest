@@ -1,5 +1,5 @@
 import React from "react";
-import { Building2, GraduationCap, Layers3, MoreHorizontal, Plus, Search, ArrowLeft, BookOpen, Users, ChevronRight, Archive } from "lucide-react";
+import { Building2, GraduationCap, Layers3, MoreHorizontal, Plus, ArrowLeft, BookOpen, Users, ChevronRight } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
 const LegacyAcademicMgmtContent = () => (
@@ -390,7 +390,6 @@ export const AcademicMgmtContent = () => {
   const [hierarchy, setHierarchy] = React.useState({ campuses: [] });
   const [subjects, setSubjects] = React.useState([]);
   const [programTab, setProgramTab] = React.useState("subjects");
-  const [search, setSearch] = React.useState("");
   const [modal, setModal] = React.useState(null);
   const [form, setForm] = React.useState({ name: "", code: "", campus_id: "", department_id: "" });
   const [loading, setLoading] = React.useState(true);
@@ -471,20 +470,11 @@ export const AcademicMgmtContent = () => {
 
   const allDepartments = hierarchy.campuses.flatMap((campus) => campus.departments);
   const modalTitle = `${modal?.item ? "Edit" : "Add"} ${modal?.type}`;
-  const normalizedSearch = search.trim().toLowerCase();
-  const visibleCampuses = hierarchy.campuses.map((campus) => ({
-    ...campus,
-    departments: campus.departments
-      .map((department) => ({
-        ...department,
-        programs: department.programs.filter((program) => !normalizedSearch || [campus.name, department.name, department.code, program.name, program.code].some((value) => String(value || "").toLowerCase().includes(normalizedSearch))),
-      }))
-      .filter((department) => !normalizedSearch || [campus.name, department.name, department.code].some((value) => String(value || "").toLowerCase().includes(normalizedSearch)) || department.programs.length > 0),
-  })).filter((campus) => !normalizedSearch || campus.name.toLowerCase().includes(normalizedSearch) || campus.departments.length > 0);
+  const visibleCampuses = hierarchy.campuses;
   const selectedCampusId = campusId ? Number(campusId) : null;
   const selectedDepartmentId = departmentId ? Number(departmentId) : null;
   const selectedProgramId = programId ? Number(programId) : null;
-  const selectedCampus = hierarchy.campuses.find((campus) => campus.id === selectedCampusId) || null;
+  const selectedCampus = visibleCampuses.find((campus) => campus.id === selectedCampusId) || null;
   const selectedDepartment = selectedCampus?.departments.find((department) => department.id === selectedDepartmentId) || null;
   const selectedProgram = selectedDepartment?.programs.find((program) => program.id === selectedProgramId) || null;
   const programSubjects = subjects.filter((subject) => subject.program_id === selectedProgramId);
@@ -564,15 +554,7 @@ export const AcademicMgmtContent = () => {
           {campusId && !departmentId && <button className="bq-primary-button inline-flex items-center gap-2 self-start whitespace-nowrap" onClick={() => openModal("department", null, selectedCampus)}><Plus size={16} /> Add Department</button>}
           {departmentId && !programId && <button className="bq-primary-button inline-flex items-center gap-2 self-start whitespace-nowrap" onClick={() => openModal("program", null, selectedDepartment)}><Plus size={16} /> Add Program</button>}
         </div>
-        <div className="mb-5 flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-          <Search size={16} className="text-slate-400" />
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder={campusId ? "Search this academic page..." : "Search campus, department, or program..."}
-            className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
-          />
-        </div>
+          {campusId && <button type="button" className="bq-academic-back-button mb-3 inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-[#B4454A]" onClick={() => navigate(backRoute)}><ArrowLeft size={14} /> Back</button>}
         {!loading && selectedDepartment && !programId && (
           <DepartmentLeadershipSection department={selectedDepartment} onSave={saveDepartmentLeadership} />
         )}
@@ -580,7 +562,7 @@ export const AcademicMgmtContent = () => {
           <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Loading academic structure...</div>
         ) : !campusId && visibleCampuses.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
-            <Building2 size={28} className="mx-auto text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-700">{search ? "No matching academic units found." : "No campuses yet."}</p><p className="mt-1 text-xs text-slate-500">Add a campus to begin organizing your academic structure.</p>
+            <Building2 size={28} className="mx-auto text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-700">No campuses yet.</p><p className="mt-1 text-xs text-slate-500">Add a campus to begin organizing your academic structure.</p>
           </div>
         ) : !campusId ? (
           <div>
@@ -593,7 +575,7 @@ export const AcademicMgmtContent = () => {
           <div>
             <div className="mb-6"><button className="mb-3 inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-[#B4454A]" onClick={() => navigate(backRoute)}><ArrowLeft size={14} /> Back</button>{!departmentId && selectedCampus && <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{selectedCampus.departments.map((department) => <AcademicCard key={department.id} icon={GraduationCap} title={department.name} code={department.code} description="Academic department" meta={`${pluralize(department.programs.length, "Program")} · ${pluralize(department.programs.reduce((total, program) => total + (program.faculty?.length || 0), 0), "Faculty")}`} onSelect={() => chooseDepartment(department)} onEdit={() => openModal("department", { ...department, campus_id: selectedCampus.id })} onArchive={() => remove("departments", department.id)} actionLabel="View Department" />)}</div>}{departmentId && !programId && selectedDepartment && <div className="space-y-3">{selectedDepartment.programs.map((program) => <div key={program.id} role="button" tabIndex={0} onClick={() => chooseProgram(program)} onKeyDown={(event) => event.key === "Enter" && chooseProgram(program)} className="flex cursor-pointer flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-[#B4454A]/40 hover:shadow-md sm:flex-row sm:items-center"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#B4454A]/10 text-[#B4454A]"><Layers3 size={20} /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold text-slate-900">{program.name}</h3>{program.code && <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">{program.code}</span>}<span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Active</span></div><p className="mt-1 text-xs text-slate-500">Bachelor&apos;s degree · {pluralize(subjects.filter((subject) => subject.program_id === program.id).length, "Subject")} · {pluralize(program.faculty?.length || 0, "Faculty")}</p></div><span className="text-xs font-semibold text-[#B4454A]">View Program <ChevronRight size={13} className="inline" /></span><OverflowMenu onEdit={() => openModal("program", { ...program, department_id: selectedDepartment.id })} onArchive={() => remove("programs", program.id)} /></div>)}</div>}</div>
             {programId && selectedProgram && <div>
-              <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><SummaryStat icon={BookOpen} label="Subjects" value={programSubjects.length} /><SummaryStat icon={Users} label="Faculty" value={selectedProgram.faculty?.length || 0} /><SummaryStat icon={Layers3} label="Program length" value="4 years" /><SummaryStat icon={Archive} label="Status" value="Active" /></div>
+              <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-2"><SummaryStat icon={BookOpen} label="Subjects" value={programSubjects.length} /><SummaryStat icon={Users} label="Faculty" value={selectedProgram.faculty?.length || 0} /></div>
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200"><div className="flex gap-5"><button type="button" onClick={() => setProgramTab("subjects")} className={`border-b-2 px-1 pb-3 text-sm font-semibold ${programTab === "subjects" ? "border-[#B4454A] text-[#B4454A]" : "border-transparent text-slate-500"}`}>Subjects</button><button type="button" onClick={() => setProgramTab("faculty")} className={`border-b-2 px-1 pb-3 text-sm font-semibold ${programTab === "faculty" ? "border-[#B4454A] text-[#B4454A]" : "border-transparent text-slate-500"}`}>Faculty</button></div>{programTab === "subjects" && <button type="button" className="bq-primary-button mb-2 inline-flex items-center gap-2" onClick={() => openModal("subject", null, { id: selectedProgram.id, department_id: selectedDepartment.id })}><Plus size={15} /> Add Subject</button>}</div>
               {programTab === "subjects" && <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table className="w-full min-w-[700px] text-left"><thead className="bg-slate-50 text-[11px] uppercase tracking-[0.12em] text-slate-500"><tr><th className="px-4 py-3 font-semibold">Subject</th><th className="px-4 py-3 font-semibold">Code</th><th className="px-4 py-3 font-semibold">Units</th><th className="px-4 py-3 font-semibold">Year</th><th className="px-4 py-3 font-semibold">Semester</th><th className="px-4 py-3 font-semibold">Status</th><th className="px-4 py-3" /></tr></thead><tbody className="divide-y divide-slate-100">{programSubjects.map((subject) => <tr key={subject.id} className="hover:bg-slate-50"><td className="px-4 py-3 text-sm font-medium text-slate-800">{subject.name}</td><td className="px-4 py-3 text-sm text-slate-500">{subject.code || "-"}</td><td className="px-4 py-3 text-sm text-slate-500">3 Units</td><td className="px-4 py-3 text-sm text-slate-500">-</td><td className="px-4 py-3 text-sm text-slate-500">-</td><td className="px-4 py-3"><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Active</span></td><td className="px-4 py-3"><OverflowMenu onEdit={() => openModal("subject", subject, selectedProgram)} onArchive={() => remove("subjects", subject.id)} /></td></tr>)}</tbody></table>{programSubjects.length === 0 && <div className="p-10 text-center"><BookOpen size={28} className="mx-auto text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-700">No subjects assigned yet.</p><p className="mt-1 text-xs text-slate-500">Add subjects to this program to begin building its curriculum.</p><button type="button" className="bq-primary-button mt-4 inline-flex items-center gap-2" onClick={() => openModal("subject", null, { id: selectedProgram.id, department_id: selectedDepartment.id })}><Plus size={15} /> Add Subject</button></div>}</div>}
               {programTab === "faculty" && <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table className="w-full text-left"><thead className="bg-slate-50 text-[11px] uppercase tracking-[0.12em] text-slate-500"><tr><th className="px-4 py-3 font-semibold">Name</th><th className="px-4 py-3 font-semibold">Email</th></tr></thead><tbody className="divide-y divide-slate-100">{(selectedProgram.faculty || []).map((member) => <tr key={member.id}><td className="px-4 py-3 text-sm text-slate-800">{member.name}</td><td className="px-4 py-3 text-sm text-slate-500">{member.email}</td></tr>)}</tbody></table>{!selectedProgram.faculty?.length && <p className="p-8 text-center text-sm text-slate-500">No faculty assigned to this program.</p>}</div>}
@@ -611,13 +593,6 @@ export const AcademicMgmtContent = () => {
               <h3 className="text-lg font-bold text-slate-900">
                 {modalTitle}
               </h3>
-              <button
-                type="button"
-                className="text-slate-400"
-                onClick={() => setModal(null)}
-              >
-                Close
-              </button>
             </div>
             <>
             <label className="mb-4 block text-sm font-semibold text-slate-700">
@@ -641,7 +616,7 @@ export const AcademicMgmtContent = () => {
             {modal.type === "department" && <label className="mb-5 block text-sm font-semibold text-slate-700">Campus<select required value={form.campus_id} onChange={(e) => setForm({ ...form, campus_id: e.target.value })} className="bq-field mt-1 w-full px-3"><option value="">Select a campus</option>{hierarchy.campuses.map((campus) => <option key={campus.id} value={campus.id}>{campus.name}</option>)}</select></label>}
             {modal.type === "program" && <label className="mb-5 block text-sm font-semibold text-slate-700">Department<select required value={form.department_id} onChange={(e) => setForm({ ...form, department_id: e.target.value })} className="bq-field mt-1 w-full px-3"><option value="">Select a department</option>{allDepartments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></label>}
             {modal.type === "subject" && <label className="mb-5 block text-sm font-semibold text-slate-700">Program<select required value={form.program_id} onChange={(e) => setForm({ ...form, program_id: e.target.value })} className="bq-field mt-1 w-full px-3"><option value="">Select a program</option>{allDepartments.flatMap((department) => department.programs.map((program) => <option key={program.id} value={program.id}>{department.name} / {program.name}</option>))}</select></label>}
-            </>}
+            </>
             <div className="flex justify-end gap-2">
               <button
                 type="button"
