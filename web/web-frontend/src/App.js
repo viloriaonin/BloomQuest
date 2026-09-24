@@ -119,6 +119,14 @@ const QuestionBankRoute = () => {
   );
 };
 
+const AdminAcademicRoute = () => (
+  <AdminRoute>
+    <PageContainer>
+      <AdminDashboard />
+    </PageContainer>
+  </AdminRoute>
+);
+
 // ---------------------------------------------------------
 // Main App Router
 // ---------------------------------------------------------
@@ -234,28 +242,11 @@ function App() {
             </AdminRoute>
           } 
         />
+        <Route path="/admin/academic" element={<AdminAcademicRoute />} />
+        <Route path="/admin/academic/campus/:campusId" element={<AdminAcademicRoute />} />
+        <Route path="/admin/academic/campus/:campusId/department/:departmentId" element={<AdminAcademicRoute />} />
+        <Route path="/admin/academic/campus/:campusId/department/:departmentId/program/:programId" element={<AdminAcademicRoute />} />
 
-        {/* NEW: Admin Question Bank Route */}
-        <Route 
-          path="/admin/questions" 
-          element={
-            <AdminRoute>
-              <PageContainer>
-                <AdminDashboard />
-              </PageContainer>
-            </AdminRoute>
-          } 
-        />
-        <Route
-          path="/admin/questions/:subjectId"
-          element={
-            <AdminRoute>
-              <PageContainer>
-                <AdminDashboard />
-              </PageContainer>
-            </AdminRoute>
-          }
-        />
         <Route
           path="/admin/users/:userId"
           element={

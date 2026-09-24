@@ -294,40 +294,40 @@ const DepartmentLeadershipSection = ({ department, onSave }) => {
   };
 
   return (
-    <form onSubmit={handleSave} className="mb-5 rounded-2xl border border-slate-700 bg-[#121b2a] p-2.5 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.08)]">
+    <form onSubmit={handleSave} className="bq-dept-leadership-form mb-5 rounded-2xl border p-2.5 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.08)]">
       <div className="grid gap-2.5 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-700 bg-[#0d1522] p-2.5">
+        <div className="bq-dept-leadership-card rounded-xl border p-2.5">
           <div className="mb-2 flex items-center gap-2.5">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#B4454A]/15 text-[#f4a4a6]"><Users size={13} /></span>
+            <span className="bq-dept-leadership-icon flex h-7 w-7 items-center justify-center rounded-lg"><Users size={13} /></span>
             <div>
-              <h3 className="text-base font-semibold text-slate-100">Department Dean</h3>
-              <p className="mt-0.5 text-[10px] text-slate-400">Type the dean assigned to this department.</p>
+              <h3 className="bq-dept-leadership-title text-base font-semibold">Department Dean</h3>
+              <p className="bq-dept-leadership-help mt-0.5 text-[10px]">Type the dean assigned to this department.</p>
             </div>
           </div>
           <input
             value={form.dean_name}
             onChange={(event) => setForm((prev) => ({ ...prev, dean_name: event.target.value }))}
             placeholder="Enter dean name"
-            className="w-full rounded-lg border border-slate-600 bg-[#1a2436] px-2.5 py-2 text-sm text-slate-100 outline-none ring-0 placeholder:text-slate-400 focus:border-[#B4454A]"
+            className="bq-dept-leadership-input w-full rounded-lg border px-2.5 py-2 text-sm outline-none ring-0 focus:border-[#B4454A]"
           />
-          {!form.dean_name && <p className="mt-1 text-[9px] text-slate-400">No dean assigned yet</p>}
+          {!form.dean_name && <p className="bq-dept-leadership-empty mt-1 text-[9px]">No dean assigned yet</p>}
         </div>
 
-        <div className="rounded-xl border border-slate-700 bg-[#0d1522] p-2.5">
+        <div className="bq-dept-leadership-card rounded-xl border p-2.5">
           <div className="mb-2 flex items-center gap-2.5">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#B4454A]/15 text-[#f4a4a6]"><Users size={13} /></span>
+            <span className="bq-dept-leadership-icon flex h-7 w-7 items-center justify-center rounded-lg"><Users size={13} /></span>
             <div>
-              <h3 className="text-base font-semibold text-slate-100">Program Chair</h3>
-              <p className="mt-0.5 text-[10px] text-slate-400">Type the program chair assigned to this department.</p>
+              <h3 className="bq-dept-leadership-title text-base font-semibold">Program Chair</h3>
+              <p className="bq-dept-leadership-help mt-0.5 text-[10px]">Type the program chair assigned to this department.</p>
             </div>
           </div>
           <input
             value={form.chair_name}
             onChange={(event) => setForm((prev) => ({ ...prev, chair_name: event.target.value }))}
             placeholder="Enter program chair name"
-            className="w-full rounded-lg border border-slate-600 bg-[#1a2436] px-2.5 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-400 focus:border-[#B4454A]"
+            className="bq-dept-leadership-input w-full rounded-lg border px-2.5 py-2 text-sm outline-none focus:border-[#B4454A]"
           />
-          {!form.chair_name && <p className="mt-1 text-[9px] text-slate-400">No program chair assigned yet</p>}
+          {!form.chair_name && <p className="bq-dept-leadership-empty mt-1 text-[9px]">No program chair assigned yet</p>}
         </div>
       </div>
 
@@ -338,11 +338,11 @@ const DepartmentLeadershipSection = ({ department, onSave }) => {
             setForm({ dean_name: "", chair_name: "" });
             await onSave({ dean_name: "", chair_name: "" });
           }}
-          className="inline-flex items-center justify-center rounded-xl border border-slate-600 bg-transparent px-4 py-2 text-sm font-medium text-slate-300 transition hover:border-slate-500 hover:text-slate-100"
+          className="bq-dept-leadership-clear inline-flex items-center justify-center rounded-xl border px-4 py-2 text-sm font-medium transition"
         >
           Clear
         </button>
-        <button type="submit" className="inline-flex items-center justify-center rounded-xl bg-[#D96A73] px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:bg-[#c85d67] focus:outline-none focus:ring-2 focus:ring-[#D96A73]/50">
+        <button type="submit" className="bq-dept-leadership-save inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold shadow-md transition focus:outline-none focus:ring-2 focus:ring-[#D96A73]/50">
           Save
         </button>
       </div>
@@ -492,6 +492,11 @@ export const AcademicMgmtContent = () => {
   const chooseCampus = (campus) => navigate(`/admin/academic/campus/${campus.id}`);
   const chooseDepartment = (department) => navigate(`/admin/academic/campus/${selectedCampus.id}/department/${department.id}`);
   const chooseProgram = (program) => navigate(`/admin/academic/campus/${selectedCampus.id}/department/${selectedDepartment.id}/program/${program.id}`);
+  const backRoute = programId
+    ? `/admin/academic/campus/${campusId}/department/${departmentId}`
+    : departmentId
+      ? `/admin/academic/campus/${campusId}`
+      : "/admin/academic";
   const saveDepartmentLeadership = async ({ dean_name, chair_name }) => {
     try {
       const updates = [];
@@ -586,7 +591,7 @@ export const AcademicMgmtContent = () => {
           </div>
         ) : (
           <div>
-            <div className="mb-6"><button className="mb-3 inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-[#B4454A]" onClick={() => navigate(departmentId ? `/admin/academic/campus/${campusId}` : "/admin/academic")}><ArrowLeft size={14} /> Back</button>{!departmentId && selectedCampus && <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{selectedCampus.departments.map((department) => <AcademicCard key={department.id} icon={GraduationCap} title={department.name} code={department.code} description="Academic department" meta={`${pluralize(department.programs.length, "Program")} · ${pluralize(department.programs.reduce((total, program) => total + (program.faculty?.length || 0), 0), "Faculty")}`} onSelect={() => chooseDepartment(department)} onEdit={() => openModal("department", { ...department, campus_id: selectedCampus.id })} onArchive={() => remove("departments", department.id)} actionLabel="View Department" />)}</div>}{departmentId && !programId && selectedDepartment && <div className="space-y-3">{selectedDepartment.programs.map((program) => <div key={program.id} role="button" tabIndex={0} onClick={() => chooseProgram(program)} onKeyDown={(event) => event.key === "Enter" && chooseProgram(program)} className="flex cursor-pointer flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-[#B4454A]/40 hover:shadow-md sm:flex-row sm:items-center"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#B4454A]/10 text-[#B4454A]"><Layers3 size={20} /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold text-slate-900">{program.name}</h3>{program.code && <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">{program.code}</span>}<span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Active</span></div><p className="mt-1 text-xs text-slate-500">Bachelor&apos;s degree · {pluralize(subjects.filter((subject) => subject.program_id === program.id).length, "Subject")} · {pluralize(program.faculty?.length || 0, "Faculty")}</p></div><span className="text-xs font-semibold text-[#B4454A]">View Program <ChevronRight size={13} className="inline" /></span><OverflowMenu onEdit={() => openModal("program", { ...program, department_id: selectedDepartment.id })} onArchive={() => remove("programs", program.id)} /></div>)}</div>}</div>
+            <div className="mb-6"><button className="mb-3 inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-[#B4454A]" onClick={() => navigate(backRoute)}><ArrowLeft size={14} /> Back</button>{!departmentId && selectedCampus && <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{selectedCampus.departments.map((department) => <AcademicCard key={department.id} icon={GraduationCap} title={department.name} code={department.code} description="Academic department" meta={`${pluralize(department.programs.length, "Program")} · ${pluralize(department.programs.reduce((total, program) => total + (program.faculty?.length || 0), 0), "Faculty")}`} onSelect={() => chooseDepartment(department)} onEdit={() => openModal("department", { ...department, campus_id: selectedCampus.id })} onArchive={() => remove("departments", department.id)} actionLabel="View Department" />)}</div>}{departmentId && !programId && selectedDepartment && <div className="space-y-3">{selectedDepartment.programs.map((program) => <div key={program.id} role="button" tabIndex={0} onClick={() => chooseProgram(program)} onKeyDown={(event) => event.key === "Enter" && chooseProgram(program)} className="flex cursor-pointer flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-[#B4454A]/40 hover:shadow-md sm:flex-row sm:items-center"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#B4454A]/10 text-[#B4454A]"><Layers3 size={20} /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold text-slate-900">{program.name}</h3>{program.code && <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">{program.code}</span>}<span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Active</span></div><p className="mt-1 text-xs text-slate-500">Bachelor&apos;s degree · {pluralize(subjects.filter((subject) => subject.program_id === program.id).length, "Subject")} · {pluralize(program.faculty?.length || 0, "Faculty")}</p></div><span className="text-xs font-semibold text-[#B4454A]">View Program <ChevronRight size={13} className="inline" /></span><OverflowMenu onEdit={() => openModal("program", { ...program, department_id: selectedDepartment.id })} onArchive={() => remove("programs", program.id)} /></div>)}</div>}</div>
             {programId && selectedProgram && <div>
               <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><SummaryStat icon={BookOpen} label="Subjects" value={programSubjects.length} /><SummaryStat icon={Users} label="Faculty" value={selectedProgram.faculty?.length || 0} /><SummaryStat icon={Layers3} label="Program length" value="4 years" /><SummaryStat icon={Archive} label="Status" value="Active" /></div>
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200"><div className="flex gap-5"><button type="button" onClick={() => setProgramTab("subjects")} className={`border-b-2 px-1 pb-3 text-sm font-semibold ${programTab === "subjects" ? "border-[#B4454A] text-[#B4454A]" : "border-transparent text-slate-500"}`}>Subjects</button><button type="button" onClick={() => setProgramTab("faculty")} className={`border-b-2 px-1 pb-3 text-sm font-semibold ${programTab === "faculty" ? "border-[#B4454A] text-[#B4454A]" : "border-transparent text-slate-500"}`}>Faculty</button></div>{programTab === "subjects" && <button type="button" className="bq-primary-button mb-2 inline-flex items-center gap-2" onClick={() => openModal("subject", null, { id: selectedProgram.id, department_id: selectedDepartment.id })}><Plus size={15} /> Add Subject</button>}</div>
