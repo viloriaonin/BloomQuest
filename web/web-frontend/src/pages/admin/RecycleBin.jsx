@@ -3,11 +3,17 @@ import { ArchiveRestore, Download, FileQuestion, FolderArchive, Trash2 } from "l
 import { usePopup } from "../../components/PopupProvider";
 
 const API_URL = "/api";
+const RECYCLE_TABS = [
+  { id: "subject", label: "Subjects", icon: FolderArchive },
+  { id: "question", label: "Questions", icon: FileQuestion },
+  { id: "download", label: "Downloads", icon: Download },
+];
 
 const RecycleBin = () => {
   const { showAlert, showConfirm } = usePopup();
   const [items, setItems] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
+  const [activeType, setActiveType] = useState("subject");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -37,14 +43,11 @@ const RecycleBin = () => {
   }, []);
 
   const itemKey = (item) => `${item.itemType}:${item.id}`;
-  const groups = useMemo(() => items.reduce((result, item) => {
-    const name = item.itemType === "subject" ? item.name : item.itemType === "download" ? "Downloaded files" : item.subject_name || "Unassigned subject";
-    if (!result[name]) result[name] = { subject: null, questions: [], downloads: [] };
-    if (item.itemType === "subject") result[name].subject = item;
-    if (item.itemType === "question") result[name].questions.push(item);
-    if (item.itemType === "download") result[name].downloads.push(item);
+  const itemsByType = useMemo(() => RECYCLE_TABS.reduce((result, tab) => {
+    result[tab.id] = items.filter((item) => item.itemType === tab.id);
     return result;
   }, {}), [items]);
+  const activeItems = itemsByType[activeType] || [];
 
   const restore = async (item) => {
     const confirmed = await showConfirm(`Restore this ${item.itemType} to active content?`, "Restore Item");
@@ -55,7 +58,7 @@ const RecycleBin = () => {
   };
 
   const permanentlyDeleteSelected = async () => {
-    const selected = items.filter((item) => selectedIds.includes(itemKey(item)));
+    const selected = activeItems.filter((item) => selectedIds.includes(itemKey(item)));
     if (!selected.length) return;
     const confirmed = await showConfirm(`Permanently delete ${selected.length} selected item${selected.length === 1 ? "" : "s"}? This cannot be undone.`, "Delete Archived Items");
     if (!confirmed) return;
@@ -78,8 +81,16 @@ const RecycleBin = () => {
       </section>
       {error && <div className="rounded-md border border-red-900/50 bg-red-950/30 p-3 text-sm text-red-300">{error}</div>}
       {loading ? <div className="bq-admin-panel bq-admin-muted">Loading recycle bin...</div> : !items.length ? <div className="bq-admin-panel bq-admin-muted py-8 text-center">Recycle Bin is empty.</div> : <>
+        <div className="bq-admin-panel p-2">
+          <div className="flex flex-wrap gap-1" role="tablist" aria-label="Archived item types">
+            {RECYCLE_TABS.map(({ id, label, icon: Icon }) => <button key={id} type="button" role="tab" aria-selected={activeType === id} onClick={() => { setActiveType(id); setSelectedIds([]); }} className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold transition ${activeType === id ? "bg-[#C4485A] text-white" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}><Icon size={15} /> {label}<span className="opacity-75">({itemsByType[id].length})</span></button>)}
+          </div>
+        </div>
         {selectedIds.length > 0 && <div className="flex items-center justify-between gap-3 rounded-md border border-red-900/50 bg-red-950/30 px-4 py-3"><span className="text-sm font-semibold text-red-200">{selectedIds.length} item{selectedIds.length === 1 ? "" : "s"} selected</span><button type="button" onClick={permanentlyDeleteSelected} className="bq-admin-action border-red-700 text-red-200 hover:bg-red-950"><Trash2 size={14} /> Delete permanently</button></div>}
-        {Object.entries(groups).map(([name, group]) => <section key={name} className="bq-admin-panel"><div className="mb-4 flex items-center gap-2"><FolderArchive size={16} className="text-[#C4485A]" /><h2>{name}</h2></div><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{group.subject && <RecycleCard item={group.subject} checked={selectedIds.includes(itemKey(group.subject))} onToggle={toggle} onRestore={restore} />}{group.questions.map((item) => <RecycleCard key={itemKey(item)} item={item} checked={selectedIds.includes(itemKey(item))} onToggle={toggle} onRestore={restore} />)}{group.downloads.map((item) => <RecycleCard key={itemKey(item)} item={item} checked={selectedIds.includes(itemKey(item))} onToggle={toggle} onRestore={restore} />)}</div></section>)}
+        <section className="bq-admin-panel">
+          <div className="mb-4 flex items-center justify-between gap-3"><div><h2>{RECYCLE_TABS.find((tab) => tab.id === activeType)?.label}</h2><p className="bq-admin-muted mt-1">Archived {activeType} items available for recovery.</p></div>{activeItems.length > 0 && <button type="button" onClick={() => setSelectedIds(activeItems.map(itemKey))} className="bq-admin-action">Select all</button>}</div>
+          {activeItems.length === 0 ? <div className="rounded-md border border-dashed border-slate-700 py-8 text-center text-sm text-slate-400">No archived {activeType}s.</div> : <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{activeItems.map((item) => <RecycleCard key={itemKey(item)} item={item} checked={selectedIds.includes(itemKey(item))} onToggle={toggle} onRestore={restore} />)}</div>}
+        </section>
       </>}
     </div>
   );

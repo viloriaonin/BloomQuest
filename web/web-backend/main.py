@@ -62,6 +62,9 @@ models.Base.metadata.create_all(bind=engine)
 with engine.begin() as connection:
     connection.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"))
     connection.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS user_id INTEGER"))
+    connection.execute(text("ALTER TABLE departments ADD COLUMN IF NOT EXISTS dean_name VARCHAR(255)"))
+    connection.execute(text("ALTER TABLE departments ADD COLUMN IF NOT EXISTS chair_name VARCHAR(255)"))
+    connection.execute(text("ALTER TABLE programs ADD COLUMN IF NOT EXISTS chair_name VARCHAR(255)"))
     binary_definition = "BYTEA" if connection.dialect.name == "postgresql" else "BLOB"
     for column, definition in (("filename", "VARCHAR(255)"), ("media_type", "VARCHAR(255)"), ("file_content", binary_definition), ("archived", "BOOLEAN NOT NULL DEFAULT FALSE")):
         connection.execute(text(f"ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS {column} {definition}"))
@@ -196,8 +199,14 @@ with engine.begin() as conn:
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"))
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR"))
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR"))
+    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS program_id INTEGER"))
+    conn.execute(text("ALTER TABLE account_requests ADD COLUMN IF NOT EXISTS program_id INTEGER"))
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
     conn.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS department_id INTEGER"))
+    conn.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS program_id INTEGER"))
+    conn.execute(text("ALTER TABLE departments ADD COLUMN IF NOT EXISTS campus_id INTEGER"))
+    conn.execute(text("ALTER TABLE departments ADD COLUMN IF NOT EXISTS dean_id INTEGER"))
+    conn.execute(text("ALTER TABLE programs ADD COLUMN IF NOT EXISTS chair_id INTEGER"))
     conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS review_status VARCHAR(32) NOT NULL DEFAULT 'needs_review'"))
     conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS difficulty VARCHAR(32) NOT NULL DEFAULT 'moderate'"))
     conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"))
@@ -225,6 +234,43 @@ with SessionLocal() as db:
         for name, code in default_departments:
             db.add(models.Department(name=name, code=code))
         db.commit()
+
+with SessionLocal() as db:
+    main_campus = db.query(models.Campus).order_by(models.Campus.id.asc()).first()
+    if not main_campus:
+        main_campus = models.Campus(name="Main Campus", code="MAIN")
+        db.add(main_campus)
+        db.commit()
+        db.refresh(main_campus)
+    db.query(models.Department).filter(models.Department.campus_id.is_(None)).update(
+        {"campus_id": main_campus.id}, synchronize_session=False
+    )
+    sample_department = db.query(models.Department).filter(models.Department.code == "CICS").first()
+    if not sample_department:
+        sample_department = models.Department(
+            name="College of Informatics and Computing Sciences",
+            code="CICS",
+            campus_id=main_campus.id,
+        )
+        db.add(sample_department)
+        db.flush()
+    sample_programs = [
+        ("Bachelor of Science in Information Technology", "BSIT", [("Introduction to Computing", "IT101"), ("Programming 1", "IT102"), ("Database Systems", "IT201")]),
+        ("Bachelor of Science in Computer Science", "BSCS", [("Data Structures and Algorithms", "CS201"), ("Software Engineering", "CS301")]),
+    ]
+    for program_name, program_code, sample_subjects in sample_programs:
+        program = db.query(models.Program).filter(
+            models.Program.department_id == sample_department.id,
+            models.Program.code == program_code,
+        ).first()
+        if not program:
+            program = models.Program(name=program_name, code=program_code, department_id=sample_department.id)
+            db.add(program)
+            db.flush()
+        for subject_name, subject_code in sample_subjects:
+            if not db.query(models.Subject).filter(models.Subject.code == subject_code).first():
+                db.add(models.Subject(name=subject_name, code=subject_code, description="BatStateU academic subject sample.", department_id=sample_department.id, program_id=program.id))
+    db.commit()
 
 app = FastAPI()
 
@@ -420,6 +466,7 @@ class ResetPasswordRequest(BaseModel):
 class AccountRequestPayload(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=100)
     department: str = Field(..., min_length=2, max_length=100)
+    program_id: int = Field(..., gt=0)
     email: str = Field(..., min_length=5, max_length=255)
 
     @field_validator("full_name")
@@ -450,6 +497,7 @@ class AccountRequestPayload(BaseModel):
 class ContactAdminOtpRequest(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=100)
     department: str = Field(..., min_length=2, max_length=100)
+    program_id: int = Field(..., gt=0)
     email: str = Field(..., min_length=5, max_length=255)
 
     @field_validator("full_name")
@@ -1082,6 +1130,8 @@ def list_pending_account_requests(db: Session = Depends(get_db), _admin: models.
             "id": request.id,
             "full_name": request.full_name,
             "department": request.department,
+            "program_id": request.program_id,
+            "program": db.query(models.Program).filter(models.Program.id == request.program_id).first().name if request.program_id and db.query(models.Program).filter(models.Program.id == request.program_id).first() else None,
             "email": request.email,
             "status": request.status,
             "created_at": request.created_at.isoformat() if request.created_at else None,
@@ -1105,6 +1155,7 @@ def list_admin_users(db: Session = Depends(get_db), _admin: models.User = Depend
         .order_by(models.User.id.desc())
         .all()
     )
+    programs_by_id = {program.id: program.name for program in db.query(models.Program).all()}
 
     activity_by_user = defaultdict(list)
     for entry in db.query(models.ActivityLog).filter(models.ActivityLog.user_id.isnot(None)).all():
@@ -1120,6 +1171,7 @@ def list_admin_users(db: Session = Depends(get_db), _admin: models.User = Depend
         "id": user.id,
         "full_name": user.name or user.email.split("@", 1)[0],
         "department": user.department or "N/A",
+        "program": programs_by_id.get(user.program_id, "N/A"),
         "email": user.email,
         "role": user.role,
         "status": "Active" if not user.archived else "Archived",
@@ -1182,6 +1234,7 @@ def get_admin_user_overview(user_id: int, db: Session = Depends(get_db), _admin:
         } for subject in subjects],
         "questions": [{
             "id": question.id,
+            "subject_id": question.subject_id,
             "question": question.question,
             "subject": subject_names.get(question.subject_id, "Unassigned"),
             "topic": question.topic_name or "General",
@@ -1237,6 +1290,7 @@ async def approve_account_request(payload: AccountActionRequest, background_task
     # capture details from the request before deleting the ticket
     full_name = getattr(request_entry, "full_name", None)
     department = getattr(request_entry, "department", None)
+    program_id = getattr(request_entry, "program_id", None)
 
     temp_password = generate_temporary_password()
 
@@ -1246,6 +1300,7 @@ async def approve_account_request(payload: AccountActionRequest, background_task
         existing_user.role = "faculty"
         existing_user.archived = False
         existing_user.department = department
+        existing_user.program_id = program_id
         existing_user.name = full_name or existing_user.name
     else:
         new_user = models.User(
@@ -1255,6 +1310,7 @@ async def approve_account_request(payload: AccountActionRequest, background_task
             archived=False,
             name=full_name,
             department=department,
+            program_id=program_id,
         )
         db.add(new_user)
 
@@ -1405,6 +1461,7 @@ def request_contact_admin_otp(payload: ContactAdminOtpRequest, background_tasks:
     contact_admin_pending_requests[normalized_email] = {
         "full_name": payload.full_name,
         "department": payload.department,
+        "program_id": payload.program_id,
         "email": normalized_email,
     }
     contact_admin_otp_store[normalized_email] = {
@@ -1455,6 +1512,7 @@ def verify_contact_admin_otp(data: VerifyOtpRequest, background_tasks: Backgroun
     new_request = models.AccountRequest(
         full_name=pending_payload["full_name"],
         department=pending_payload["department"],
+        program_id=pending_payload.get("program_id"),
         email=normalized_email,
         status="pending"
     )
@@ -1669,15 +1727,34 @@ class SubjectCreateRequest(BaseModel):
     name: str
     code: str = None
     department_id: int | None = None
+    program_id: int | None = None
     user_id: int | None = None
 
 class DepartmentCreateRequest(BaseModel):
     name: str
     code: str | None = None
+    campus_id: int | None = None
 
 class DepartmentUpdateRequest(BaseModel):
     name: str
     code: str | None = None
+    campus_id: int | None = None
+
+class CampusRequest(BaseModel):
+    name: str
+    code: str | None = None
+
+class ProgramRequest(BaseModel):
+    name: str
+    code: str | None = None
+    department_id: int
+
+class FacultyAssignmentRequest(BaseModel):
+    program_id: int | None = None
+
+class LeadershipAssignmentRequest(BaseModel):
+    faculty_id: int | None = None
+    name: str | None = None
 
 class ManualQuestionRequest(BaseModel):
     question: str = Field(..., min_length=10)
@@ -1778,6 +1855,9 @@ class QuestionSetUpdateRequest(BaseModel):
 @app.get("/api/departments")
 def get_departments(db: Session = Depends(get_db)):
     departments = db.query(models.Department).order_by(models.Department.name.asc()).all()
+    programs_by_department = defaultdict(list)
+    for program in db.query(models.Program).order_by(models.Program.name.asc()).all():
+        programs_by_department[program.department_id].append({"id": program.id, "name": program.name, "code": program.code})
     faculty_counts = defaultdict(int)
     for faculty in db.query(models.User).filter(models.User.role.ilike("faculty"), models.User.archived == False).all():
         if faculty.department:
@@ -1787,11 +1867,200 @@ def get_departments(db: Session = Depends(get_db)):
             "id": department.id,
             "name": department.name,
             "code": department.code,
+            "campus_id": department.campus_id,
             "faculty_count": faculty_counts[department.name.strip().lower()],
+            "programs": programs_by_department[department.id],
         }
         for department in departments
     ]
 
+
+@app.get("/api/academic-hierarchy")
+def get_academic_hierarchy(db: Session = Depends(get_db)):
+    campuses = db.query(models.Campus).order_by(models.Campus.name.asc()).all()
+    departments = db.query(models.Department).order_by(models.Department.name.asc()).all()
+    programs = db.query(models.Program).order_by(models.Program.name.asc()).all()
+    faculty = db.query(models.User).filter(models.User.role.ilike("faculty"), models.User.archived == False).all()
+    faculty_by_program = defaultdict(list)
+    for member in faculty:
+        if member.program_id:
+            faculty_by_program[member.program_id].append({"id": member.id, "name": member.name or member.email, "email": member.email})
+    programs_by_department = defaultdict(list)
+    for program in programs:
+        chair_name = (program.chair_name or "").strip()
+        chair = next((member for member in faculty_by_program[program.id] if member["id"] == program.chair_id), None)
+        programs_by_department[program.department_id].append({
+            "id": program.id,
+            "name": program.name,
+            "code": program.code,
+            "chair_id": program.chair_id,
+            "chair_name": chair_name or (chair["name"] if chair else ""),
+            "chair": {"id": chair["id"], "name": chair["name"], "email": chair["email"]} if chair else ({"id": None, "name": chair_name, "email": None} if chair_name else None),
+            "faculty": faculty_by_program[program.id],
+        })
+    departments_by_campus = defaultdict(list)
+    for department in departments:
+        department_faculty = [member for member in faculty if member.department and member.department.strip().lower() == department.name.strip().lower() or member.program_id in {program["id"] for program in programs_by_department[department.id]}]
+        dean = next((member for member in department_faculty if member.id == department.dean_id), None)
+        dean_name = (department.dean_name or "").strip()
+        chair_name = (department.chair_name or "").strip()
+        departments_by_campus[department.campus_id].append({
+            "id": department.id,
+            "name": department.name,
+            "code": department.code,
+            "dean_id": department.dean_id,
+            "dean_name": dean_name or (dean.name if dean else ""),
+            "chair_name": chair_name,
+            "dean": {"id": dean.id, "name": dean.name or dean.email, "email": dean.email} if dean else ({"id": None, "name": dean_name, "email": None} if dean_name else None),
+            "programs": programs_by_department[department.id],
+        })
+    assigned_faculty_ids = {member.id for member in faculty if member.program_id}
+    unassigned_faculty = [
+        {"id": member.id, "name": member.name or member.email, "email": member.email}
+        for member in faculty if member.id not in assigned_faculty_ids
+    ]
+    return {
+        "campuses": [{"id": campus.id, "name": campus.name, "code": campus.code, "departments": departments_by_campus[campus.id]} for campus in campuses],
+        "unassigned_faculty": unassigned_faculty,
+        "faculty": [{"id": member.id, "name": member.name or member.email, "email": member.email, "department": member.department, "program_id": member.program_id} for member in faculty],
+    }
+
+@app.post("/api/campuses", status_code=201)
+def create_campus(payload: CampusRequest, db: Session = Depends(get_db)):
+    name, code = payload.name.strip(), payload.code.strip() if payload.code else None
+    if db.query(models.Campus).filter(func.lower(models.Campus.name) == name.lower()).first():
+        raise HTTPException(status_code=400, detail="A campus with this name already exists.")
+    campus = models.Campus(name=name, code=code)
+    db.add(campus)
+    db.commit()
+    db.refresh(campus)
+    return {"id": campus.id, "name": campus.name, "code": campus.code}
+
+@app.put("/api/campuses/{campus_id}")
+def update_campus(campus_id: int, payload: CampusRequest, db: Session = Depends(get_db)):
+    campus = db.query(models.Campus).filter(models.Campus.id == campus_id).first()
+    if not campus:
+        raise HTTPException(status_code=404, detail="Campus not found.")
+    campus.name, campus.code = payload.name.strip(), payload.code.strip() if payload.code else None
+    db.commit()
+    db.refresh(campus)
+    return {"id": campus.id, "name": campus.name, "code": campus.code}
+
+@app.delete("/api/campuses/{campus_id}")
+def delete_campus(campus_id: int, db: Session = Depends(get_db)):
+    campus = db.query(models.Campus).filter(models.Campus.id == campus_id).first()
+    if not campus:
+        raise HTTPException(status_code=404, detail="Campus not found.")
+    if db.query(models.Department).filter(models.Department.campus_id == campus_id).first():
+        raise HTTPException(status_code=400, detail="Move or delete the departments in this campus first.")
+    db.delete(campus)
+    db.commit()
+    return {"message": "Campus deleted successfully."}
+
+@app.post("/api/programs", status_code=201)
+def create_program(payload: ProgramRequest, db: Session = Depends(get_db)):
+    if not db.query(models.Department).filter(models.Department.id == payload.department_id).first():
+        raise HTTPException(status_code=404, detail="Department not found.")
+    program = models.Program(name=payload.name.strip(), code=payload.code.strip() if payload.code else None, department_id=payload.department_id)
+    db.add(program)
+    db.commit()
+    db.refresh(program)
+    return {"id": program.id, "name": program.name, "code": program.code, "department_id": program.department_id}
+
+@app.put("/api/programs/{program_id}")
+def update_program(program_id: int, payload: ProgramRequest, db: Session = Depends(get_db)):
+    program = db.query(models.Program).filter(models.Program.id == program_id).first()
+    if not program:
+        raise HTTPException(status_code=404, detail="Program not found.")
+    program.name, program.code, program.department_id = payload.name.strip(), payload.code.strip() if payload.code else None, payload.department_id
+    db.commit()
+    db.refresh(program)
+    return {"id": program.id, "name": program.name, "code": program.code, "department_id": program.department_id}
+
+@app.delete("/api/programs/{program_id}")
+def delete_program(program_id: int, db: Session = Depends(get_db)):
+    program = db.query(models.Program).filter(models.Program.id == program_id).first()
+    if not program:
+        raise HTTPException(status_code=404, detail="Program not found.")
+    db.query(models.User).filter(models.User.program_id == program_id).update({"program_id": None}, synchronize_session=False)
+    db.delete(program)
+    db.commit()
+    return {"message": "Program deleted successfully."}
+
+@app.put("/api/faculty/{faculty_id}/program")
+def assign_faculty_program(faculty_id: int, payload: FacultyAssignmentRequest, db: Session = Depends(get_db)):
+    faculty = db.query(models.User).filter(models.User.id == faculty_id, models.User.role.ilike("faculty")).first()
+    if not faculty:
+        raise HTTPException(status_code=404, detail="Faculty member not found.")
+    program = db.query(models.Program).filter(models.Program.id == payload.program_id).first() if payload.program_id else None
+    if payload.program_id and not program:
+        raise HTTPException(status_code=404, detail="Program not found.")
+    faculty.program_id = program.id if program else None
+    if program:
+        department = db.query(models.Department).filter(models.Department.id == program.department_id).first()
+        faculty.department = department.name if department else faculty.department
+    db.commit()
+    return {"id": faculty.id, "program_id": faculty.program_id}
+
+@app.put("/api/departments/{department_id}/dean")
+def assign_department_dean(department_id: int, payload: LeadershipAssignmentRequest, db: Session = Depends(get_db)):
+    department = db.query(models.Department).filter(models.Department.id == department_id).first()
+    if not department:
+        raise HTTPException(status_code=404, detail="Department not found.")
+
+    if payload.name is not None:
+        normalized_name = (payload.name or "").strip()
+        department.dean_name = normalized_name or None
+        department.dean_id = None
+        db.commit()
+        return {"department_id": department.id, "dean_id": department.dean_id, "dean_name": department.dean_name}
+
+    faculty = None
+    if payload.faculty_id:
+        faculty = db.query(models.User).filter(models.User.id == payload.faculty_id, models.User.role.ilike("faculty"), models.User.archived == False).first()
+        if not faculty:
+            raise HTTPException(status_code=404, detail="Faculty member not found.")
+        program_ids = [program.id for program in db.query(models.Program).filter(models.Program.department_id == department_id).all()]
+        if (faculty.department or "").strip().lower() != department.name.strip().lower() and faculty.program_id not in program_ids:
+            raise HTTPException(status_code=400, detail="Dean must belong to this department.")
+        department.dean_name = faculty.name or faculty.email or None
+    department.dean_id = faculty.id if faculty else None
+    db.commit()
+    return {"department_id": department.id, "dean_id": department.dean_id, "dean_name": department.dean_name}
+
+@app.put("/api/departments/{department_id}/chair")
+def assign_department_chair(department_id: int, payload: LeadershipAssignmentRequest, db: Session = Depends(get_db)):
+    department = db.query(models.Department).filter(models.Department.id == department_id).first()
+    if not department:
+        raise HTTPException(status_code=404, detail="Department not found.")
+
+    normalized_name = payload.name.strip() if payload.name is not None else None
+    department.chair_name = normalized_name or None
+    db.commit()
+    return {"department_id": department.id, "chair_name": department.chair_name}
+
+@app.put("/api/programs/{program_id}/chair")
+def assign_program_chair(program_id: int, payload: LeadershipAssignmentRequest, db: Session = Depends(get_db)):
+    program = db.query(models.Program).filter(models.Program.id == program_id).first()
+    if not program:
+        raise HTTPException(status_code=404, detail="Program not found.")
+
+    if payload.name is not None:
+        normalized_name = payload.name.strip()
+        program.chair_name = normalized_name or None
+        program.chair_id = None
+        db.commit()
+        return {"program_id": program.id, "chair_id": program.chair_id, "chair_name": program.chair_name}
+
+    faculty = None
+    if payload.faculty_id:
+        faculty = db.query(models.User).filter(models.User.id == payload.faculty_id, models.User.role.ilike("faculty"), models.User.archived == False).first()
+        if not faculty or faculty.program_id != program_id:
+            raise HTTPException(status_code=400, detail="Program chair must be assigned from this program's faculty.")
+        program.chair_name = faculty.name or faculty.email or None
+    program.chair_id = faculty.id if faculty else None
+    db.commit()
+    return {"program_id": program.id, "chair_id": program.chair_id, "chair_name": program.chair_name}
 
 @app.post("/api/departments", status_code=201)
 def create_department(payload: DepartmentCreateRequest, db: Session = Depends(get_db)):
@@ -1811,9 +2080,13 @@ def create_department(payload: DepartmentCreateRequest, db: Session = Depends(ge
         if code_match:
             raise HTTPException(status_code=400, detail="A department with this code already exists.")
 
+    if payload.campus_id is not None and not db.query(models.Campus).filter(models.Campus.id == payload.campus_id).first():
+        raise HTTPException(status_code=404, detail="Campus not found.")
+
     new_department = models.Department(
         name=normalized_name,
         code=normalized_code,
+        campus_id=payload.campus_id,
     )
     db.add(new_department)
     db.commit()
@@ -1824,6 +2097,7 @@ def create_department(payload: DepartmentCreateRequest, db: Session = Depends(ge
         "id": new_department.id,
         "name": new_department.name,
         "code": new_department.code,
+        "campus_id": new_department.campus_id,
     }
 
 
@@ -1872,8 +2146,12 @@ def update_department(department_id: int, payload: DepartmentUpdateRequest, db: 
         if duplicate_code:
             raise HTTPException(status_code=400, detail="A department with this code already exists.")
 
+    if payload.campus_id is not None and not db.query(models.Campus).filter(models.Campus.id == payload.campus_id).first():
+        raise HTTPException(status_code=404, detail="Campus not found.")
+
     department.name = normalized_name
     department.code = normalized_code
+    department.campus_id = payload.campus_id
     db.commit()
     db.refresh(department)
     log_activity(db, "Department Updated", f"Updated department '{department.name}'.", "academic")
@@ -1882,6 +2160,7 @@ def update_department(department_id: int, payload: DepartmentUpdateRequest, db: 
         "id": department.id,
         "name": department.name,
         "code": department.code,
+        "campus_id": department.campus_id,
     }
 
 
@@ -1915,12 +2194,21 @@ def create_subject_manually(payload: SubjectCreateRequest, db: Session = Depends
         department_id = department.id
     else:
         department_id = None
+
+    if payload.program_id is not None:
+        program = db.query(models.Program).filter(models.Program.id == payload.program_id).first()
+        if not program:
+            raise HTTPException(status_code=404, detail="Program not found.")
+        if department_id is not None and program.department_id != department_id:
+            raise HTTPException(status_code=400, detail="Program does not belong to the selected department.")
+        department_id = program.department_id
         
     new_subject = models.Subject(
         name=payload.name.strip(),
         code=payload.code.strip() if payload.code else None,
         description="Manually added subject area.",
         department_id=department_id,
+        program_id=payload.program_id,
         user_id=payload.user_id,
     )
     db.add(new_subject)
@@ -1933,6 +2221,7 @@ def create_subject_manually(payload: SubjectCreateRequest, db: Session = Depends
         "name": new_subject.name,
         "code": new_subject.code,
         "department_id": new_subject.department_id,
+        "program_id": new_subject.program_id,
         "message": "Subject registered successfully!"
     }
 
@@ -1960,6 +2249,17 @@ def update_subject(subject_id: int, payload: SubjectCreateRequest, db: Session =
     else:
         subject.department_id = None
 
+    if payload.program_id is not None:
+        program = db.query(models.Program).filter(models.Program.id == payload.program_id).first()
+        if not program:
+            raise HTTPException(status_code=404, detail="Program not found.")
+        if subject.department_id is not None and program.department_id != subject.department_id:
+            raise HTTPException(status_code=400, detail="Program does not belong to the selected department.")
+        subject.program_id = program.id
+        subject.department_id = program.department_id
+    else:
+        subject.program_id = None
+
     subject.name = normalized_name
     subject.code = normalized_code
     db.commit()
@@ -1971,6 +2271,7 @@ def update_subject(subject_id: int, payload: SubjectCreateRequest, db: Session =
         "name": subject.name,
         "code": subject.code,
         "department_id": subject.department_id,
+        "program_id": subject.program_id,
     }
 
 
@@ -2245,6 +2546,7 @@ def get_subjects(user_id: int = None, db: Session = Depends(get_db)):
             "description": subject.description,
             "department_id": subject.department_id,
             "department_name": departments.get(subject.department_id, "Unassigned department"),
+            "program_id": subject.program_id,
             "faculty_name": faculty.get(subject.user_id, "System or unassigned"),
             "creator_id": subject.user_id,
             "created_at": subject.created_at,
@@ -2662,14 +2964,14 @@ def delete_saved_file(activity_id: int, user_id: int = None, db: Session = Depen
 
 @app.delete("/api/recycle-bin/downloads/{activity_id}")
 def permanently_delete_download(activity_id: int, user_id: int = None, db: Session = Depends(get_db)):
-    if not user_id:
-        raise HTTPException(status_code=401, detail="User identification is required")
-    download = db.query(models.ActivityLog).filter(
+    query = db.query(models.ActivityLog).filter(
         models.ActivityLog.id == activity_id,
-        models.ActivityLog.user_id == user_id,
         models.ActivityLog.type == "download",
         models.ActivityLog.archived.is_(True),
-    ).first()
+    )
+    if user_id:
+        query = query.filter(models.ActivityLog.user_id == user_id)
+    download = query.first()
     if not download:
         raise HTTPException(status_code=404, detail="Archived download not found")
     db.delete(download)

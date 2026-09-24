@@ -1,7 +1,6 @@
 ﻿import React, { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
-import { QuestionBankContent } from "./QuestionBank";
 import { AcademicMgmtContent } from "./AcademicMgmt";
 import { UserMgmtContent } from "./UserMgmt";
 import { ReportsContent } from "./Reports";
@@ -19,10 +18,6 @@ const TAB_META = {
   dashboard: {
     label: "Dashboard",
     description: "Overview of system activity and key metrics.",
-  },
-  "question-bank": {
-    label: "Question Bank",
-    description: "Browse, create, and manage exam questions by subject and level.",
   },
   academic: {
     label: "Academic Management",
@@ -53,8 +48,8 @@ const TAB_META = {
 const AdminDashboard = () => {
   const location = useLocation();
   const [activeTab, setActiveTab] = useState(
-    location.pathname.startsWith("/admin/questions") || location.pathname.startsWith("/question-bank")
-      ? "question-bank"
+    location.pathname.startsWith("/admin/academic")
+        ? "academic"
       : location.pathname.startsWith("/admin/users/")
         ? "users"
         : "dashboard",
@@ -65,9 +60,17 @@ const AdminDashboard = () => {
   const [dashboardData, setDashboardData] = useState({ questions: 0, assessments: 0, activeAccounts: 0, avgQuestionsPerFaculty: 0, mostActiveDepartment: "N/A", departments: [], notifications: [], activity: [] });
   const [dashboardLoading, setDashboardLoading] = useState(true);
 
+  const toggleAdminTheme = () => {
+    const nextTheme = adminTheme === "dark" ? "light" : "dark";
+    localStorage.setItem("bloomquest-admin-theme", nextTheme);
+    localStorage.setItem("bloomquest-theme", nextTheme);
+    window.dispatchEvent(new CustomEvent("theme-updated", { detail: { theme: nextTheme } }));
+    setAdminTheme(nextTheme);
+  };
+
   useEffect(() => {
-    if (location.pathname.startsWith("/admin/questions") || location.pathname.startsWith("/question-bank")) {
-      setActiveTab("question-bank");
+    if (location.pathname.startsWith("/admin/academic")) {
+      setActiveTab("academic");
     } else if (location.pathname.startsWith("/admin/users/")) {
       setActiveTab("users");
     }
@@ -156,14 +159,12 @@ const AdminDashboard = () => {
   };
 
   const renderTabContent = () => {
-    if (location.pathname.startsWith("/admin/users/")) {
+    if (activeTab === "users" && location.pathname.startsWith("/admin/users/")) {
       return <UserDetailPage />;
     }
     switch (activeTab) {
       case "dashboard":
         return renderDashboardContent();
-      case "question-bank":
-        return <QuestionBankContent />;
       case "academic":
         return <AcademicMgmtContent />;
       case "users":
@@ -183,7 +184,7 @@ const AdminDashboard = () => {
 
   return (
     <div className={`bq-shell bq-admin-shell ${adminTheme === "light" ? "bq-admin-light" : "bq-admin-dark"} h-screen w-full overflow-hidden`}>
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} adminTheme={adminTheme} onThemeToggle={toggleAdminTheme} />
       <main className="bq-admin-main flex flex-1 flex-col overflow-auto">
         <header
           className="bq-admin-header sticky top-0 z-10 flex min-h-[76px] items-center justify-between border-b px-6 py-4 backdrop-blur flex-shrink-0"

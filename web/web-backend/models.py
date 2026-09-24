@@ -12,6 +12,7 @@ class User(Base):
     archived = Column(Boolean, default=False, nullable=False)
     name = Column(String, nullable=True)         # <-- new
     department = Column(String, nullable=True)   # <-- new, only set for role == "faculty"
+    program_id = Column(Integer, ForeignKey("programs.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
 class Department(Base):
@@ -19,7 +20,29 @@ class Department(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), unique=True, nullable=False, index=True)
     code = Column(String(255), unique=True, nullable=True, index=True)
+    campus_id = Column(Integer, ForeignKey("campuses.id"), nullable=True, index=True)
+    dean_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    dean_name = Column(String(255), nullable=True, index=True)
+    chair_name = Column(String(255), nullable=True, index=True)
     created_at = Column(DateTime, server_default=func.now())
+
+class Campus(Base):
+    __tablename__ = "campuses"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), unique=True, nullable=False, index=True)
+    code = Column(String(255), unique=True, nullable=True, index=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+class Program(Base):
+    __tablename__ = "programs"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    code = Column(String(255), nullable=True, index=True)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=False, index=True)
+    chair_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    chair_name = Column(String(255), nullable=True, index=True)
+    created_at = Column(DateTime, server_default=func.now())
+    __table_args__ = (UniqueConstraint("department_id", "name", name="uq_program_department_name"),)
 
 class Subject(Base):
     __tablename__ = "subjects"
@@ -28,10 +51,12 @@ class Subject(Base):
     code = Column(String, nullable=True)
     description = Column(Text, nullable=True)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+    program_id = Column(Integer, ForeignKey("programs.id"), nullable=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     archived = Column(Boolean, nullable=False, default=False, server_default="false")
     department = relationship("Department")
+    program = relationship("Program")
 
 class UploadedFile(Base):
     __tablename__ = "uploaded_files"
@@ -79,6 +104,7 @@ class AccountRequest(Base):
     id = Column(Integer, primary_key=True, index=True)
     full_name = Column(String(255), nullable=False)
     department = Column(String(255), nullable=False)
+    program_id = Column(Integer, ForeignKey("programs.id"), nullable=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     status = Column(String(50), default="pending")
     created_at = Column(DateTime, server_default=func.now())

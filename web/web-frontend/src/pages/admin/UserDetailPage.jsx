@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ArrowLeft,
-  BookOpen,
   FileQuestion,
   History,
   ShieldCheck,
@@ -171,6 +170,11 @@ const UserDetailPage = () => {
 
   const { user, subjects = [], questions = [], activities = [] } = detail;
   const statusLabel = user.archived ? "Archived" : "Active";
+  const questionsBySubject = subjects.map((subject) => ({
+    subject,
+    questions: questions.filter((question) => question.subject_id === subject.id),
+  }));
+  const unassignedQuestions = questions.filter((question) => !subjects.some((subject) => subject.id === question.subject_id));
 
   return (
     <div className="space-y-5 page-transition">
@@ -236,14 +240,7 @@ const UserDetailPage = () => {
         </div>
       </section>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl border border-gray-200 bg-white p-5">
-          <BookOpen className="text-[#B4454A]" size={20} />
-          <p className="mt-4 text-3xl font-bold text-gray-900">
-            {subjects.length}
-          </p>
-          <p className="text-sm text-gray-500">Subjects created</p>
-        </div>
+      <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-2xl border border-gray-200 bg-white p-5">
           <FileQuestion className="text-[#B4454A]" size={20} />
           <p className="mt-4 text-3xl font-bold text-gray-900">
@@ -345,52 +342,32 @@ const UserDetailPage = () => {
         )}
       </section>
 
-      <div className="grid gap-5 xl:grid-cols-2">
-        <section className="rounded-2xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-4 font-bold text-gray-900">Subjects created</h2>
-          {subjects.length ? (
-            <div className="space-y-2">
-              {subjects.map((subject) => (
-                <article
-                  key={subject.id}
-                  className="rounded-xl border border-gray-100 bg-gray-50 p-3"
-                >
-                  <p className="font-semibold text-gray-800">{subject.name}</p>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {subject.code || "No course code"} · {subject.department} ·{" "}
-                    {formatDate(subject.created_at)}
-                  </p>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-gray-500">No subjects created.</p>
-          )}
-        </section>
-        <section className="rounded-2xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-4 font-bold text-gray-900">Questions created</h2>
-          {questions.length ? (
-            <div className="max-h-96 space-y-2 overflow-y-auto">
-              {questions.map((question) => (
-                <article
-                  key={question.id}
-                  className="rounded-xl border border-gray-100 bg-gray-50 p-3"
-                >
-                  <p className="font-semibold text-gray-800">
-                    {question.question}
-                  </p>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {question.subject} · {question.type} ·{" "}
-                    {question.bloom_level || "Unclassified"}
-                  </p>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-gray-500">No questions created.</p>
-          )}
-        </section>
-      </div>
+      <section className="rounded-2xl border border-gray-200 bg-white p-5">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="font-bold text-gray-900">Subjects</h2>
+            <p className="mt-1 text-xs text-gray-500">Question banks created under each subject.</p>
+          </div>
+          <span className="text-xs font-semibold text-gray-500">{subjects.length} subject{subjects.length === 1 ? "" : "s"}</span>
+        </div>
+        {questionsBySubject.length || unassignedQuestions.length ? (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {questionsBySubject.map(({ subject, questions: subjectQuestions }) => (
+              <article key={subject.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex items-start justify-between gap-3 border-b border-gray-200 pb-3">
+                  <div>
+                    <h3 className="font-semibold text-gray-900">{subject.name}</h3>
+                    <p className="mt-1 text-xs text-gray-500">{subject.code || "No course code"} · {subject.department}</p>
+                  </div>
+                  <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-gray-600">{subjectQuestions.length} question{subjectQuestions.length === 1 ? "" : "s"}</span>
+                </div>
+                {subjectQuestions.length ? <div className="mt-3 space-y-2">{subjectQuestions.map((question) => <div key={question.id} className="rounded-lg border border-gray-200 bg-white p-3"><p className="text-sm font-medium text-gray-800">{question.question}</p><p className="mt-1 text-xs text-gray-500">{question.type} · {question.bloom_level || "Unclassified"} · {formatDate(question.created_at)}</p></div>)}</div> : <p className="mt-3 text-sm text-gray-500">No questions in this subject yet.</p>}
+              </article>
+            ))}
+            {unassignedQuestions.length > 0 && <article className="rounded-xl border border-amber-200 bg-amber-50 p-4"><h3 className="font-semibold text-gray-900">Other questions</h3><p className="mt-1 text-xs text-gray-500">Questions without a matching subject.</p><div className="mt-3 space-y-2">{unassignedQuestions.map((question) => <div key={question.id} className="rounded-lg border border-amber-100 bg-white p-3"><p className="text-sm font-medium text-gray-800">{question.question}</p><p className="mt-1 text-xs text-gray-500">{question.subject} · {question.type}</p></div>)}</div></article>}
+          </div>
+        ) : <p className="text-sm text-gray-500">No subjects or questions created.</p>}
+      </section>
 
       <section className="rounded-2xl border border-gray-200 bg-white p-5">
         <h2 className="mb-4 font-bold text-gray-900">

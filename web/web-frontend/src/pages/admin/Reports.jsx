@@ -86,7 +86,6 @@ function withinPeriod(dateStr, days) {
 export const ReportsContent = () => {
   const [period, setPeriod] = useState(PERIODS[1].label); // Last 30 Days
   const [department, setDepartment] = useState("All Departments");
-  const [faculty, setFaculty] = useState("All Faculty");
   const [activeTab, setActiveTab] = useState("logins");
   const [searchTerm, setSearchTerm] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
@@ -122,20 +121,6 @@ export const ReportsContent = () => {
     };
   }, [reloadToken]);
 
-  const facultyOptions = useMemo(() => {
-    const names = activityLog
-      .filter((row) => {
-        const isAdminRow = String(row.role ?? "").toLowerCase() === "admin" ||
-          String(row.name ?? "").toLowerCase() === "system";
-        return !isAdminRow && (department === "All Departments" || row.dept === department);
-      })
-      .map((row) => row.name);
-    return ["All Faculty", ...Array.from(new Set(names)).sort()];
-  }, [activityLog, department]);
-
-  // If the department changes and the selected faculty no longer applies, reset it.
-  const effectiveFaculty = facultyOptions.includes(faculty) ? faculty : "All Faculty";
-
   const filteredLog = useMemo(() => {
     const selectedPeriod = PERIODS.find((p) => p.label === period);
     return activityLog.filter((row) => {
@@ -143,7 +128,6 @@ export const ReportsContent = () => {
         String(row.name ?? "").toLowerCase() === "system";
       const matchesPeriod = withinPeriod(row.date, selectedPeriod.days);
       const matchesDept = department === "All Departments" || row.dept === department;
-      const matchesFaculty = effectiveFaculty === "All Faculty" || row.name === effectiveFaculty;
       const categories = {
         logins: ["login"],
         generated: ["generate", "question", "question_set", "classify"],
@@ -153,9 +137,9 @@ export const ReportsContent = () => {
       const deleted = String(row.type || "").toLowerCase() === "delete" || /\bdeleted?\b|permanently removed/i.test(`${row.action || ""} ${row.detail || ""}`);
       const matchesTab = activeTab === "deleted" ? deleted : categories[activeTab]?.includes(rowType);
       const text = `${row.name || ""} ${row.action || ""} ${row.detail || ""}`.toLowerCase();
-      return !isAdminRow && matchesPeriod && matchesDept && matchesFaculty && matchesTab && text.includes(searchTerm.toLowerCase());
+      return !isAdminRow && matchesPeriod && matchesDept && matchesTab && text.includes(searchTerm.toLowerCase());
     }).sort((a, b) => new Date(`${b.date} ${b.time}`) - new Date(`${a.date} ${a.time}`));
-  }, [activityLog, period, department, effectiveFaculty, activeTab, searchTerm]);
+  }, [activityLog, period, department, activeTab, searchTerm]);
 
   const currentPage = pageByTab[activeTab] || 1;
   const pageCount = Math.max(1, Math.ceil(filteredLog.length / pageSize));
@@ -163,7 +147,7 @@ export const ReportsContent = () => {
 
   useEffect(() => {
     setPageByTab((current) => ({ ...current, [activeTab]: 1 }));
-  }, [activeTab, period, department, effectiveFaculty, searchTerm]);
+  }, [activeTab, period, department, searchTerm]);
 
   useEffect(() => {
     if (currentPage > pageCount) {
@@ -264,17 +248,8 @@ export const ReportsContent = () => {
           <FilterSelect
             label="Department"
             value={department}
-            onChange={(val) => {
-              setDepartment(val);
-              setFaculty("All Faculty");
-            }}
+            onChange={setDepartment}
             options={DEPARTMENTS}
-          />
-          <FilterSelect
-            label="Faculty"
-            value={effectiveFaculty}
-            onChange={setFaculty}
-            options={facultyOptions}
           />
         </div>
       </div>

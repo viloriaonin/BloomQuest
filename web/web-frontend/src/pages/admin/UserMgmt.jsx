@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { usePopup } from "../../components/PopupProvider";
 import LoadingSpinner from "../../components/LoadingSpinner";
-import { Activity, CheckSquare, FileText, History, X, Users } from "lucide-react";
+import { Activity, FileText, Filter, History, X, Users } from "lucide-react";
 
 const API_BASE_URL = "http://localhost:8000/api";
 
@@ -17,11 +17,12 @@ export const UserMgmtContent = () => {
   const [errorRequests, setErrorRequests] = useState("");
   const [errorUsers, setErrorUsers] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  const [roleFilter, setRoleFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("active");
-  const [activityFilter, setActivityFilter] = useState("all");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [departmentFilter, setDepartmentFilter] = useState("all");
+  const [programFilter, setProgramFilter] = useState("all");
+  const [joinedFilter, setJoinedFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
   const [userView, setUserView] = useState("active");
-  const [selectedUserIds, setSelectedUserIds] = useState([]);
   const [activityUser, setActivityUser] = useState(null);
   const [userActivity, setUserActivity] = useState([]);
   const [facultyDetail, setFacultyDetail] = useState(null);
@@ -290,16 +291,17 @@ export const UserMgmtContent = () => {
   const matchesSearch = (user) => {
     const query = searchTerm.trim().toLowerCase();
     if (!query) return true;
-    return [user.full_name, user.name, user.email, user.department, user.employee_id]
+    return [user.full_name, user.name, user.email, user.department, user.program, user.employee_id]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(query));
   };
 
-  const matchesFilters = (user) => {
-    const roleMatches = roleFilter === "all" || String(user.role || "").toLowerCase() === roleFilter;
-    const activityCount = Number(user.activity_count || 0);
-    const activityMatches = activityFilter === "all" || (activityFilter === "active" ? activityCount > 0 : activityCount === 0);
-    return roleMatches && activityMatches;
+  const matchesUserFilters = (user) => {
+    const joinedDate = user.joined || user.created_at;
+    const joinedTime = joinedDate ? new Date(joinedDate).getTime() : NaN;
+    const now = Date.now();
+    const joinedMatches = joinedFilter === "all" || (joinedFilter === "30" && joinedTime >= now - 30 * 24 * 60 * 60 * 1000) || (joinedFilter === "90" && joinedTime >= now - 90 * 24 * 60 * 60 * 1000) || (joinedFilter === "year" && new Date(joinedDate).getFullYear() === new Date().getFullYear());
+    return (departmentFilter === "all" || user.department === departmentFilter) && (programFilter === "all" || user.program === programFilter) && joinedMatches;
   };
 
   const formatActivityDate = (value) => {
@@ -318,43 +320,63 @@ export const UserMgmtContent = () => {
     return date.toLocaleDateString([], { dateStyle: "medium" });
   };
 
-  const filteredRequests = requests.filter(matchesSearch);
-  const filteredActiveUsers = activeUsers.filter((user) => matchesSearch(user) && matchesFilters(user));
-  const filteredArchivedUsers = archivedUsers.filter((user) => matchesSearch(user) && matchesFilters(user));
-
-  const visibleUsers = statusFilter === "archived" ? filteredArchivedUsers : statusFilter === "all" ? [...filteredActiveUsers, ...filteredArchivedUsers] : filteredActiveUsers;
-
-  const toggleUser = (id) => setSelectedUserIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
-
-  const runBulkAction = async (action) => {
-    if (!selectedUserIds.length) return;
-    const confirmed = await showConfirm(`Apply ${action.replace("_", " ")} to ${selectedUserIds.length} selected users?`, "Bulk User Action");
-    if (!confirmed) return;
-    const response = await fetch(`${API_BASE_URL.replace("/api", "")}/api/admin/users/bulk`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_ids: selectedUserIds, action }) });
-    if (!response.ok) return showAlert("Bulk action failed.", "Admin Error");
-    setSelectedUserIds([]);
-    await fetchUsers();
+  const formatJoinedDate = (value) => {
+    if (!value) return "N/A";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "N/A" : date.toLocaleDateString([], { dateStyle: "medium" });
   };
 
+  const filteredRequests = requests.filter(matchesSearch);
+  const filteredActiveUsers = activeUsers.filter((user) => matchesSearch(user) && matchesUserFilters(user));
+  const filteredArchivedUsers = archivedUsers.filter((user) => matchesSearch(user) && matchesUserFilters(user));
+  const allUsers = [...activeUsers, ...archivedUsers];
+  const departmentOptions = [...new Set(allUsers.map((user) => user.department).filter(Boolean))].sort();
+  const programOptions = [...new Set(allUsers.map((user) => user.program).filter(Boolean))].sort();
+
+  const visibleUsers = filteredActiveUsers;
+  const usersPerPage = 15;
+  const totalPages = Math.max(1, Math.ceil(visibleUsers.length / usersPerPage));
+  const paginatedUsers = visibleUsers.slice((currentPage - 1) * usersPerPage, currentPage * usersPerPage);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, departmentFilter, programFilter, joinedFilter, userView]);
+
   return (
-    <div className="bq-admin-user-management bq-attached-user-ui space-y-6 relative page-transition">
-      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between gap-4 bg-[#F0645A] px-6 py-5 text-white">
+    <div className="bq-admin-user-management bq-attached-user-ui relative space-y-4 page-transition">
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between gap-4 bg-[#F0645A] px-5 py-4 text-white">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/75">Administration</p>
-            <h1 className="mt-1 text-2xl font-bold">User management</h1>
-            <p className="mt-1 text-sm text-white/80">Review accounts, departments, activity, and access status.</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/75">Administration</p>
+            <h1 className="mt-1 text-xl font-bold">User management</h1>
+            <p className="mt-1 text-xs text-white/80">Review accounts, departments, activity, and access status.</p>
           </div>
-          <Users className="h-10 w-10 shrink-0" />
+          <Users className="h-8 w-8 shrink-0" />
         </div>
-        <div className="grid gap-4 p-6 sm:grid-cols-2 lg:grid-cols-4">
-          <div><p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Total accounts</p><p className="mt-1 text-xl font-bold text-gray-900">{activeUsers.length + archivedUsers.length}</p></div>
-          <div><p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Pending review</p><p className="mt-1 text-xl font-bold text-amber-700">{requests.length}</p></div>
-          <div><p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Active accounts</p><p className="mt-1 text-xl font-bold text-emerald-700">{activeUsers.length}</p></div>
-          <div><p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Archived accounts</p><p className="mt-1 text-xl font-bold text-gray-700">{archivedUsers.length}</p></div>
+        <div className="grid gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div><p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Total accounts</p><p className="mt-0.5 text-lg font-bold text-gray-900">{activeUsers.length + archivedUsers.length}</p></div>
+          <div><p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Pending review</p><p className="mt-0.5 text-lg font-bold text-amber-700">{requests.length}</p></div>
+          <div><p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Active accounts</p><p className="mt-0.5 text-lg font-bold text-emerald-700">{activeUsers.length}</p></div>
+          <div><p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Archived accounts</p><p className="mt-0.5 text-lg font-bold text-gray-700">{archivedUsers.length}</p></div>
         </div>
       </div>
-      <div className="flex flex-wrap gap-2 rounded-md border border-gray-200 bg-white p-2 shadow-sm" role="tablist" aria-label="User management sections">
+        <div className="relative rounded-md border border-gray-200 bg-white p-2 shadow-sm">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search users, email, department, or program..." className="bq-field min-w-0 flex-1 px-3 py-1.5 text-sm" />
+            <button type="button" onClick={() => setFilterOpen((open) => !open)} className={`inline-flex items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-sm font-semibold transition ${filterOpen || departmentFilter !== "all" || programFilter !== "all" || joinedFilter !== "all" ? "border-[#B4454A] bg-red-50 text-[#B4454A]" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"}`}><Filter size={15} /> Filter</button>
+          </div>
+          {filterOpen && <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <div className="grid gap-3 sm:grid-cols-3">
+            <label className="text-xs font-semibold text-gray-600">Department<select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)} className="bq-field mt-1 w-full px-2 py-2 text-sm"><option value="all">All departments</option>{departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}</select></label>
+            <label className="text-xs font-semibold text-gray-600">Program<select value={programFilter} onChange={(event) => setProgramFilter(event.target.value)} className="bq-field mt-1 w-full px-2 py-2 text-sm"><option value="all">All programs</option>{programOptions.map((program) => <option key={program} value={program}>{program}</option>)}</select></label>
+            <label className="text-xs font-semibold text-gray-600">Date joined<select value={joinedFilter} onChange={(event) => setJoinedFilter(event.target.value)} className="bq-field mt-1 w-full px-2 py-2 text-sm"><option value="all">Any date</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="year">This year</option></select></label>
+            </div>
+            <div className="mt-3 flex justify-end">
+              <button type="button" onClick={() => { setDepartmentFilter("all"); setProgramFilter("all"); setJoinedFilter("all"); }} className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 transition hover:bg-gray-100">Clear filters</button>
+            </div>
+          </div>}
+        </div>
+      <div className="flex flex-wrap gap-1 rounded-md border border-gray-200 bg-white p-1 shadow-sm" role="tablist" aria-label="User management sections">
         {[
           ["pending", "Pending requests", requests.length],
           ["active", "Active users", activeUsers.length],
@@ -366,22 +388,17 @@ export const UserMgmtContent = () => {
             role="tab"
             aria-selected={userView === view}
             onClick={() => setUserView(view)}
-            className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors ${userView === view ? "bg-red-700 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+            className={`rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${userView === view ? "bg-red-700 text-white" : "text-gray-600 hover:bg-gray-100"}`}
           >
             {label} <span className="ml-1 opacity-75">({count})</span>
           </button>
         ))}
       </div>
 
-      {userView === "pending" && <div className="bq-admin-user-section rounded-md bg-white border border-gray-200 p-5 shadow-sm">
+      {userView === "pending" && <div className="bq-admin-user-section rounded-md bg-white border border-gray-200 p-4 shadow-sm">
         <div className="mb-4">
           <h3 className="text-base font-bold text-gray-900">Pending Account Requests</h3>
           <p className="text-xs text-gray-500 mt-0.5">Review submissions from the administrator contact form.</p>
-        </div>
-
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="text-sm font-medium text-gray-500">Review submissions from the administrator contact form.</div>
-          <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search users..." className="bq-field max-w-xs px-3 py-2 text-sm" />
         </div>
 
         {loadingRequests ? (
@@ -430,14 +447,7 @@ export const UserMgmtContent = () => {
         )}
       </div>}
 
-      {userView === "active" && <div className="bq-admin-user-section rounded-md bg-white border border-gray-200 p-5 shadow-sm overflow-hidden">
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="bq-field px-3 py-2 text-sm"><option value="all">All roles</option><option value="faculty">Faculty</option><option value="student">Student</option></select>
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="bq-field px-3 py-2 text-sm"><option value="active">Active users</option><option value="archived">Archived users</option><option value="all">All statuses</option></select>
-          <select value={activityFilter} onChange={(event) => setActivityFilter(event.target.value)} className="bq-field px-3 py-2 text-sm"><option value="all">Any activity</option><option value="active">Has activity</option><option value="inactive">Inactive</option></select>
-          <button type="button" onClick={() => setSelectedUserIds(visibleUsers.map((user) => user.id))} className="bq-secondary-button px-3 py-2 text-sm"><CheckSquare size={14} /> Select visible</button>
-          {selectedUserIds.length > 0 && <><button type="button" onClick={() => runBulkAction("archive")} className="bq-secondary-button px-3 py-2 text-sm">Archive selected</button><button type="button" onClick={() => runBulkAction("restore")} className="bq-secondary-button px-3 py-2 text-sm">Restore selected</button><button type="button" onClick={() => runBulkAction("revoke_sessions")} className="bq-secondary-button px-3 py-2 text-sm">Sign out selected</button></>}
-        </div>
+      {userView === "active" && <div className="bq-admin-user-section rounded-md bg-white border border-gray-200 p-4 shadow-sm overflow-hidden">
         <div className="text-sm font-medium text-gray-500 mb-4">
           {loadingUsers ? <LoadingSpinner label="Loading users..." spinnerColor="border-gray-500" /> : `Showing ${filteredActiveUsers.length} of ${activeUsers.length} active users`}
         </div>
@@ -447,37 +457,50 @@ export const UserMgmtContent = () => {
         {visibleUsers.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-gray-200 py-10 text-center text-sm text-gray-400">No active users found in database.</div>
         ) : (
-          <div className="grid gap-3 md:grid-cols-2">
-            {visibleUsers.map((user) => {
+          <div className="overflow-x-auto rounded-xl border border-gray-200">
+            <table className="w-full min-w-[980px] table-fixed text-left text-sm">
+              <colgroup>
+                <col className="w-[28%]" />
+                <col className="w-[18%]" />
+                <col className="w-[17%]" />
+                <col className="w-[15%]" />
+                <col className="w-[10%]" />
+                <col className="w-[12%]" />
+              </colgroup>
+              <thead className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="px-4 py-3">User</th>
+                  <th className="px-4 py-3">Department</th>
+                  <th className="px-4 py-3">Program</th>
+                  <th className="px-4 py-3">Date joined</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 bg-white">
+            {paginatedUsers.map((user) => {
               const displayName = user.full_name || user.name || "Unknown";
               const displayInitials = displayName.split(" ").map((n) => n[0]).join("").substring(0, 2).toUpperCase();
               const displayStatus = user.status || (user.is_active === false ? "Inactive" : "Active");
               return (
-                <article key={user.id || user.email} className="rounded-2xl border border-gray-200 bg-gray-50 p-4 transition hover:border-red-200 hover:shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <input type="checkbox" checked={selectedUserIds.includes(user.id)} onChange={() => toggleUser(user.id)} aria-label={`Select ${displayName}`} />
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-700 text-sm font-bold text-white">{displayInitials}</div>
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold text-gray-900">{displayName}</p>
-                        <p className="truncate text-xs text-gray-500">{user.email}</p>
-                      </div>
-                    </div>
-                    <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${displayStatus === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-700"}`}>{displayStatus}</span>
-                  </div>
-                  <div className="mt-4 grid grid-cols-2 gap-3 border-t border-gray-200 pt-3 text-xs">
-                    <div><span className="block text-gray-400">Role</span><strong className="mt-1 block text-gray-700">{user.role || "N/A"}</strong></div>
-                    <div><span className="block text-gray-400">Department</span><strong className="mt-1 block truncate text-gray-700">{user.department || "N/A"}</strong></div>
-                  </div>
-                  <button type="button" onClick={() => navigate(`/admin/users/${user.id}`)} className="mt-4 inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition"><Activity size={13} /> View profile</button>
-                </article>
+                <tr key={user.id || user.email} className="transition hover:bg-gray-50">
+                  <td className="px-3 py-3"><div className="flex min-w-0 items-center gap-2.5"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-700 text-xs font-bold text-white">{displayInitials}</div><div className="min-w-0"><p className="truncate font-semibold text-gray-900">{displayName}</p><p className="whitespace-nowrap text-xs text-gray-500">{user.email}</p></div></div></td>
+                  <td className="max-w-[190px] truncate px-3 py-3 text-gray-700">{user.department || "N/A"}</td>
+                  <td className="max-w-[210px] truncate px-3 py-3 text-gray-700">{user.program || "N/A"}</td>
+                  <td className="whitespace-nowrap px-3 py-3 text-xs text-gray-500">{formatJoinedDate(user.joined || user.created_at)}</td>
+                  <td className="px-3 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${displayStatus === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-700"}`}>{displayStatus}</span></td>
+                  <td className="px-3 py-3"><button type="button" onClick={() => navigate(`/admin/users/${user.id}`)} className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition"><Activity size={13} /> View profile</button></td>
+                </tr>
               );
             })}
+              </tbody>
+            </table>
           </div>
         )}
+        {visibleUsers.length > 0 && <div className="mt-4 flex items-center justify-between gap-3 text-sm text-gray-500"><span>Page {currentPage} of {totalPages}</span><div className="flex gap-2"><button type="button" disabled={currentPage === 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} className="bq-secondary-button px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50">Previous</button><button type="button" disabled={currentPage === totalPages} onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} className="bq-secondary-button px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50">Next</button></div></div>}
       </div>}
 
-      {userView === "archived" && <div className="bq-admin-user-section rounded-md bg-white border border-gray-200 p-5 shadow-sm overflow-hidden mt-6">
+      {userView === "archived" && <div className="bq-admin-user-section rounded-md bg-white border border-gray-200 p-4 shadow-sm overflow-hidden mt-4">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-base font-bold text-gray-900">Archived Users</h3>
