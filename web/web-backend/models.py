@@ -114,10 +114,24 @@ class AccountRequest(Base):
     status = Column(String(50), default="pending")
     created_at = Column(DateTime, server_default=func.now())
 
+class UserChangeRequest(Base):
+    __tablename__ = "user_change_requests"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    request_type = Column(String(64), nullable=False, default="department")
+    current_value = Column(String(255), nullable=True)
+    requested_value = Column(String(255), nullable=False)
+    status = Column(String(32), nullable=False, default="pending", index=True)
+    created_at = Column(DateTime, server_default=func.now())
+    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    actor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    target_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     action = Column(String)
     details = Column(Text)
     type = Column(String)       # "generate", "upload", "classify", "login"

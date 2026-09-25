@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { usePopup } from "../../components/PopupProvider";
 import LoadingSpinner from "../../components/LoadingSpinner";
@@ -10,6 +10,8 @@ export const UserMgmtContent = () => {
   const { showAlert, showConfirm } = usePopup();
   const navigate = useNavigate();
   const [requests, setRequests] = useState([]);
+  const [changeRequests, setChangeRequests] = useState([]);
+  const [changeRequestStatus, setChangeRequestStatus] = useState("pending");
   const [activeUsers, setActiveUsers] = useState([]);
   const [archivedUsers, setArchivedUsers] = useState([]);
   const [loadingRequests, setLoadingRequests] = useState(true);
@@ -24,9 +26,9 @@ export const UserMgmtContent = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [userView, setUserView] = useState("active");
   const [activityUser, setActivityUser] = useState(null);
-  const [userActivity, setUserActivity] = useState([]);
-  const [facultyDetail, setFacultyDetail] = useState(null);
-  const [loadingActivity, setLoadingActivity] = useState(false);
+  const [userActivity] = useState([]);
+  const [facultyDetail] = useState(null);
+  const [loadingActivity] = useState(false);
 
   const [editingUser, setEditingUser] = useState(null);
   const [adminPassword, setAdminPassword] = useState("");
@@ -37,12 +39,7 @@ export const UserMgmtContent = () => {
   const [newPassword, setNewPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  useEffect(() => {
-    fetchPendingRequests();
-    fetchUsers();
-  }, []);
-
-  const fetchPendingRequests = async () => {
+  const fetchPendingRequests = useCallback(async () => {
     setLoadingRequests(true);
     setErrorRequests("");
     try {
@@ -56,30 +53,42 @@ export const UserMgmtContent = () => {
     } finally {
       setLoadingRequests(false);
     }
-  };
+  }, []);
 
-  const fetchUsers = async () => {
+  const fetchChangeRequests = useCallback(async (status = changeRequestStatus) => {
+    try {
+      const url = new URL(`${API_BASE_URL}/admin/user-change-requests`);
+      if (status && status !== "all") url.searchParams.set("status", status);
+      const response = await fetch(url.toString(), { cache: "no-store" });
+      if (response.ok) setChangeRequests(await response.json());
+    } catch (err) { console.error(err); }
+  }, [changeRequestStatus]);
+
+  const fetchUsers = useCallback(async () => {
     setLoadingUsers(true);
     setErrorUsers("");
     try {
       const response = await fetch(`${API_BASE_URL}/contact-admin/users`, { cache: "no-store" });
       if (!response.ok) throw new Error("Failed to fetch active users");
       const data = await response.json();
-      
-      // Included both faculty and students, and handles missing roles safely
+
       const isManagedUser = (user) => {
-        if (!user || typeof user.role !== "string") return true; 
+        if (!user || typeof user.role !== "string") return true;
         const role = user.role.toLowerCase();
         return role === "faculty" || role === "student";
       };
+      const uniqueUsers = (users) => Array.from(
+        new Map(
+          users.map((user) => [user.id ?? String(user.email || "").toLowerCase(), user]),
+        ).values(),
+      );
 
-      // Handle both flat arrays and nested object responses
       if (Array.isArray(data)) {
-        setActiveUsers(data.filter((user) => isManagedUser(user) && !user.archived && user.is_active !== false));
-        setArchivedUsers(data.filter((user) => isManagedUser(user) && (user.archived || user.is_active === false)));
+        setActiveUsers(uniqueUsers(data.filter((user) => isManagedUser(user) && !user.archived && user.is_active !== false)));
+        setArchivedUsers(uniqueUsers(data.filter((user) => isManagedUser(user) && (user.archived || user.is_active === false))));
       } else {
-        setActiveUsers((data.active || []).filter(isManagedUser));
-        setArchivedUsers((data.archived || []).filter(isManagedUser));
+        setActiveUsers(uniqueUsers((data.active || []).filter(isManagedUser)));
+        setArchivedUsers(uniqueUsers((data.archived || []).filter(isManagedUser)));
       }
     } catch (err) {
       console.error(err);
@@ -87,7 +96,27 @@ export const UserMgmtContent = () => {
     } finally {
       setLoadingUsers(false);
     }
+  }, []);
+
+  useEffect(() => {
+    fetchPendingRequests();
+    fetchChangeRequests();
+    fetchUsers();
+  }, [fetchPendingRequests, fetchChangeRequests, fetchUsers]);
+
+  useEffect(() => {
+    fetchChangeRequests(changeRequestStatus);
+  }, [changeRequestStatus, fetchChangeRequests]);
+
+  const reviewChangeRequest = async (id, action) => {
+    const response = await fetch(`${API_BASE_URL}/admin/user-change-requests/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) { await showAlert(data.detail || "Could not review request.", "User Request"); return; }
+    await showAlert(`Request ${action}d successfully.`, "User Request");
+    await fetchChangeRequests();
+    await fetchUsers();
   };
+
 
   const handleApprove = async (email) => {
     const confirmed = await showConfirm(`Are you sure you want to approve the account for ${email}?`, "Approve Account");
@@ -105,19 +134,12 @@ export const UserMgmtContent = () => {
         throw new Error(errorData.detail || "Backend approval failed.");
       }
 
-      const data = await response.json();
+      await response.json();
 
       await showAlert(`Success! Account created and credentials securely emailed to ${email}.`, "Approved");
       setRequests((prev) => prev.filter((req) => req.email !== email));
 
       await fetchUsers();
-      if (data && data.created_user) {
-        const created = data.created_user;
-        const exists = activeUsers.some((u) => u.email === created.email);
-        if (!exists) {
-          setActiveUsers((prev) => [created, ...prev]);
-        }
-      }
     } catch (err) {
       console.error(err);
       await showAlert(`Error: ${err.message}`, "Error");
@@ -326,7 +348,15 @@ export const UserMgmtContent = () => {
     return Number.isNaN(date.getTime()) ? "N/A" : date.toLocaleDateString([], { dateStyle: "medium" });
   };
 
+  const formatRequestedDateTime = (value) => {
+    if (!value) return "N/A";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "N/A" : date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  };
+
   const filteredRequests = requests.filter(matchesSearch);
+  const changeRequestFilter = (request) => changeRequestStatus === "all" ? true : request.status === changeRequestStatus;
+  const filteredChangeRequests = changeRequests.filter(changeRequestFilter);
   const filteredActiveUsers = activeUsers.filter((user) => matchesSearch(user) && matchesUserFilters(user));
   const filteredArchivedUsers = archivedUsers.filter((user) => matchesSearch(user) && matchesUserFilters(user));
   const allUsers = [...activeUsers, ...archivedUsers];
@@ -379,6 +409,7 @@ export const UserMgmtContent = () => {
       <div className="flex flex-wrap gap-1 rounded-md border border-gray-200 bg-white p-1 shadow-sm" role="tablist" aria-label="User management sections">
         {[
           ["pending", "Pending requests", requests.length],
+          ["changes", "User requests", changeRequests.length],
           ["active", "Active users", activeUsers.length],
           ["archived", "Archived users", archivedUsers.length],
         ].map(([view, label, count]) => (
@@ -410,41 +441,109 @@ export const UserMgmtContent = () => {
         ) : filteredRequests.length === 0 ? (
           <div className="py-8 text-center text-sm text-gray-400 border border-dashed border-gray-200 rounded-2xl">No pending registration requests found.</div>
         ) : (
-          <div className="space-y-3">
-            {filteredRequests.map((request, idx) => {
-              const name = request.full_name || request.name || "Unknown User";
-              const email = request.email;
-              const dept = request.department || "No Department Provided";
-              const timestamp = request.requested_at || request.requestedAt || "Recent";
-              return (
-                <div key={email || idx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-gray-50 border border-gray-100 transition hover:bg-gray-100/70">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-800 text-sm font-bold">
-                      {name
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")
-                        .substring(0, 2)
-                        .toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-semibold text-gray-900">{name}</p>
-                        <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200/60 rounded px-1.5 py-0.5 font-medium">{timestamp}</span>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-0.5">{email}</p>
-                      <p className="text-xs text-gray-400 font-medium mt-1">Dept: {dept}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 self-end sm:self-center">
-                    <button onClick={() => handleApprove(email)} className="rounded-full bg-emerald-700 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 transition shadow-sm">Approve</button>
-                    <button onClick={() => handleDecline(email)} className="rounded-full border border-gray-300 bg-white px-4 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition">Decline</button>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="overflow-hidden rounded-xl border border-gray-200">
+            <table className="w-full table-fixed text-left text-sm">
+              <colgroup><col className="w-[16%]" /><col className="w-[18%]" /><col className="w-[20%]" /><col className="w-[18%]" /><col className="w-[14%]" /><col className="w-[14%]" /></colgroup>
+              <thead className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                <tr><th className="px-4 py-3">Applicant</th><th className="px-4 py-3">Email</th><th className="px-4 py-3">Department</th><th className="px-4 py-3">Program</th><th className="px-4 py-3">Requested</th><th className="px-4 py-3">Actions</th></tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 bg-white">
+                {filteredRequests.map((request, idx) => {
+                  const name = request.full_name || request.name || "Unknown User";
+                  const email = request.email;
+                  return (
+                    <tr key={email || idx} className="transition hover:bg-gray-50">
+                      <td className="px-4 py-3 font-semibold text-gray-900">{name}</td>
+                      <td className="px-4 py-3 text-xs text-gray-500">{email}</td>
+                      <td className="px-4 py-3 text-gray-700">{request.department || "N/A"}</td>
+                      <td className="px-4 py-3 text-gray-700">{request.program || "N/A"}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-500">{formatRequestedDateTime(request.requested_at || request.requestedAt || request.created_at)}</td>
+                      <td className="px-3 py-3"><div className="flex flex-nowrap items-center gap-1.5"><button onClick={() => handleApprove(email)} className="whitespace-nowrap rounded-md bg-emerald-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 transition">Approve</button><button onClick={() => handleDecline(email)} className="whitespace-nowrap rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition">Decline</button></div></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
+      </div>}
+
+      {userView === "changes" && <div className="bq-admin-user-section rounded-md bg-white border border-gray-200 p-4 shadow-sm overflow-hidden">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-base font-bold text-gray-900">User change requests</h3>
+            <p className="mt-1 text-xs text-gray-500">Review department and other account-change requests from faculty users.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              ["pending", "Pending"],
+              ["approved", "Approved"],
+              ["declined", "Declined"],
+              ["all", "All"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setChangeRequestStatus(value)}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${changeRequestStatus === value ? "bg-red-700 text-white" : "border border-gray-300 bg-white text-gray-600 hover:bg-gray-50"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <table className="w-full table-fixed text-left text-sm">
+            <thead className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+              <tr>
+                <th className="w-[20%] px-4 py-3">User</th>
+                <th className="w-[14%] px-4 py-3">Type</th>
+                <th className="w-[18%] px-4 py-3">Current</th>
+                <th className="w-[18%] px-4 py-3">Requested</th>
+                <th className="w-[14%] px-4 py-3">Status</th>
+                <th className="w-[16%] px-4 py-3">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {filteredChangeRequests.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="p-8 text-center text-sm text-gray-500">No {changeRequestStatus === "all" ? "user change" : changeRequestStatus} requests.</td>
+                </tr>
+              ) : (
+                filteredChangeRequests.map((request) => (
+                  <tr key={request.id}>
+                    <td className="break-words px-4 py-3">
+                      <strong>{request.user_name}</strong>
+                      <span className="block text-xs text-gray-500">{request.email}</span>
+                    </td>
+                    <td className="px-4 py-3 capitalize">{request.request_type}</td>
+                    <td className="break-words px-4 py-3 text-gray-600">{request.current_value || "Unassigned"}</td>
+                    <td className="break-words px-4 py-3 font-semibold text-gray-800">{request.requested_value}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${request.status === "approved" ? "bg-emerald-100 text-emerald-700" : request.status === "declined" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
+                        {request.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {request.status === "pending" ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          <button type="button" onClick={() => reviewChangeRequest(request.id, "approve")} className="rounded-md bg-emerald-700 px-2.5 py-1.5 text-xs font-semibold text-white">Approve</button>
+                          <button type="button" onClick={() => reviewChangeRequest(request.id, "decline")} className="rounded-md border border-gray-300 px-2.5 py-1.5 text-xs font-semibold text-gray-600">Decline</button>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-500">
+                          {request.reviewer_name ? `Reviewed by ${request.reviewer_name}` : "Reviewed"}
+                          {request.reviewed_at && <div className="mt-1">{new Date(request.reviewed_at).toLocaleDateString([], { dateStyle: "medium" })}</div>}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>}
 
       {userView === "active" && <div className="bq-admin-user-section rounded-md bg-white border border-gray-200 p-4 shadow-sm overflow-hidden">
@@ -458,14 +557,14 @@ export const UserMgmtContent = () => {
           <div className="rounded-2xl border border-dashed border-gray-200 py-10 text-center text-sm text-gray-400">No active users found in database.</div>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-gray-200">
-            <table className="w-full min-w-[980px] table-fixed text-left text-sm">
+            <table className="w-full table-fixed text-left text-sm">
               <colgroup>
-                <col className="w-[28%]" />
-                <col className="w-[18%]" />
-                <col className="w-[17%]" />
-                <col className="w-[15%]" />
-                <col className="w-[10%]" />
-                <col className="w-[12%]" />
+                <col className="w-[24%]" />
+                <col className="w-[21%]" />
+                <col className="w-[21%]" />
+                <col className="w-[14%]" />
+                <col className="w-[9%]" />
+                <col className="w-[11%]" />
               </colgroup>
               <thead className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                 <tr>
@@ -484,12 +583,12 @@ export const UserMgmtContent = () => {
               const displayStatus = user.status || (user.is_active === false ? "Inactive" : "Active");
               return (
                 <tr key={user.id || user.email} className="transition hover:bg-gray-50">
-                  <td className="px-3 py-3"><div className="flex min-w-0 items-center gap-2.5"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-700 text-xs font-bold text-white">{displayInitials}</div><div className="min-w-0"><p className="truncate font-semibold text-gray-900">{displayName}</p><p className="whitespace-nowrap text-xs text-gray-500">{user.email}</p></div></div></td>
-                  <td className="max-w-[190px] truncate px-3 py-3 text-gray-700">{user.department || "N/A"}</td>
-                  <td className="max-w-[210px] truncate px-3 py-3 text-gray-700">{user.program || "N/A"}</td>
+                  <td className="px-3 py-3"><div className="flex min-w-0 items-center gap-2.5"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-700 text-xs font-bold text-white">{displayInitials}</div><div className="min-w-0"><p className="break-words font-semibold text-gray-900">{displayName}</p><p className="break-all text-xs text-gray-500">{user.email}</p></div></div></td>
+                  <td className="break-words px-3 py-3 text-gray-700">{user.department || "N/A"}</td>
+                  <td className="break-words px-3 py-3 text-gray-700">{user.program || "N/A"}</td>
                   <td className="whitespace-nowrap px-3 py-3 text-xs text-gray-500">{formatJoinedDate(user.joined || user.created_at)}</td>
                   <td className="px-3 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${displayStatus === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-700"}`}>{displayStatus}</span></td>
-                  <td className="px-3 py-3"><button type="button" onClick={() => navigate(`/admin/users/${user.id}`)} className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition"><Activity size={13} /> View profile</button></td>
+                  <td className="px-3 py-3"><button type="button" onClick={() => navigate(`/admin/users/${user.id}`)} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition"><Activity size={13} /> View profile</button></td>
                 </tr>
               );
             })}

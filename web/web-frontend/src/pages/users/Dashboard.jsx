@@ -10,7 +10,7 @@ import {
   Legend
 } from "chart.js";
 import { Bar, Doughnut } from "react-chartjs-2";
-import { ArrowRight, BookOpen, ClipboardList, Download, Lightbulb, Plus } from "lucide-react";
+import { BookOpen, ClipboardList, Download, Lightbulb, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend);

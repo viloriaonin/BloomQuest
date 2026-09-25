@@ -87,8 +87,46 @@ const getUserRole = () => {
 
 const AdminRoute = ({ children }) => {
   const role = getUserRole();
+  const [isAuthorized, setIsAuthorized] = React.useState(role === "admin" ? "checking" : "denied");
+
+  React.useEffect(() => {
+    if (!role) {
+      setIsAuthorized("denied");
+      return;
+    }
+
+    let cancelled = false;
+    fetch(`${process.env.REACT_APP_API_BASE_URL || "http://localhost:8000/api"}/admin/me`, { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error("Unauthorized");
+        return response.json();
+      })
+      .then((data) => {
+        if (!cancelled) {
+          const backendRole = String(data?.role || "").toLowerCase();
+          if (backendRole !== "admin") {
+            localStorage.removeItem("token");
+            localStorage.removeItem("role");
+            setIsAuthorized("denied");
+            return;
+          }
+          setIsAuthorized("allowed");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("role");
+          setIsAuthorized("denied");
+        }
+      });
+
+    return () => { cancelled = true; };
+  }, [role]);
+
   if (!role) return <Navigate to="/" replace />;
-  return role === "admin" ? children : <Navigate to="/dashboard" replace />;
+  if (isAuthorized === "checking") return <div className="flex h-screen items-center justify-center text-sm text-slate-500">Checking admin access…</div>;
+  return isAuthorized === "allowed" ? children : <Navigate to="/dashboard" replace />;
 };
 
 const UserRoute = ({ children }) => {
@@ -236,6 +274,7 @@ function App() {
         <Route path="/admin/academic/campus/:campusId/department/:departmentId/program/:programId" element={<AdminAcademicRoute />} />
         <Route path="/admin/questions" element={<AdminAcademicRoute />} />
         <Route path="/admin/questions/:subjectId" element={<AdminAcademicRoute />} />
+        <Route path="/admin/users" element={<AdminAcademicRoute />} />
 
         <Route
           path="/admin/users/:userId"

@@ -1,5 +1,5 @@
-import React, { useRef, useState } from "react";
-import { ArrowRight, CheckCircle2, Download, Eye, EyeOff, FileText, KeyRound, LockKeyhole, Play, Save, ShieldCheck, UserRound, X } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { ArrowRight, CheckCircle2, Download, Eye, EyeOff, FileText, KeyRound, LockKeyhole, Play, Save, UserRound, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 const WORKSPACES = {
@@ -25,6 +25,7 @@ const templates = [
   { name: "Midterm Examination", detail: "A compact blueprint with stronger application coverage.", meta: "4 topics · 40 items" },
   { name: "Department Master TOS", detail: "Your institution-wide starting point for new courses.", meta: "8 topics · 60 items" },
 ];
+const API_URL = "/api";
 
 const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
   const navigate = useNavigate();
@@ -41,6 +42,11 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
   const [passwordError, setPasswordError] = useState("");
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [showPasswordValues, setShowPasswordValues] = useState(false);
+  const [departments, setDepartments] = useState([]);
+  const [requestedDepartment, setRequestedDepartment] = useState("");
+  const [requestedProgram, setRequestedProgram] = useState("");
+  const [changeRequestMessage, setChangeRequestMessage] = useState("");
+  const userId = localStorage.getItem("user_id");
 
   const [settings, setSettings] = useState(() => {
     try {
@@ -61,6 +67,35 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
 
   const handleSaveClick = () => {
     setConfirmSaveOpen(true);
+  };
+
+  useEffect(() => {
+    if (section !== "settings") return;
+    fetch(`${API_URL}/departments`).then((response) => response.ok ? response.json() : []).then((data) => setDepartments(Array.isArray(data) ? data : [])).catch(() => setDepartments([]));
+  }, [section]);
+
+  const requestDepartmentChange = async () => {
+    if (!userId) {
+      setChangeRequestMessage("Your session is missing a user id. Please sign in again.");
+      return;
+    }
+
+    if (!requestedDepartment && !requestedProgram) {
+      setChangeRequestMessage("Choose a department or program to request a change.");
+      return;
+    }
+
+    const selectedProgram = departments
+      .flatMap((department) => (department.programs || []).map((program) => ({ ...program, department: department.name })))
+      .find((program) => program.name === requestedProgram);
+
+    const payload = requestedProgram && selectedProgram
+      ? { user_id: Number(userId), request_type: "program", requested_value: selectedProgram.name }
+      : { user_id: Number(userId), request_type: "department", requested_value: requestedDepartment };
+
+    const response = await fetch(`${API_URL}/user-change-requests`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const data = await response.json().catch(() => ({}));
+    setChangeRequestMessage(response.ok ? `Request submitted for administrator review (${payload.request_type}).` : (data.detail || "Could not submit the request."));
   };
 
   const confirmSaveSettings = () => {
@@ -317,6 +352,24 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
                     {saveMessage}
                   </div>
                 )}
+                <div className="border-t pt-4" style={{ borderColor: "rgba(15,23,42,0.08)" }}>
+                  <p className="text-sm font-semibold" style={{ color: "#0F172A" }}>Request a department or program change</p>
+                  <p className="mt-1 text-xs" style={{ color: "#64748B" }}>Your current assignment stays in place until an administrator approves the request.</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <select value={requestedDepartment} onChange={(event) => { setRequestedDepartment(event.target.value); if (event.target.value) setRequestedProgram(""); }} className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "rgba(15,23,42,0.12)" }}>
+                      <option value="">Select a department</option>
+                      {departments.map((department) => <option key={department.id} value={department.name}>{department.name}</option>)}
+                    </select>
+                    <select value={requestedProgram} onChange={(event) => { setRequestedProgram(event.target.value); if (event.target.value) setRequestedDepartment(""); }} className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "rgba(15,23,42,0.12)" }}>
+                      <option value="">Select a program</option>
+                      {departments.flatMap((department) => (department.programs || []).map((program) => (
+                        <option key={program.id} value={program.name}>{department.name} / {program.name}</option>
+                      )))}
+                    </select>
+                  </div>
+                  <div className="mt-3"><button type="button" onClick={requestDepartmentChange} className="bq-secondary-button">Submit request</button></div>
+                  {changeRequestMessage && <p className="mt-2 text-xs" style={{ color: "#64748B" }}>{changeRequestMessage}</p>}
+                </div>
               </div>
             </div>
 

@@ -71,7 +71,7 @@ const UserToolsPage = ({ section }) => {
       setSubjects([]);
       setQuestions([]);
     });
-  }, [section, userId]);
+  }, [activityQuery, section, userId]);
 
   const restoreSubject = async (subject) => {
     const response = await fetch(`${API_URL}/recycle-bin/subjects/${subject.id}/restore?user_id=${encodeURIComponent(userId || "")}`, { method: "POST" });
@@ -156,7 +156,7 @@ const UserToolsPage = ({ section }) => {
     return questions.filter((question) => {
       return !normalized || [question.question, question.topic_name, question.bloom_level].filter(Boolean).join(" ").toLowerCase().includes(normalized);
     });
-  }, [questions, query, section]);
+  }, [questions, query]);
 
   const groupedDownloads = useMemo(() => ({
     tests: downloads.filter((item) => !/tos|table of specifications/i.test(`${item.action} ${item.details}`)),

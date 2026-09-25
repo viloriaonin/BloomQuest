@@ -16,8 +16,12 @@ from ai_service import generate_questions_from_tos, build_preview, prepare_datab
 from routers.tos_utils import compute_tos, generate_tos_from_excel_template
 from classifier import classify_question
 import models
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
+
+
+def utc_now():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 import os
 import random
 import re
@@ -68,7 +72,7 @@ with engine.begin() as connection:
     if connection.dialect.name == "postgresql":
         connection.execute(text("ALTER TABLE uploaded_files ALTER COLUMN user_id DROP NOT NULL"))
     binary_definition = "BYTEA" if connection.dialect.name == "postgresql" else "BLOB"
-    for column, definition in (("filename", "VARCHAR(255)"), ("media_type", "VARCHAR(255)"), ("file_content", binary_definition), ("archived", "BOOLEAN NOT NULL DEFAULT FALSE")):
+    for column, definition in (("filename", "VARCHAR(255)"), ("media_type", "VARCHAR(255)"), ("file_content", binary_definition), ("archived", "BOOLEAN NOT NULL DEFAULT FALSE"), ("actor_id", "INTEGER"), ("target_user_id", "INTEGER")):
         connection.execute(text(f"ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS {column} {definition}"))
     for column, definition in (
         ("exam_type", "VARCHAR(64)"),
@@ -80,9 +84,13 @@ with engine.begin() as connection:
         connection.execute(text(f"ALTER TABLE table_of_specification ADD COLUMN IF NOT EXISTS {column} {definition}"))
 
 
-def log_activity(db: Session, action: str, details: str, type: str, status: str = "success", user_id: int = None):
+def log_activity(db: Session, action: str, details: str, type: str, status: str = "success", user_id: int = None, actor_id: int = None, target_user_id: int = None):
+    actor_id = actor_id if actor_id is not None else user_id
+    target_user_id = target_user_id if target_user_id is not None else user_id
     entry = models.ActivityLog(
         user_id=user_id,
+        actor_id=actor_id,
+        target_user_id=target_user_id,
         action=action,
         details=details,
         type=type,
@@ -310,14 +318,14 @@ def get_current_user(authorization: str = Header(None), db: Session = Depends(ge
     session = db.query(models.UserSession).filter(
         models.UserSession.token_hash == token_hash,
         models.UserSession.revoked_at.is_(None),
-        models.UserSession.expires_at > datetime.utcnow(),
+        models.UserSession.expires_at > utc_now(),
     ).first()
     if not session:
         raise HTTPException(status_code=401, detail="Session expired or replaced by another login")
     user = db.query(models.User).filter(models.User.id == session.user_id, models.User.archived == False).first()
     if not user:
         raise HTTPException(status_code=401, detail="Account is inactive")
-    session.last_used_at = datetime.utcnow()
+    session.last_used_at = utc_now()
     db.commit()
     return user
 
@@ -332,7 +340,7 @@ def require_admin(user: models.User = Depends(get_current_user)):
 def logout(authorization: str = Header(None), db: Session = Depends(get_db)):
     if authorization and authorization.lower().startswith("bearer "):
         token_hash = hashlib.sha256(authorization.split(" ", 1)[1].strip().encode()).hexdigest()
-        db.query(models.UserSession).filter(models.UserSession.token_hash == token_hash).update({"revoked_at": datetime.utcnow()})
+        db.query(models.UserSession).filter(models.UserSession.token_hash == token_hash).update({"revoked_at": utc_now()})
         db.commit()
     return {"message": "Logged out"}
 
@@ -347,6 +355,16 @@ def question_quality_score(question):
         "reviewed": (question.lifecycle_status or "draft") in {"approved", "published"},
     }
     return round(sum(checks.values()) / len(checks) * 100), checks
+
+
+@app.get("/api/admin/me")
+def get_admin_me(db: Session = Depends(get_db), admin: models.User = Depends(require_admin)):
+    return {
+        "id": admin.id,
+        "email": admin.email,
+        "role": admin.role,
+        "name": admin.name or admin.email,
+    }
 
 
 @app.get("/api/admin/insights")
@@ -563,6 +581,26 @@ class AccountActionRequest(BaseModel):
         if not EMAIL_REGEX.fullmatch(normalized):
             raise ValueError("Please provide a valid email address.")
         return normalized
+
+class UserChangeRequestPayload(BaseModel):
+    user_id: int = Field(..., ge=1)
+    request_type: str = Field(default="department", max_length=64)
+    requested_value: str = Field(..., min_length=1, max_length=255)
+
+class UserChangeReviewPayload(BaseModel):
+    action: str = Field(..., pattern="^(approve|decline)$")
+
+
+class UserDepartmentUpdateRequest(AccountActionRequest):
+    department: str = Field(..., min_length=1, max_length=255)
+
+    @field_validator("department")
+    @classmethod
+    def validate_department_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Please select a department.")
+        return cleaned
 
 
 class AdminVerifyRequest(BaseModel):
@@ -957,13 +995,13 @@ def send_password_reset_email(recipient_email: str, otp_code: str) -> bool:
 
 def _cleanup_otp(email: str):
     record = otp_store.get(email)
-    if record and record["expires_at"] < datetime.utcnow():
+    if record and record["expires_at"] < utc_now():
         otp_store.pop(email, None)
 
 
 def _cleanup_change_password_otp(email: str):
     record = change_password_otp_store.get(email)
-    if record and record["expires_at"] < datetime.utcnow():
+    if record and record["expires_at"] < utc_now():
         change_password_otp_store.pop(email, None)
 
 
@@ -977,7 +1015,7 @@ def send_otp(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
     code = f"{random.randint(0, 999999):06d}"
     otp_store[data.email] = {
         "otp": code,
-        "expires_at": datetime.utcnow() + timedelta(minutes=10),
+        "expires_at": utc_now() + timedelta(minutes=10),
     }
     logger.info("[OTP] Generated password reset code for %s", data.email)
 
@@ -1041,7 +1079,7 @@ def request_user_change_password_otp(data: ChangePasswordOtpRequest, db: Session
     code = f"{random.randint(0, 999999):06d}"
     change_password_otp_store[normalized_email] = {
         "otp": code,
-        "expires_at": datetime.utcnow() + timedelta(minutes=10),
+        "expires_at": utc_now() + timedelta(minutes=10),
     }
 
     sent = send_password_reset_email(normalized_email, code)
@@ -1106,7 +1144,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password.")
 
-    now = datetime.utcnow()
+    now = utc_now()
     db.query(models.UserSession).filter(models.UserSession.user_id == user.id, models.UserSession.revoked_at.is_(None)).update({"revoked_at": now})
     raw_token = secrets.token_urlsafe(48)
     session = models.UserSession(user_id=user.id, token_hash=hashlib.sha256(raw_token.encode()).hexdigest(), expires_at=now + timedelta(hours=12))
@@ -1217,6 +1255,119 @@ def list_admin_users(db: Session = Depends(get_db), _admin: models.User = Depend
         "archived": [format_user(user) for user in archived_users],
     }
 
+@app.get("/api/admin/user-change-requests")
+def list_user_change_requests(status: str | None = None, db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
+    query = db.query(models.UserChangeRequest)
+    if status and status.lower() != "all":
+        query = query.filter(models.UserChangeRequest.status == status.lower())
+    rows = query.order_by(models.UserChangeRequest.created_at.desc()).all()
+    users = {user.id: user for user in db.query(models.User).all()}
+    reviewers = {user.id: user for user in db.query(models.User).all()}
+    return [{
+        "id": row.id,
+        "user_id": row.user_id,
+        "user_name": users[row.user_id].name if row.user_id in users else "Unknown user",
+        "email": users[row.user_id].email if row.user_id in users else None,
+        "request_type": row.request_type,
+        "current_value": row.current_value,
+        "requested_value": row.requested_value,
+        "status": row.status,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "reviewed_at": row.reviewed_at.isoformat() if row.reviewed_at else None,
+        "reviewed_by": row.reviewed_by,
+        "reviewer_name": reviewers[row.reviewed_by].name if row.reviewed_by in reviewers else None,
+    } for row in rows]
+
+@app.post("/api/user-change-requests")
+def create_user_change_request(payload: UserChangeRequestPayload, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    if payload.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You are only authorized to submit a change request for your own account.")
+    user = db.query(models.User).filter(models.User.id == payload.user_id, models.User.archived == False).first()
+    if not user or payload.request_type not in {"department", "program"}:
+        raise HTTPException(status_code=400, detail="Invalid user change request.")
+
+    if payload.request_type == "department":
+        department = db.query(models.Department).filter(func.lower(models.Department.name) == payload.requested_value.strip().lower()).first()
+        if not department:
+            raise HTTPException(status_code=400, detail="Please select a valid department.")
+        requested_display = department.name
+        current_value = user.department
+        label = "Department Change Requested"
+    else:
+        requested_value = payload.requested_value.strip()
+        program = None
+        if requested_value.isdigit():
+            program = db.query(models.Program).filter(models.Program.id == int(requested_value)).first()
+        else:
+            program = db.query(models.Program).filter(func.lower(models.Program.name) == requested_value.lower()).first()
+        if not program:
+            raise HTTPException(status_code=400, detail="Please select a valid program.")
+        requested_display = program.name
+        current_value = db.query(models.Program).filter(models.Program.id == user.program_id).first().name if user.program_id else user.department
+        label = "Program Change Requested"
+
+    existing = db.query(models.UserChangeRequest).filter(
+        models.UserChangeRequest.user_id == user.id,
+        models.UserChangeRequest.request_type == payload.request_type,
+        models.UserChangeRequest.status == "pending",
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"You already have a pending {payload.request_type} request.")
+
+    row = models.UserChangeRequest(
+        user_id=user.id,
+        request_type=payload.request_type,
+        current_value=current_value,
+        requested_value=requested_display,
+    )
+    row.status = "pending"
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    log_activity(db, label, f"User {current_user.id} requested {payload.request_type} change to {requested_display}.", "user", user_id=user.id, actor_id=current_user.id, target_user_id=user.id)
+    return {"id": row.id, "status": row.status, "requested_value": row.requested_value}
+
+@app.patch("/api/admin/user-change-requests/{request_id}")
+def review_user_change_request(request_id: int, payload: UserChangeReviewPayload, db: Session = Depends(get_db), admin: models.User = Depends(require_admin)):
+    row = db.query(models.UserChangeRequest).filter(models.UserChangeRequest.id == request_id).first()
+    if not row or row.status != "pending":
+        raise HTTPException(status_code=404, detail="Pending change request not found.")
+
+    if row.request_type == "department":
+        department = db.query(models.Department).filter(func.lower(models.Department.name) == str(row.requested_value).strip().lower()).first()
+        if not department:
+            raise HTTPException(status_code=400, detail="The requested department no longer exists. The request cannot be approved.")
+    elif row.request_type == "program":
+        program = None
+        requested_value = str(row.requested_value).strip()
+        if requested_value.isdigit():
+            program = db.query(models.Program).filter(models.Program.id == int(requested_value)).first()
+        else:
+            program = db.query(models.Program).filter(func.lower(models.Program.name) == requested_value.lower()).first()
+        if not program:
+            raise HTTPException(status_code=400, detail="The requested program no longer exists. The request cannot be approved.")
+
+    row.status = "approved" if payload.action == "approve" else "declined"
+    row.reviewed_at = utc_now()
+    row.reviewed_by = admin.id
+    if row.status == "approved":
+        user = db.query(models.User).filter(models.User.id == row.user_id).first()
+        if user:
+            if row.request_type == "department":
+                user.department = row.requested_value
+                user.program_id = None
+            elif row.request_type == "program":
+                program = db.query(models.Program).filter(func.lower(models.Program.name) == str(row.requested_value).strip().lower()).first()
+                if program:
+                    user.program_id = program.id
+                    if program.department_id:
+                        department = db.query(models.Department).filter(models.Department.id == program.department_id).first()
+                        if department:
+                            user.department = department.name
+    db.commit()
+    log_activity(db, "User Change Request Reviewed", f"Admin {admin.id} {payload.action}d change request {request_id} for user {row.user_id}.", "security", actor_id=admin.id, target_user_id=row.user_id)
+    return {"id": row.id, "status": row.status}
+
 
 @app.get("/api/admin/users/{user_id}/activity")
 def get_admin_user_activity(user_id: int, db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
@@ -1290,7 +1441,7 @@ def bulk_user_action(payload: BulkUserActionRequest, db: Session = Depends(get_d
     users = db.query(models.User).filter(models.User.id.in_(payload.user_ids)).all()
     if not users:
         raise HTTPException(status_code=404, detail="No matching users found")
-    now = datetime.utcnow()
+    now = utc_now()
     changed = []
     for user in users:
         if payload.action == "archive":
@@ -1300,7 +1451,15 @@ def bulk_user_action(payload: BulkUserActionRequest, db: Session = Depends(get_d
         else:
             db.query(models.UserSession).filter(models.UserSession.user_id == user.id, models.UserSession.revoked_at.is_(None)).update({"revoked_at": now})
         changed.append(user.id)
-        log_activity(db, f"Bulk User {payload.action.title()}", f"Admin {admin.id} applied {payload.action} to user {user.id}.", "security", user_id=admin.id)
+        log_activity(
+            db,
+            f"Bulk User {payload.action.title()}",
+            f"Admin {admin.id} applied {payload.action} to user {user.id}.",
+            "security",
+            actor_id=admin.id,
+            target_user_id=user.id,
+            user_id=admin.id,
+        )
     db.commit()
     return {"updated": changed, "action": payload.action}
 
@@ -1387,20 +1546,40 @@ def update_user_password(payload: UpdatePasswordRequest, db: Session = Depends(g
 
     return {"message": "Password updated successfully."}
 
+@app.put("/api/users/update-department")
+def update_user_department(payload: UserDepartmentUpdateRequest, db: Session = Depends(get_db), admin: models.User = Depends(require_admin)):
+    normalized_email = normalize_email(payload.email)
+    user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    department = db.query(models.Department).filter(
+        func.lower(models.Department.name) == payload.department.lower()
+    ).first()
+    if not department:
+        raise HTTPException(status_code=400, detail="Please select a valid department.")
+
+    user.department = department.name
+    user.program_id = None
+    db.commit()
+    log_activity(db, "User Department Updated", f"Admin {admin.id} assigned {normalized_email} to {department.name}.", "user", actor_id=admin.id, target_user_id=user.id)
+    return {"message": "User department updated successfully.", "department": user.department}
+
 @app.post("/api/users/archive")
-def archive_user(payload: AccountActionRequest, db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
+def archive_user(payload: AccountActionRequest, db: Session = Depends(get_db), admin: models.User = Depends(require_admin)):
     normalized_email = normalize_email(payload.email)
     user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
 
     user.archived = True
+    user.updated_at = utc_now() if hasattr(user, "updated_at") else None
     db.commit()
-    log_activity(db, "User Archived", f"Archived user {normalized_email}.", "user")
+    log_activity(db, "User Archived", f"Admin {admin.id} archived user {normalized_email}.", "user", actor_id=admin.id, target_user_id=user.id)
     return {"message": "User archived successfully.", "status": "archived"}
 
 @app.post("/api/users/restore")
-def restore_user(payload: AccountActionRequest, db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
+def restore_user(payload: AccountActionRequest, db: Session = Depends(get_db), admin: models.User = Depends(require_admin)):
     normalized_email = normalize_email(payload.email)
     user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
     if not user:
@@ -1408,7 +1587,7 @@ def restore_user(payload: AccountActionRequest, db: Session = Depends(get_db), _
 
     user.archived = False
     db.commit()
-    log_activity(db, "User Restored", f"Restored user {normalized_email}.", "user")
+    log_activity(db, "User Restored", f"Admin {admin.id} restored user {normalized_email}.", "user", actor_id=admin.id, target_user_id=user.id)
     return {"message": "User restored successfully.", "status": "active"}
 
 @app.post("/api/users/verify-admin-password")
@@ -1441,15 +1620,16 @@ def verify_admin_password(payload: AdminVerifyRequest, db: Session = Depends(get
     }
 
 @app.delete("/api/users/{email}")
-def delete_user(email: str, db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
+def delete_user(email: str, db: Session = Depends(get_db), admin: models.User = Depends(require_admin)):
     normalized_email = normalize_email(email)
     user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
 
-    # Preserve audit history and user-created content while removing the account.
-    db.query(models.ActivityLog).filter(models.ActivityLog.user_id == user.id).update(
-        {models.ActivityLog.user_id: None}, synchronize_session=False
+    # Archive the account by default so the user can be restored and the audit trail remains intact.
+    user.archived = True
+    db.query(models.UserSession).filter(models.UserSession.user_id == user.id, models.UserSession.revoked_at.is_(None)).update(
+        {models.UserSession.revoked_at: utc_now()}, synchronize_session=False
     )
     db.query(models.Subject).filter(models.Subject.user_id == user.id).update(
         {models.Subject.user_id: None}, synchronize_session=False
@@ -1460,15 +1640,43 @@ def delete_user(email: str, db: Session = Depends(get_db), _admin: models.User =
     db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.user_id == user.id).update(
         {models.GeneratedQuestion.user_id: None}, synchronize_session=False
     )
-    db.query(models.UserSession).filter(models.UserSession.user_id == user.id).delete(
-        synchronize_session=False
+    db.commit()
+    log_activity(db, "User Archived", f"Admin {admin.id} archived and preserved user {normalized_email}.", "security", actor_id=admin.id, target_user_id=user.id)
+
+    return {"message": "User archived successfully.", "status": "archived"}
+
+
+@app.delete("/api/users/{email}/permanent")
+def permanent_delete_user(email: str, db: Session = Depends(get_db), admin: models.User = Depends(require_admin)):
+    normalized_email = normalize_email(email)
+    user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    db.query(models.ActivityLog).filter(models.ActivityLog.user_id == user.id).update(
+        {models.ActivityLog.user_id: None}, synchronize_session=False
     )
+    db.query(models.ActivityLog).filter(models.ActivityLog.actor_id == user.id).update(
+        {models.ActivityLog.actor_id: None}, synchronize_session=False
+    )
+    db.query(models.ActivityLog).filter(models.ActivityLog.target_user_id == user.id).update(
+        {models.ActivityLog.target_user_id: None}, synchronize_session=False
+    )
+    db.query(models.Subject).filter(models.Subject.user_id == user.id).update(
+        {models.Subject.user_id: None}, synchronize_session=False
+    )
+    db.query(models.UploadedFile).filter(models.UploadedFile.user_id == user.id).update(
+        {models.UploadedFile.user_id: None}, synchronize_session=False
+    )
+    db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.user_id == user.id).update(
+        {models.GeneratedQuestion.user_id: None}, synchronize_session=False
+    )
+    db.query(models.UserSession).filter(models.UserSession.user_id == user.id).delete(synchronize_session=False)
 
     db.delete(user)
     db.commit()
-    log_activity(db, "User Deleted", f"Deleted user {normalized_email}.", "user")
-
-    return {"message": "User deleted successfully."}
+    log_activity(db, "User Permanently Deleted", f"Admin {admin.id} permanently deleted user {normalized_email}.", "security", actor_id=admin.id, target_user_id=user.id)
+    return {"message": "User permanently deleted successfully.", "status": "deleted"}
 
 @app.post("/api/contact-admin/decline")
 def decline_account_request(payload: AccountActionRequest, db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
@@ -1511,7 +1719,7 @@ def request_contact_admin_otp(payload: ContactAdminOtpRequest, background_tasks:
     }
     contact_admin_otp_store[normalized_email] = {
         "otp": code,
-        "expires_at": datetime.utcnow() + timedelta(minutes=10),
+        "expires_at": utc_now() + timedelta(minutes=10),
     }
     logger.info("[OTP] Generated contact-admin verification code for %s", normalized_email)
 
@@ -1528,7 +1736,7 @@ def verify_contact_admin_otp(data: VerifyOtpRequest, background_tasks: Backgroun
     normalized_email = normalize_email(data.email)
     record = contact_admin_otp_store.get(normalized_email)
 
-    if record and record["expires_at"] < datetime.utcnow():
+    if record and record["expires_at"] < utc_now():
         contact_admin_otp_store.pop(normalized_email, None)
         contact_admin_pending_requests.pop(normalized_email, None)
         raise HTTPException(status_code=400, detail="OTP expired. Please request a new one.")

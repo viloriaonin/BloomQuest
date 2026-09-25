@@ -236,6 +236,7 @@ const LegacyAcademicMgmtContent = () => (
 );
 
 const ACADEMIC_API = "/api";
+void LegacyAcademicMgmtContent;
 
 const pluralize = (count, singular, plural = `${singular}s`) => `${count} ${count === 1 ? singular : plural}`;
 
@@ -534,8 +535,6 @@ export const AcademicMgmtContent = () => {
       setError(err.message);
     }
   };
-  const departmentFaculty = selectedDepartment ? [...new Map([...hierarchy.faculty.filter((member) => (member.department || "").toLowerCase() === selectedDepartment.name.toLowerCase()), ...selectedDepartment.programs.flatMap((program) => program.faculty || [])].map((member) => [member.id, member])).values()] : [];
-
   return (
     <div className="bq-academic-attached grid gap-6">
       {error && (

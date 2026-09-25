@@ -14,7 +14,6 @@ const BLOOMS_LEVELS = [
   { name: "Create", dotColor: "bg-purple-500" },
 ];
 
-const HIGH_ORDER_LEVELS = ["Analyze", "Evaluate", "Create"];
 const SUBJECT_THEMES = [
   { bg: "#F0645A", iconColor: "#FFFFFF", icon: Shield },
   { bg: "#6FA8E0", iconColor: "#FFFFFF", icon: Sigma },
@@ -325,13 +324,6 @@ const LegacyQuestionBankContent = () => {
 
   // ── Analytics (computed from currently loaded questions) ──
   const totalQuestions = questions.length;
-  const readyForReview = questions.filter(
-    (q) => !q.explanation || q.explanation.trim() === "",
-  ).length;
-  const highOrderItems = questions.filter((q) =>
-    HIGH_ORDER_LEVELS.includes(q.bloom_level),
-  ).length;
-
   return (
     <div className="w-full flex flex-col pb-20 page-transition">
       {/* Header */}
@@ -1011,6 +1003,8 @@ const QuestionBankBtn = ({ activeTab, setActiveTab }) => {
   );
 };
 
+void LegacyQuestionBankContent;
+
 const AdminQuestionBankPage = () => {
   const navigate = useNavigate();
   const [hierarchy, setHierarchy] = useState({ campuses: [] });
@@ -1099,6 +1093,13 @@ const AdminQuestionBankPage = () => {
       <p className="mt-3 text-xs text-slate-500">{detail}</p>
     </button>
   );
+  const ListItem = ({ icon: Icon, title, code, detail, onClick }) => (
+    <button type="button" onClick={onClick} className="group flex w-full items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-[#B4454A]/50 hover:shadow-md">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#B4454A]/10 text-[#B4454A]"><Icon size={20} /></span>
+      <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="font-semibold text-slate-900">{title}</span>{code && <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">{code}</span>}</span><span className="mt-1 block text-xs text-slate-500">{detail}</span></span>
+      <ChevronRight size={17} className="shrink-0 text-slate-300 transition group-hover:text-[#B4454A]" />
+    </button>
+  );
 
   return (
     <div className="bq-admin-question-bank space-y-5">
@@ -1118,11 +1119,11 @@ const AdminQuestionBankPage = () => {
 
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">Loading academic structure...</div> : !selectedCampus ? (
-        <section><div className="mb-3 flex items-end justify-between"><div><h3 className="text-lg font-semibold text-slate-900">Choose a campus</h3></div><span className="text-xs text-slate-500">{hierarchy.campuses.length} campus{hierarchy.campuses.length === 1 ? "" : "es"}</span></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{hierarchy.campuses.map((campus) => <Card key={campus.id} icon={Shield} title={campus.name} code={campus.code} detail={`${campus.departments.length} department${campus.departments.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: campus.id, departmentId: null, programId: null, subjectId: null })} />)}</div></section>
+        <section><div className="mb-3 flex items-end justify-between"><div><h3 className="text-lg font-semibold text-slate-900">Choose a campus</h3></div><span className="text-xs text-slate-500">{hierarchy.campuses.length} campus{hierarchy.campuses.length === 1 ? "" : "es"}</span></div><div className="space-y-3">{hierarchy.campuses.map((campus) => <ListItem key={campus.id} icon={Shield} title={campus.name} code={campus.code} detail={`${campus.departments.length} department${campus.departments.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: campus.id, departmentId: null, programId: null, subjectId: null })} />)}</div></section>
       ) : !selectedDepartment ? (
-        <section><div className="mb-3"><h3 className="text-lg font-semibold text-slate-900">Choose a department</h3></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{selectedCampus.departments.map((department) => <Card key={department.id} icon={FlaskConical} title={department.name} code={department.code} detail={`${department.programs.length} program${department.programs.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: selectedCampus.id, departmentId: department.id, programId: null, subjectId: null })} />)}</div></section>
+        <section><div className="mb-3"><h3 className="text-lg font-semibold text-slate-900">Choose a department</h3></div><div className="space-y-3">{selectedCampus.departments.map((department) => <ListItem key={department.id} icon={FlaskConical} title={department.name} code={department.code} detail={`${department.programs.length} program${department.programs.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: selectedCampus.id, departmentId: department.id, programId: null, subjectId: null })} />)}</div></section>
       ) : !selectedProgram ? (
-        <section><div className="mb-3"><h3 className="text-lg font-semibold text-slate-900">Choose a program</h3></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{selectedDepartment.programs.map((program) => <Card key={program.id} icon={BookOpen} title={program.name} code={program.code} detail={`${program.faculty?.length || 0} faculty member${program.faculty?.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: selectedCampus.id, departmentId: selectedDepartment.id, programId: program.id, subjectId: null })} />)}</div></section>
+        <section><div className="mb-3"><h3 className="text-lg font-semibold text-slate-900">Choose a program</h3></div><div className="space-y-3">{selectedDepartment.programs.map((program) => <ListItem key={program.id} icon={BookOpen} title={program.name} code={program.code} detail={`${program.faculty?.length || 0} faculty member${program.faculty?.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: selectedCampus.id, departmentId: selectedDepartment.id, programId: program.id, subjectId: null })} />)}</div></section>
       ) : !selectedSubject ? (
         <section><div className="mb-3"><h3 className="text-lg font-semibold text-slate-900">Choose a subject</h3></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{programSubjects.map((subject, index) => <Card key={subject.id} icon={[Shield, Sigma, FlaskConical][index % 3]} title={subject.name} code={subject.code} detail={`${subject.question_count || 0} question${subject.question_count === 1 ? "" : "s"} in this collection`} onClick={() => choose({ ...selection, subjectId: subject.id })} accent={["#F0645A", "#6FA8E0", "#5CB37B"][index % 3]} />)}</div>{!programSubjects.length && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">No subjects are assigned to this program yet.</div>}</section>
       ) : (

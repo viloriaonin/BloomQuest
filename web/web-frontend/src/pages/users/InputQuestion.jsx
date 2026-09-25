@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { UploadCloud, FileText, FileSpreadsheet, Presentation, X, CheckCircle2, AlertCircle, Sparkles, PencilLine, FolderUp, RotateCcw, RefreshCw, Tags } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { usePopup } from '../../components/PopupProvider';
 
 const API_URL = '/api';
@@ -306,7 +305,6 @@ const UploadSlot = ({ policyKey, file, onFileSelected, onRemove, stepBadge, lock
 };
 
 const InputQuestion = () => {
-  const navigate = useNavigate();
   const { showAlert } = usePopup();
   const [activeTab, setActiveTab] = useState('upload');
   const [error, setError] = useState('');
@@ -738,10 +736,6 @@ const InputQuestion = () => {
     setError('');
     setSuccessMessage('');
     sessionStorage.removeItem(INPUT_QUESTION_SESSION_KEY);
-  };
-
-  const handleCreateTest = () => {
-    navigate(selectedSubject ? `/question-bank/${selectedSubject}` : '/question-bank');
   };
 
   const handleFileRemove = (policyKey) => {

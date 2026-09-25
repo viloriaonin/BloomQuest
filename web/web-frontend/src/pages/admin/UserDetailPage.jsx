@@ -9,6 +9,7 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import { usePopup } from "../../components/PopupProvider";
 import LoadingSpinner from "../../components/LoadingSpinner";
+import { filterActivitiesByCategory, formatActivityLabel, getActivityCategories } from "./activityUtils";
 
 const API_BASE_URL = "http://localhost:8000/api";
 
@@ -31,6 +32,12 @@ const UserDetailPage = () => {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [passwordVerified, setPasswordVerified] = useState(false);
   const [passwordBusy, setPasswordBusy] = useState(false);
+  const [departmentManageOpen, setDepartmentManageOpen] = useState(false);
+  const [departments, setDepartments] = useState([]);
+  const [selectedDepartment, setSelectedDepartment] = useState("");
+  const [departmentBusy, setDepartmentBusy] = useState(false);
+  const [activityPanelOpen, setActivityPanelOpen] = useState(false);
+  const [activityTab, setActivityTab] = useState("all");
 
   const loadDetail = useCallback(async () => {
     setLoading(true);
@@ -51,6 +58,13 @@ const UserDetailPage = () => {
   useEffect(() => {
     loadDetail();
   }, [loadDetail]);
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/departments`)
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Could not load departments.")))
+      .then((data) => setDepartments(Array.isArray(data) ? data : []))
+      .catch(() => setDepartments([]));
+  }, []);
 
   const accountAction = async (endpoint, message) => {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -96,14 +110,37 @@ const UserDetailPage = () => {
     }
   };
 
+  const handleUpdateDepartment = async (event) => {
+    event.preventDefault();
+    if (!selectedDepartment) return;
+    setDepartmentBusy(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/users/update-department`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: detail.user.email, department: selectedDepartment }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Could not update the user's department.");
+      setDepartmentManageOpen(false);
+      await showAlert("User department updated successfully.", "User Management");
+      await loadDetail();
+    } catch (err) {
+      await showAlert(err.message, "User Management");
+    } finally {
+      setDepartmentBusy(false);
+    }
+  };
+
   const handleDelete = async () => {
-    const confirmed = await showConfirm("Permanently delete this user and their account record? This cannot be undone.", "Delete user");
+    const confirmed = await showConfirm("This is a permanent recycle-bin style delete. The account will be removed and cannot be restored. Confirm permanent deletion?", "Permanent delete");
     if (!confirmed) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/users/${encodeURIComponent(detail.user.email)}`, { method: "DELETE" });
-      if (!response.ok) throw new Error("Could not delete this user.");
-      await showAlert("User deleted permanently.", "User Management");
-      navigate("/admin");
+      const response = await fetch(`${API_BASE_URL}/users/${encodeURIComponent(detail.user.email)}/permanent`, { method: "DELETE" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Could not permanently delete this user.");
+      await showAlert("User permanently deleted.", "User Management");
+      navigate("/admin/users");
     } catch (err) {
       await showAlert(err.message, "User Management");
     }
@@ -175,12 +212,14 @@ const UserDetailPage = () => {
     questions: questions.filter((question) => question.subject_id === subject.id),
   }));
   const unassignedQuestions = questions.filter((question) => !subjects.some((subject) => subject.id === question.subject_id));
+  const activityCategories = getActivityCategories(activities);
+  const visibleActivities = filterActivitiesByCategory(activities, activityTab);
 
   return (
     <div className="space-y-5 page-transition">
       <button
         type="button"
-        onClick={() => navigate("/admin")}
+          onClick={() => navigate("/admin/users")}
         className="inline-flex items-center gap-2 text-sm font-semibold text-[#B4454A] hover:text-[#8f3439]"
       >
         <ArrowLeft size={16} /> Back to user management
@@ -250,10 +289,15 @@ const UserDetailPage = () => {
         </div>
         <div className="rounded-2xl border border-gray-200 bg-white p-5">
           <History className="text-[#B4454A]" size={20} />
-          <p className="mt-4 text-3xl font-bold text-gray-900">
-            {activities.length}
-          </p>
-          <p className="text-sm text-gray-500">Activity records</p>
+          <div className="mt-4 flex items-end justify-between gap-3">
+            <div>
+              <p className="text-3xl font-bold text-gray-900">{activities.length}</p>
+              <p className="text-sm text-gray-500">Activity records</p>
+            </div>
+            <button type="button" onClick={() => { setActivityTab("all"); setActivityPanelOpen(true); }} className="bq-secondary-button px-3 py-2 text-xs">
+              View all activity
+            </button>
+          </div>
         </div>
       </div>
 
@@ -279,6 +323,16 @@ const UserDetailPage = () => {
           </button>
           <button
             type="button"
+            onClick={() => {
+              setSelectedDepartment(departments.find((item) => item.name === user.department)?.name || "");
+              setDepartmentManageOpen((open) => !open);
+            }}
+            className="bq-secondary-button"
+          >
+            Change department
+          </button>
+          <button
+            type="button"
             onClick={handleDelete}
             className="rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800"
           >
@@ -297,6 +351,26 @@ const UserDetailPage = () => {
             Reset password
           </button>
         </div>
+        {departmentManageOpen && (
+          <form onSubmit={handleUpdateDepartment} className="mt-5 border-t border-gray-100 pt-5">
+            <h3 className="text-sm font-bold text-gray-900">Manage department</h3>
+            <p className="mt-1 text-xs text-gray-500">Changing the department clears the current program assignment so it can be reviewed again.</p>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <select
+                value={selectedDepartment}
+                onChange={(event) => setSelectedDepartment(event.target.value)}
+                className="bq-field flex-1 px-3 py-2 text-sm"
+                required
+              >
+                <option value="">Select a department</option>
+                {departments.map((department) => <option key={department.id} value={department.name}>{department.name}</option>)}
+              </select>
+              <button type="submit" disabled={departmentBusy || !selectedDepartment} className="bq-primary-button disabled:cursor-not-allowed disabled:opacity-50">
+                {departmentBusy ? "Saving..." : "Save department"}
+              </button>
+            </div>
+          </form>
+        )}
         {passwordResetOpen && (
           <form onSubmit={handlePasswordReset} className="mt-5 border-t border-gray-100 pt-5">
             <h3 className="text-sm font-bold text-gray-900">Secure password reset</h3>
@@ -341,6 +415,32 @@ const UserDetailPage = () => {
           </form>
         )}
       </section>
+
+      {activityPanelOpen && (
+        <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setActivityPanelOpen(false); }}>
+          <section className="bq-modal-panel flex max-h-[min(760px,90vh)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-gray-200 pb-4">
+              <div><p className="bq-eyebrow">Faculty activity</p><h2 className="mt-1 text-xl font-bold text-gray-900">All activity for {user.name}</h2><p className="mt-1 text-sm text-gray-500">Every recorded login, generation, upload, export, and account action.</p></div>
+              <button type="button" onClick={() => setActivityPanelOpen(false)} className="bq-secondary-button px-3 py-2 text-xs">Close</button>
+            </div>
+            <div className="mt-4 flex gap-1 overflow-x-auto border-b border-gray-200 pb-1" role="tablist" aria-label="Activity categories">
+              {["all", ...activityCategories].map((category) => (
+                <button key={category} type="button" role="tab" aria-selected={activityTab === category} onClick={() => setActivityTab(category)} className={`whitespace-nowrap rounded-t-lg px-3 py-2 text-xs font-semibold transition ${activityTab === category ? "border-b-2 border-[#B4454A] text-[#B4454A]" : "text-gray-500 hover:bg-gray-50 hover:text-gray-800"}`}>
+                  {category === "all" ? "All activity" : formatActivityLabel(category)} <span className="ml-1 opacity-60">({filterActivitiesByCategory(activities, category).length})</span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 flex-1 space-y-2 overflow-y-auto pr-1">
+              {visibleActivities.length ? visibleActivities.map((activity) => (
+                <article key={activity.id} className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-gray-900">{activity.action || "Activity"}</p><span className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">{formatActivityLabel(activity.type)}</span><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${activity.status === "error" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>{activity.status || "success"}</span></div><p className="mt-2 text-sm text-gray-600">{activity.detail || "No additional details"}</p>{activity.filename && <p className="mt-2 text-xs text-gray-400">File: {activity.filename}</p>}</div>
+                  <time className="shrink-0 text-xs text-gray-500 sm:text-right">{formatDate(activity.created_at)}</time>
+                </article>
+              )) : <p className="py-10 text-center text-sm text-gray-500">No activity in this category.</p>}
+            </div>
+          </section>
+        </div>
+      )}
 
       <section className="rounded-2xl border border-gray-200 bg-white p-5">
         <div className="mb-4 flex items-center justify-between gap-3">

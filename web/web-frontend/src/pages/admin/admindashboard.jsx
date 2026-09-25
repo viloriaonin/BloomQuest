@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import { AcademicMgmtContent } from "./AcademicMgmt";
@@ -10,7 +10,7 @@ import UserDetailPage from "./UserDetailPage";
 import AdminSettings from "./AdminSettings";
 import { QuestionBankContent } from "./QuestionBank";
 import { Bar, Doughnut } from "react-chartjs-2";
-import { Radio, ShieldCheck, ChevronRight, Bell } from "lucide-react";
+import { ShieldCheck, ChevronRight, Bell } from "lucide-react";
 import { ArcElement, BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from "chart.js";
 
 ChartJS.register(ArcElement, BarElement, CategoryScale, Legend, LinearScale, Tooltip);
@@ -57,7 +57,7 @@ const AdminDashboard = () => {
         ? "academic"
       : location.pathname.startsWith("/admin/questions")
         ? "question-bank"
-      : location.pathname.startsWith("/admin/users/")
+      : location.pathname.startsWith("/admin/users")
         ? "users"
         : "dashboard",
   );
@@ -80,7 +80,7 @@ const AdminDashboard = () => {
       setActiveTab("academic");
     } else if (location.pathname.startsWith("/admin/questions")) {
       setActiveTab("question-bank");
-    } else if (location.pathname.startsWith("/admin/users/")) {
+    } else if (location.pathname.startsWith("/admin/users")) {
       setActiveTab("users");
     }
   }, [location.pathname]);
@@ -201,7 +201,7 @@ const AdminDashboard = () => {
           className="bq-admin-header sticky top-0 z-10 flex min-h-[76px] items-center justify-between border-b px-6 py-4 backdrop-blur flex-shrink-0"
         >
           <div>
-            <div className="flex items-center gap-2"><p className="bq-admin-eyebrow">ADMIN WORKSPACE</p><span className="bq-admin-live"><Radio size={10} /> LIVE</span></div>
+            <div className="flex items-center gap-2"><p className="bq-admin-eyebrow">ADMIN WORKSPACE</p></div>
             <h1 className="bq-admin-title">{meta.label}</h1>
             <p className="bq-admin-muted mt-1">{meta.description}</p>
           </div>

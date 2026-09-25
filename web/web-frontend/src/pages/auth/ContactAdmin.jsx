@@ -45,7 +45,9 @@ const TypewriterText = ({ children }) => {
 const ContactAdmin = () => {
   const navigate = useNavigate();
 
-  const [fullName, setFullName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [middleInitial, setMiddleInitial] = useState("");
+  const [lastName, setLastName] = useState("");
   const [department, setDepartment] = useState("");
   const [programId, setProgramId] = useState("");
   const [departments, setDepartments] = useState([]);
@@ -60,6 +62,7 @@ const ContactAdmin = () => {
   const [loading, setLoading] = useState(false);
   const [legalModal, setLegalModal] = useState(null); // "privacy" | "terms" | null
   const [existingRequestStatus, setExistingRequestStatus] = useState(null); // 'pending' | 'approved' | 'declined' | 'existing'
+  const [pendingSubmission, setPendingSubmission] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -79,6 +82,9 @@ const ContactAdmin = () => {
 
   const selectedDepartment = departments.find((item) => item.name === department);
   const availablePrograms = selectedDepartment?.programs || [];
+  const fullName = [firstName.trim(), middleInitial.trim(), lastName.trim()]
+    .filter(Boolean)
+    .join(" ");
 
   const isValidEmail = (value) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -133,8 +139,8 @@ const ContactAdmin = () => {
     setSuccess(false);
 
     // Form Validations
-    if (!fullName.trim()) {
-      setError("Full name is required.");
+    if (!firstName.trim() || !lastName.trim()) {
+      setError("First name and last name are required.");
       return;
     }
     if (!department.trim()) {
@@ -204,9 +210,19 @@ const ContactAdmin = () => {
 
       setSuccess(true);
       setExistingRequestStatus("pending"); // Set locally to reflect submission state change
+      setPendingSubmission({
+        firstName,
+        middleInitial,
+        lastName,
+        department,
+        program: availablePrograms.find((program) => String(program.id) === String(programId))?.name || "N/A",
+        email: payloadEmail,
+      });
       
       // Clear personal fields on successful submission
-      setFullName("");
+      setFirstName("");
+      setMiddleInitial("");
+      setLastName("");
       setDepartment("");
       setOtp("");
       setOtpSent(false);
@@ -350,7 +366,7 @@ const ContactAdmin = () => {
           }
 
         @media (max-height: 760px) {
-          .bq-contact-page .bq-contact-center { padding-top: 5.5rem; padding-bottom: 0; }
+          .bq-contact-page .bq-contact-center { padding-top: 7.5rem; padding-bottom: 1rem; overflow-y: auto; }
           .bq-contact-brand-mark { width: min(100%, 18rem); }
           .bq-contact-card { padding: 0.8rem 1.25rem; }
           .bq-contact-card-header { margin-bottom: 0.65rem; }
@@ -361,7 +377,7 @@ const ContactAdmin = () => {
         }
 
         @media (max-height: 600px) {
-          .bq-contact-center { overflow-y: auto; align-items: flex-start; }
+          .bq-contact-page .bq-contact-center { padding-top: 7rem; overflow-y: auto; align-items: flex-start; }
           .bq-contact-brand-mark { width: min(100%, 15rem); }
           .bq-contact-card { padding: 0.75rem 1.25rem; }
           .bq-contact-card-header { margin-bottom: 0.75rem; }
@@ -452,17 +468,42 @@ const ContactAdmin = () => {
           )}
 
           <form onSubmit={handleSubmit} className="bq-contact-form space-y-4 sm:space-y-5">
-            <div>
-              <label className="bq-label block mb-2">
-                Full Name
-              </label>
-              <input
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Enter your full name"
-                className="bq-field"
-              />
+            {!otpSent && <>
+            <div className="grid gap-4 sm:grid-cols-[1.35fr_0.65fr_1.35fr] sm:gap-5">
+              <div>
+                <label className="bq-label block mb-2">First Name</label>
+                <input
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  placeholder="First name"
+                  className="bq-field"
+                  autoComplete="given-name"
+                />
+              </div>
+              <div>
+                <label className="bq-label block mb-2">M.I.</label>
+                <input
+                  type="text"
+                  value={middleInitial}
+                  onChange={(e) => setMiddleInitial(e.target.value.replace(/[^a-z]/gi, "").slice(0, 1).toUpperCase())}
+                  placeholder="M.I."
+                  className="bq-field"
+                  maxLength={1}
+                  autoComplete="additional-name"
+                />
+              </div>
+              <div>
+                <label className="bq-label block mb-2">Last Name</label>
+                <input
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  placeholder="Last name"
+                  className="bq-field"
+                  autoComplete="family-name"
+                />
+              </div>
             </div>
 
             <div>
@@ -511,9 +552,34 @@ const ContactAdmin = () => {
                 className="bq-field"
               />
             </div>
+            </>}
 
             {otpSent && (
               <div>
+
+              {pendingSubmission && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#14140F]/45 px-4 backdrop-blur-sm">
+                  <div className="w-full max-w-lg rounded-2xl border border-[#D9E1EC] bg-white p-6 shadow-2xl sm:p-8" role="dialog" aria-modal="true" aria-labelledby="request-pending-title">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">!</span>
+                      <div>
+                        <p className="bq-label">Request submitted</p>
+                        <h2 id="request-pending-title" className="mt-1 text-2xl font-semibold text-[#14140F]">Your request is pending</h2>
+                        <p className="mt-2 text-sm leading-6 text-[#6F6C64]">Your information has been sent to the administrator for review.</p>
+                      </div>
+                    </div>
+                    <div className="mt-6 divide-y divide-[#E7E5E0] border-y border-[#E7E5E0]">
+                      {[["First name", pendingSubmission.firstName], ["Middle initial", pendingSubmission.middleInitial || "N/A"], ["Last name", pendingSubmission.lastName], ["Department / Section", pendingSubmission.department], ["Program", pendingSubmission.program], ["Email address", pendingSubmission.email]].map(([label, value]) => (
+                        <div key={label} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                          <span className="bq-label">{label}</span>
+                          <span className="text-sm font-medium text-[#14140F] sm:text-right">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <button type="button" onClick={() => setPendingSubmission(null)} className="mt-6 w-full bg-[#14140F] py-3 text-sm font-semibold text-white transition hover:bg-[#B4454A]">Done</button>
+                  </div>
+                </div>
+              )}
                 <label className="bq-label block mb-2">Verification Code</label>
                 <input
                   type="text"
