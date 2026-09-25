@@ -1110,10 +1110,10 @@ const AdminQuestionBankPage = () => {
           {selectedProgram && <><ChevronRight size={13} /><button type="button" onClick={() => backTo("subject")} className="hover:text-[#B4454A]">{selectedProgram.name}</button></>}
           {selectedSubject && <><ChevronRight size={13} /><span className="font-semibold text-slate-700">{selectedSubject.name}</span></>}
         </nav>
-        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+        <div className="flex flex-col justify-between gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-end">
           <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#B4454A]">Faculty collections</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{selectedSubject ? selectedSubject.name : selectedProgram ? selectedProgram.name : selectedDepartment ? selectedDepartment.name : selectedCampus ? selectedCampus.name : "Question Bank"}</h2><p className="mt-1 text-sm text-slate-500">Browse questions through the academic structure.</p></div>
-          <button type="button" onClick={goBack} className="inline-flex items-center gap-1.5 self-start rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:border-[#B4454A] hover:text-[#B4454A] sm:self-auto"><ArrowLeft size={14} /> Back</button>
         </div>
+        <button type="button" onClick={goBack} className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-[#B4454A] px-4 py-2 text-sm font-semibold text-[#B4454A] transition hover:bg-[#B4454A] hover:text-white"><ArrowLeft size={15} /> Back</button>
       </section>
 
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
