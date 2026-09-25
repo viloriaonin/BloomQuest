@@ -7,7 +7,6 @@ const API_URL = 'http://localhost:8000';
 const PRIMARY = '#8F1424';
 const PRIMARY_SOFT = '#FBEEEF';
 
-const EXAM_TYPE_OPTIONS = ['Midterm Exam', 'Final Exam', 'Quiz', 'Long Exam'];
 const QUESTION_TYPE_OPTIONS = [
   { label: 'All question types', value: '' },
   { label: 'Multiple Choice', value: 'MCQ' },
@@ -401,8 +400,10 @@ const QuestionBank = () => {
   const [addingSubject, setAddingSubject] = useState(false);
   const [showSidebarInfo, setShowSidebarInfo] = useState(true);
   const [tosModalOpen, setTosModalOpen] = useState(false);
-  const [examType, setExamType] = useState('Final Exam');
+  const [testModalOpen, setTestModalOpen] = useState(false);
+  const [testExportFormat, setTestExportFormat] = useState('pdf');
   const [semester, setSemester] = useState('First Semester');
+  const [academicYear, setAcademicYear] = useState('');
   const [selectedTopics, setSelectedTopics] = useState([]);
   const [subcolumnAValues, setSubcolumnAValues] = useState({});
   const [generatingTos, setGeneratingTos] = useState(false);
@@ -632,7 +633,7 @@ const QuestionBank = () => {
   const selectedSubjectName = subjects.find(s => s.id === parseInt(selectedSubject))?.name || '';
   const selectedSubjectCode = subjects.find(s => s.id === parseInt(selectedSubject))?.code || selectedSubjectName || 'assessment';
   const fileSubjectCode = selectedSubjectCode.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
-  const fileExamType = examType.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
+  const fileExamType = 'Final-Exam';
   const questionScope = selectedSubject || showAllQuestions;
   const highOrderCount = questions.filter((question) => ['Analyze', 'Evaluate', 'Create'].includes(question.bloom_level)).length;
   const highOrderCoverage = questions.length ? Math.round((highOrderCount / questions.length) * 100) : 0;
@@ -674,7 +675,12 @@ const QuestionBank = () => {
       return;
     }
 
-    const format = mode === 'docx' ? 'docx' : 'pdf';
+    setTestExportFormat(mode === 'docx' ? 'docx' : 'pdf');
+    setTestModalOpen(true);
+  };
+
+  const handleTestExport = async () => {
+    const format = testExportFormat;
     setExporting(true);
     setError('');
 
@@ -683,7 +689,8 @@ const QuestionBank = () => {
       formData.append('subject_id', selectedSubject);
       formData.append('question_ids', selectedQuestions.join(','));
       formData.append('export_format', format);
-      formData.append('exam_type', examType);
+      formData.append('semester', semester);
+      formData.append('academic_year', academicYear.trim());
       formData.append('answer_mode', 'with_key');
       formData.append('include_answer_key', 'true');
       const userId = localStorage.getItem('user_id');
@@ -704,6 +711,7 @@ const QuestionBank = () => {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+      setTestModalOpen(false);
     } catch (err) {
       setError(err.message || 'Download failed.');
     } finally {
@@ -740,7 +748,6 @@ const QuestionBank = () => {
       const formData = new FormData();
       formData.append('subject_id', selectedSubject);
       formData.append('question_ids', selectedQuestions.join(','));
-      formData.append('exam_type', examType);
       formData.append('semester', semester);
       const userId = localStorage.getItem('user_id');
       if (userId) formData.append('user_id', userId);
@@ -1076,11 +1083,6 @@ const QuestionBank = () => {
                   <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Downloads</h3>
                 </div>
                 <div className="mt-3 space-y-2">
-                  <label className="block text-xs font-semibold text-slate-500">Exam type
-                    <select value={examType} onChange={(event) => setExamType(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-[#B4454A]">
-                      {EXAM_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                    </select>
-                  </label>
                   {[
                     { key: 'tos', label: 'Download TOS (.xlsx)' },
                     { key: 'docx', label: 'Download test (.docx)' },
@@ -1225,6 +1227,46 @@ const QuestionBank = () => {
         </div>
       )}
 
+      {testModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f172a]/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !exporting) setTestModalOpen(false); }}>
+          <div className="bq-panel w-full max-w-lg border-[#ead8d5] bg-[#fffdfc] p-7 shadow-[0_20px_50px_rgba(15,23,42,0.18)] rounded-2xl">
+            <div className="flex items-start gap-3 mb-6">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white" style={{ backgroundColor: PRIMARY }}>
+                <Download className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em]" style={{ color: PRIMARY }}>Generate Assessment</p>
+                <h2 className="mt-1 text-xl font-bold text-slate-900">Download Test ({testExportFormat.toUpperCase()})</h2>
+                <p className="mt-1 text-sm text-slate-500">Confirm the examination details before downloading the selected questions.</p>
+              </div>
+            </div>
+
+            {error && <div className="mb-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+
+            <div className="space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Semester</label>
+                <select value={semester} onChange={(e) => setSemester(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#B4454A] focus:ring-2 focus:ring-[#B4454A]/15">
+                  {SEMESTER_OPTIONS.map((sem) => <option key={sem} value={sem}>{sem}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Academic Year <span className="font-normal text-slate-400">(optional)</span></label>
+                <input value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} placeholder="e.g. 2025-2026" className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#B4454A] focus:ring-2 focus:ring-[#B4454A]/15" />
+              </div>
+              <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">{selectedQuestions.length} selected question{selectedQuestions.length === 1 ? '' : 's'} will be included with the answer key.</p>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2 border-t border-slate-100 pt-5">
+              <button type="button" onClick={() => setTestModalOpen(false)} disabled={exporting} className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50">Cancel</button>
+              <button type="button" onClick={handleTestExport} disabled={exporting} className="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-slate-300" style={{ backgroundColor: PRIMARY }}>
+                {exporting ? <GeneratingProgress label="Preparing…" /> : <><Download className="h-4 w-4" />Download Test</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {tosModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f172a]/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setTosModalOpen(false); }}>
           <div className="bq-panel w-full max-w-2xl border-[#ead8d5] bg-[#fffdfc] p-7 shadow-[0_20px_50px_rgba(15,23,42,0.18)] rounded-2xl">
@@ -1252,15 +1294,6 @@ const QuestionBank = () => {
                 <select value={semester} onChange={(e) => setSemester(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#B4454A] focus:ring-2 focus:ring-[#B4454A]/15">
                   {SEMESTER_OPTIONS.map((sem) => (
                     <option key={sem} value={sem}>{sem}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Exam Type</label>
-                <select value={examType} onChange={(e) => setExamType(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#B4454A] focus:ring-2 focus:ring-[#B4454A]/15">
-                  {EXAM_TYPE_OPTIONS.map((type) => (
-                    <option key={type} value={type}>{type}</option>
                   ))}
                 </select>
               </div>

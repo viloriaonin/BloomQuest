@@ -6,7 +6,8 @@ import PublicNav from "../../components/PublicNav";
 import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
 
 // Connects directly to your local backend server environment
-const API_URL = "http://localhost:8000/api/contact-admin";
+const SEND_OTP_URL = "http://localhost:8000/api/contact-admin/send-otp";
+const VERIFY_OTP_URL = "http://localhost:8000/api/contact-admin/verify-otp";
 const CHECK_STATUS_URL = "http://localhost:8000/api/contact-admin/check-status";
 
 const paper = '#F7F6F3';
@@ -48,6 +49,9 @@ const ContactAdmin = () => {
   const [department, setDepartment] = useState("");
   const [departments, setDepartments] = useState([]);
   const [email, setEmail] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [demoCode, setDemoCode] = useState("");
   
   // State management for requests status alerts
   const [error, setError] = useState("");
@@ -141,6 +145,10 @@ const ContactAdmin = () => {
       setError("Please enter a valid email address.");
       return;
     }
+    if (otpSent && otp.trim().length !== 6) {
+      setError("Please enter the full 6-digit verification code.");
+      return;
+    }
 
     // Block submission explicitly if ANY existing ticket/account is tracked in state
     if (existingRequestStatus) {
@@ -150,18 +158,15 @@ const ContactAdmin = () => {
 
     setLoading(true);
     try {
-      // sanitize before submitting
       const payloadEmail = sanitizeEmail(email);
       setEmail(payloadEmail);
 
-      const response = await fetch(API_URL, {
+      const response = await fetch(otpSent ? VERIFY_OTP_URL : SEND_OTP_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          full_name: fullName,
-          department: department,
-          email: payloadEmail,
-        }),
+        body: otpSent
+          ? JSON.stringify({ email: payloadEmail, otp: otp.trim() })
+          : JSON.stringify({ full_name: fullName, department, email: payloadEmail }),
       });
 
       const data = await response.json().catch(() => ({}));
@@ -177,12 +182,22 @@ const ContactAdmin = () => {
         return;
       }
 
+      if (!otpSent) {
+        setOtpSent(true);
+        setDemoCode(data.demo_code || "");
+        setError("");
+        return;
+      }
+
       setSuccess(true);
       setExistingRequestStatus("pending"); // Set locally to reflect submission state change
       
       // Clear personal fields on successful submission
       setFullName("");
       setDepartment("");
+      setOtp("");
+      setOtpSent(false);
+      setDemoCode("");
     } catch (err) {
       setError("Unable to connect to the server. Please verify your backend application is running.");
     } finally {
@@ -191,7 +206,7 @@ const ContactAdmin = () => {
   };
 
   return (
-    <div className="h-screen flex flex-col page-transition relative overflow-hidden" style={{ height: '100vh', backgroundColor: paper }}>
+    <div className="min-h-screen flex flex-col page-transition relative overflow-x-hidden" style={{ minHeight: '100vh', backgroundColor: paper }}>
       <PublicNav />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
@@ -336,7 +351,7 @@ const ContactAdmin = () => {
       <div className="absolute -bottom-28 -left-24 rounded-full opacity-15" style={{ width: 500, height: 500, background: `radial-gradient(circle, ${accent} 0%, transparent 70%)` }} />
 
       {/* Centered Contact Admin Card */}
-      <div className="bq-contact-center min-h-0 flex-1 flex items-center justify-center overflow-hidden px-4 py-4 sm:py-6">
+      <div className="bq-contact-center min-h-0 flex-1 flex items-center justify-center overflow-y-auto px-4 py-4 sm:py-6">
         <div className="bq-contact-layout">
           <div className="bq-contact-brand flex flex-col items-start gap-4 text-left">
             <img src={bloomquestLogo} alt="BloomQuest" className="bq-contact-brand-mark" />
@@ -403,6 +418,13 @@ const ContactAdmin = () => {
             </div>
           )}
 
+          {otpSent && (
+            <div className="mb-4 border border-[#D9E1EC] bg-[#F5F8FC] px-4 py-3 text-sm" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
+              <p>A six-digit verification code was sent to your email. Enter it below to submit your request.</p>
+              {demoCode && <p className="mt-2 font-semibold" style={{ color: accent }}>Demo verification code: {demoCode}</p>}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="bq-contact-form space-y-4 sm:space-y-5">
             <div>
               <label className="bq-label block mb-2">
@@ -443,12 +465,38 @@ const ContactAdmin = () => {
                   setEmail(e.target.value);
                   setExistingRequestStatus(null);
                   setError("");
+                  setOtpSent(false);
+                  setOtp("");
+                  setDemoCode("");
                 }}
                 onBlur={handleEmailBlur}
                 placeholder="name@example.com"
                 className="bq-field"
               />
             </div>
+
+            {otpSent && (
+              <div>
+                <label className="bq-label block mb-2">Verification Code</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="Enter 6-digit code"
+                  className="bq-field"
+                  autoComplete="one-time-code"
+                />
+                <button
+                  type="button"
+                  onClick={() => { setOtpSent(false); setOtp(""); setDemoCode(""); setError(""); }}
+                  className="mt-2 text-xs font-semibold hover:underline"
+                  style={{ color: accent }}
+                >
+                  Use a different email or request a new code
+                </button>
+              </div>
+            )}
 
             <button
               type="submit"
@@ -458,7 +506,7 @@ const ContactAdmin = () => {
               onMouseOver={(e) => !loading && !existingRequestStatus && (e.currentTarget.style.backgroundColor = accent)}
               onMouseOut={(e) => !loading && !existingRequestStatus && (e.currentTarget.style.backgroundColor = ink)}
             >
-              {loading ? <LoadingSpinner label="Submitting..." spinnerColor="border-white" /> : "Submit Account Request"}
+              {loading ? <LoadingSpinner label={otpSent ? "Verifying..." : "Sending code..."} spinnerColor="border-white" /> : otpSent ? "Verify & Submit Request" : "Send Verification Code"}
             </button>
           </form>
 

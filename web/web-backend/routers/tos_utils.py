@@ -193,7 +193,7 @@ def _write_course_label(ws, label_key, value):
                 return
 
 
-def _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_total_items):
+def _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_total_items, instructor_name=""):
     topic_col = cols.get("topic_name", 2)
     ilo_col = cols.get("ilo", 3)
     hours_col = cols.get("hours_a", 4)
@@ -700,13 +700,21 @@ def generate_tos_from_institutional_template(selected_topics_data, course_code, 
             cell.alignment = Alignment(horizontal="right")
 
     # Bottom Signature Deck Content
-    sign_row = total_row_index + 2
+    sign_row = next(
+        (
+            cell.row
+            for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=8)
+            for cell in row
+            if str(cell.value or "").strip().lower() == "prepared by:"
+        ),
+        total_row_index + 1,
+    )
     ws.cell(row=sign_row, column=2, value="Prepared by:")
     ws.cell(row=sign_row, column=9, value="Checked and Verified by:")
     ws.cell(row=sign_row, column=15, value="Approved by:")
     
     name_row = sign_row + 2
-    ws.cell(row=name_row, column=2, value="Faculty Instructor").font = font_main_label
+    ws.cell(row=name_row, column=2, value=instructor_name or "Faculty Instructor").font = font_main_label
     ws.cell(row=name_row, column=9, value="Mr. DIONECES O. ALIMOREN").font = font_main_label
     ws.cell(row=name_row, column=15, value="Dr. RYNDEL V. AMORADO").font = font_main_label
 
@@ -757,13 +765,15 @@ def _write_exam_type_label(ws, exam_type, semester, academic_year=""):
                 return
 
 
-def generate_tos_from_excel_template(selected_topics_data, course_code, course_title, whole_total_items, exam_type="Final Exam", semester="First Semester", academic_year=""):
+def generate_tos_from_excel_template(selected_topics_data, course_code, course_title, whole_total_items, exam_type="Final Exam", semester="First Semester", academic_year="", instructor_name="", department=""):
     wb = _load_tos_template_workbook()
     ws = wb.active
     ws.views.sheetView[0].showGridLines = True
 
     _write_course_label(ws, "course code", course_code or "IT 332")
     _write_course_label(ws, "course title", course_title or "Integrative Programming and Technologies")
+    if department:
+        ws.cell(row=20, column=2, value=f"DEPARTMENT: {department}").font = Font(name="Calibri", size=11, bold=True)
     _write_exam_type_label(ws, exam_type, semester, academic_year)
 
     header_row = _find_header_row(ws)
@@ -807,7 +817,18 @@ def generate_tos_from_excel_template(selected_topics_data, course_code, course_t
         elif delta < 0:
             _resize_topic_row_block(ws, start_row + num_topics, delta)
 
-    _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_total_items)
+    _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_total_items, instructor_name)
+
+    signature_row = next(
+        (
+            cell.row
+            for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=8)
+            for cell in row
+            if str(cell.value or "").strip().lower() == "prepared by:"
+        ),
+        start_row + len(selected_topics_data) + 1,
+    )
+    ws.cell(row=signature_row + 2, column=2, value=instructor_name or "Faculty Instructor")
 
     # The template's column widths are inconsistent -- some %-columns (e.g.
     # Understand, Apply) are a hair too narrow for a formatted value like

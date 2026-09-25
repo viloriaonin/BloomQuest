@@ -61,8 +61,9 @@ const MainLayout = ({ children }) => {
       <div className="bq-user-main min-w-0 flex-1 h-full overflow-hidden">
         <TopBar onToggleSidebar={toggleSidebar} />
         <div className="bq-user-content h-[calc(100vh-76px)] overflow-y-auto">
-          {React.isValidElement(children)
-            ? React.cloneElement(children, {
+          <PageContainer>
+            {React.isValidElement(children)
+              ? React.cloneElement(children, {
                 onToggleSidebar: toggleSidebar,
                 theme,
                 onThemeChange: (nextTheme) => {
@@ -70,8 +71,9 @@ const MainLayout = ({ children }) => {
                   setTheme(nextTheme);
                   window.dispatchEvent(new CustomEvent("theme-updated", { detail: { theme: nextTheme } }));
                 },
-              })
-            : children}
+                })
+              : children}
+          </PageContainer>
         </div>
       </div>
     </div>
@@ -110,11 +112,9 @@ const QuestionBankRoute = () => {
 
   return (
     <UserRoute>
-      <PageContainer>
-        <MainLayout>
-          <QuestionBank />
-        </MainLayout>
-      </PageContainer>
+      <MainLayout>
+        <QuestionBank />
+      </MainLayout>
     </UserRoute>
   );
 };
@@ -148,11 +148,9 @@ function App() {
           path="/dashboard" 
           element={
             <UserRoute>
-              <PageContainer>
-                <MainLayout>
-                  <Dashboard />
-                </MainLayout>
-              </PageContainer>
+              <MainLayout>
+                <Dashboard />
+              </MainLayout>
             </UserRoute>
           } 
         />
@@ -160,11 +158,9 @@ function App() {
           path="/input" 
           element={
             <UserRoute>
-              <PageContainer>
-                <MainLayout>
-                  <InputQuestion />
-                </MainLayout>
-              </PageContainer>
+              <MainLayout>
+                <InputQuestion />
+              </MainLayout>
             </UserRoute>
           } 
         />
@@ -180,11 +176,9 @@ function App() {
           path="/history"
           element={
             <UserRoute>
-              <PageContainer>
-                <MainLayout>
-                  <History />
-                </MainLayout>
-              </PageContainer>
+              <MainLayout>
+                <History />
+              </MainLayout>
             </UserRoute>
           } 
         />
@@ -192,11 +186,9 @@ function App() {
           path="/settings"
           element={
             <UserRoute>
-              <PageContainer>
-                <MainLayout>
-                  <UserWorkspacePage section="settings" />
-                </MainLayout>
-              </PageContainer>
+              <MainLayout>
+                <UserWorkspacePage section="settings" />
+              </MainLayout>
             </UserRoute>
           }
         />
@@ -215,11 +207,9 @@ function App() {
             path={path}
             element={
               <UserRoute>
-                <PageContainer>
-                  <MainLayout>
-                    <UserToolsPage section={section} />
-                  </MainLayout>
-                </PageContainer>
+                <MainLayout>
+                  <UserToolsPage section={section} />
+                </MainLayout>
               </UserRoute>
             }
           />

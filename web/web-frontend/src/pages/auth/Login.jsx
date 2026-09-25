@@ -4,6 +4,7 @@ import LoadingSpinner from "../../components/LoadingSpinner";
 import LegalModal from "../../components/LegalModal";
 import PublicNav from "../../components/PublicNav";
 import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
+import { Eye, EyeOff } from "lucide-react";
 
 const API_URL = "/api/login";
 
@@ -115,7 +116,7 @@ const Login = () => {
   };
 
   return (
-    <div className="h-screen flex flex-col page-transition relative overflow-hidden" style={{ height: '100vh', backgroundColor: paper }}>
+    <div className="min-h-screen flex flex-col page-transition relative overflow-x-hidden" style={{ minHeight: '100vh', backgroundColor: paper }}>
       <PublicNav />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
@@ -158,6 +159,10 @@ const Login = () => {
         .bq-field:focus {
           outline: none;
           border-bottom: 1.5px solid ${accent};
+        }
+        .bq-field-password::-ms-reveal,
+        .bq-field-password::-ms-clear {
+          display: none;
         }
         .bq-card {
           position: relative;
@@ -259,6 +264,7 @@ const Login = () => {
           .bq-login-field-label { margin-bottom: 0.25rem; }
           .bq-login-card .bq-field { padding-top: 0.55rem; padding-bottom: 0.55rem; }
           .bq-login-footer { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+          .bq-legal-notice { margin-top: 0.75rem; }
         }
 
         @media (max-height: 600px) {
@@ -275,7 +281,7 @@ const Login = () => {
       <div className="bq-login-backdrop pointer-events-none absolute inset-0 -z-10" />
 
       {/* Centered Login Card */}
-      <div className="bq-login-center min-h-0 flex-1 flex items-center justify-center overflow-hidden px-4 py-4 sm:py-6">
+      <div className="bq-login-center min-h-0 flex-1 flex items-center justify-center overflow-y-auto px-4 py-4 sm:py-6">
         <div className="bq-auth-layout">
           <div className="bq-auth-brand flex flex-col items-start gap-4 text-left">
             <img src={bloomquestLogo} alt="BloomQuest" className="bq-brand-mark" />
@@ -339,17 +345,18 @@ const Login = () => {
                   onChange={(e) => setPassword(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Enter your password"
-                  className="bq-field pr-20"
+                  className="bq-field bq-field-password pr-20"
                 />
                 {password && (
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 bq-label"
+                    className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center justify-center p-1 transition hover:opacity-70"
                     style={{ color: accent, letterSpacing: '0.08em' }}
                     aria-label={showPassword ? "Hide password" : "Show password"}
+                    title={showPassword ? "Hide password" : "Show password"}
                   >
-                    {showPassword ? "Hide" : "Show"}
+                    {showPassword ? <EyeOff size={18} strokeWidth={1.8} /> : <Eye size={18} strokeWidth={1.8} />}
                   </button>
                 )}
               </div>
@@ -399,6 +406,27 @@ const Login = () => {
               </button>
             </p>
 
+            <p className="bq-legal-notice text-center text-xs leading-5" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
+              By signing in, you acknowledge BloomQuest&apos;s{" "}
+              <button
+                type="button"
+                onClick={() => setLegalModal("privacy")}
+                className="font-semibold underline underline-offset-2 transition hover:opacity-70"
+                style={{ color: accent }}
+              >
+                Privacy Policy
+              </button>{" "}
+              and{" "}
+              <button
+                type="button"
+                onClick={() => setLegalModal("terms")}
+                className="font-semibold underline underline-offset-2 transition hover:opacity-70"
+                style={{ color: accent }}
+              >
+                Terms of Service
+              </button>.
+            </p>
+
           </div>
 
           </div>
@@ -412,24 +440,6 @@ const Login = () => {
         <p className="text-xs" style={{ color: textMuted }}>
           © 2026 BloomQuest. All rights reserved.
         </p>
-        <div className="flex gap-4 text-xs" style={{ color: textMuted }}>
-          <button
-            type="button"
-            onClick={() => setLegalModal("privacy")}
-            className="hover:opacity-70 transition"
-            style={{ color: textMuted }}
-          >
-            Privacy Policy
-          </button>
-          <button
-            type="button"
-            onClick={() => setLegalModal("terms")}
-            className="hover:opacity-70 transition"
-            style={{ color: textMuted }}
-          >
-            Terms of Service
-          </button>
-        </div>
       </footer>
 
       <LegalModal type={legalModal} onClose={() => setLegalModal(null)} />

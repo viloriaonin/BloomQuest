@@ -5,53 +5,82 @@ const accent = '#B4454A';
 const ink = '#17171A';
 const textMuted = '#6F6C64';
 
+const PolicySection = ({ title, children }) => (
+  <section className="legal-section">
+    <h3>{title}</h3>
+    <div>{children}</div>
+  </section>
+);
+
 const privacyContent = (
   <>
-    <p className="mb-4"><strong style={{ color: ink }}>1. Overview</strong><br />
-    BloomQuest is an educational platform that helps instructors classify questions according to Bloom&apos;s Taxonomy and build assessments. This policy explains what information we collect, how we use it, and how we protect it.</p>
+    <div className="legal-introduction">
+      <p>This Privacy Policy explains how BloomQuest collects, uses, stores, and protects information when you use the platform.</p>
+    </div>
 
-    <p className="mb-4"><strong style={{ color: ink }}>2. Information We Collect</strong><br />
-    Account information (name, email, hashed password), content you upload or generate (syllabi, questions, assessments, TOS data), and basic usage data for troubleshooting.</p>
+    <PolicySection title="1. Scope and Purpose">
+      <p>BloomQuest is an educational assessment platform that helps instructors organize course materials, classify questions according to Bloom&apos;s Taxonomy, and prepare assessments. This policy applies to information processed through the BloomQuest web and mobile applications.</p>
+    </PolicySection>
 
-    <p className="mb-4"><strong style={{ color: ink }}>3. How We Use Your Information</strong><br />
-    To authenticate your account, control role-based access, generate and classify assessment questions, and improve classification accuracy.</p>
+    <PolicySection title="2. Information We Collect">
+      <p>We may collect account information such as your name, email address, and securely hashed password; content you upload or generate, including syllabi, questions, assessments, and Table of Specifications data; and basic usage information needed for authentication, security, and troubleshooting.</p>
+    </PolicySection>
 
-    <p className="mb-4"><strong style={{ color: ink }}>4. Data Storage and Security</strong><br />
-    Data is stored in PostgreSQL. Passwords are never stored in plain text, and admin functions are restricted by role.</p>
+    <PolicySection title="3. How We Use Information">
+      <p>Information is used to authenticate accounts, provide role-based access, generate and classify assessment content, maintain platform security, respond to support requests, and improve the reliability of BloomQuest&apos;s classification features.</p>
+    </PolicySection>
 
-    <p className="mb-4"><strong style={{ color: ink }}>5. Third-Party Services</strong><br />
-    Question generation uses a third-party AI provider solely to produce classification results.</p>
+    <PolicySection title="4. Storage and Security">
+      <p>Information is stored in a PostgreSQL database. Passwords are not stored in plain text, and administrative capabilities are restricted through role-based permissions. We apply reasonable technical and organizational safeguards appropriate to the platform and its intended institutional use.</p>
+    </PolicySection>
 
-    <p className="mb-4"><strong style={{ color: ink }}>6. Your Rights</strong><br />
-    You may request access to, correction of, or deletion of your data by contacting your administrator.</p>
+    <PolicySection title="5. Third-Party Services">
+      <p>Some question-generation and classification features use a third-party AI provider. Relevant content may be processed by that provider to deliver the requested platform function. BloomQuest does not use uploaded content to train external models on your institution&apos;s behalf.</p>
+    </PolicySection>
 
-    <p><strong style={{ color: ink }}>7. Contact</strong><br />
-    Questions about this policy can be directed to your institution&apos;s BloomQuest administrator.</p>
+    <PolicySection title="6. Your Choices and Rights">
+      <p>You may request access to, correction of, or deletion of your account data by contacting your institution&apos;s BloomQuest administrator. Your administrator may also manage access to institutional content in accordance with applicable policies.</p>
+    </PolicySection>
+
+    <PolicySection title="7. Contact and Updates">
+      <p>Questions about this policy should be directed to your institution&apos;s BloomQuest administrator. We may update this policy from time to time and will reflect the effective date above when changes are made.</p>
+    </PolicySection>
   </>
 );
 
 const termsContent = (
   <>
-    <p className="mb-4"><strong style={{ color: ink }}>1. Acceptance of Terms</strong><br />
-    By using BloomQuest, you agree to be bound by these Terms of Service.</p>
+    <div className="legal-introduction">
+      <p>These Terms of Service establish the conditions for using BloomQuest and its assessment-generation tools.</p>
+    </div>
 
-    <p className="mb-4"><strong style={{ color: ink }}>2. Account Access</strong><br />
-    Accounts are provisioned by your administrator. You are responsible for keeping your credentials confidential and for all activity under your account.</p>
+    <PolicySection title="1. Acceptance of Terms">
+      <p>By accessing or using BloomQuest, you acknowledge that you have read and agree to these Terms of Service. If you do not agree with them, you must not use the platform.</p>
+    </PolicySection>
 
-    <p className="mb-4"><strong style={{ color: ink }}>3. Acceptable Use</strong><br />
-    You agree not to share credentials, upload content you don&apos;t have rights to, access unauthorized data or admin functions, or use the platform for unlawful or academically dishonest purposes.</p>
+    <PolicySection title="2. Account Access and Responsibilities">
+      <p>Accounts are provisioned and managed by your institution&apos;s administrator. You are responsible for keeping your credentials confidential, using your assigned account, and promptly reporting suspected unauthorized access.</p>
+    </PolicySection>
 
-    <p className="mb-4"><strong style={{ color: ink }}>4. Generated Content</strong><br />
-    Generated questions and assessments are a drafting aid. You are responsible for reviewing them for accuracy before instructional use.</p>
+    <PolicySection title="3. Acceptable Use">
+      <p>You may not share credentials, upload content you do not have the right to use, access data or administrative functions without authorization, interfere with platform security, or use BloomQuest for unlawful, harmful, or academically dishonest purposes.</p>
+    </PolicySection>
 
-    <p className="mb-4"><strong style={{ color: ink }}>5. Availability</strong><br />
-    BloomQuest is provided &quot;as available&quot; and may be updated or temporarily unavailable during maintenance.</p>
+    <PolicySection title="4. Generated Content and Review">
+      <p>Questions, classifications, and assessments produced through BloomQuest are drafting aids. You and your institution remain responsible for reviewing generated content for accuracy, suitability, accessibility, and alignment with instructional requirements before use.</p>
+    </PolicySection>
 
-    <p className="mb-4"><strong style={{ color: ink }}>6. Termination</strong><br />
-    Access may be suspended or terminated for violating these terms.</p>
+    <PolicySection title="5. Availability and Changes">
+      <p>BloomQuest is provided on an &quot;as available&quot; basis. Features may be changed, improved, or temporarily unavailable during maintenance, updates, or circumstances beyond our reasonable control.</p>
+    </PolicySection>
 
-    <p><strong style={{ color: ink }}>7. Changes to These Terms</strong><br />
-    These terms may be updated periodically. Continued use after changes take effect means you accept the revised terms.</p>
+    <PolicySection title="6. Suspension or Termination">
+      <p>Access may be suspended or terminated by your institution&apos;s administrator or by BloomQuest where necessary to protect the platform, its users, or institutional data, or where these terms are violated.</p>
+    </PolicySection>
+
+    <PolicySection title="7. Updates and Contact">
+      <p>These terms may be updated periodically. Continued use of BloomQuest after an updated version takes effect constitutes acceptance of the revised terms. Questions should be directed to your institution&apos;s BloomQuest administrator.</p>
+    </PolicySection>
   </>
 );
 
@@ -127,7 +156,7 @@ const LegalModal = ({ type, onClose }) => {
         </div>
 
         <div className="legal-content overflow-y-auto px-6 py-6 text-sm leading-7 sm:px-8 sm:py-7" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
-          <div className="mb-6 flex items-center justify-between gap-3 border-b pb-4" style={{ borderColor: 'rgba(20,20,15,0.08)' }}>
+          <div className="legal-document-meta mb-6 flex items-center justify-between gap-3 border-b pb-4" style={{ borderColor: 'rgba(20,20,15,0.08)' }}>
             <p className="text-xs font-medium" style={{ color: textMuted }}>Please review this document carefully.</p>
             <span className="shrink-0 rounded-full bg-[#FBEDEE] px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[#8F1C2B]">Official policy</span>
           </div>
@@ -140,11 +169,15 @@ const LegalModal = ({ type, onClose }) => {
       </div>
 
       <style>{`
-        .legal-content p { margin: 0 0 1.1rem; }
-        .legal-content p:last-child { margin-bottom: 0; }
+        .legal-content p { margin: 0; }
+        .legal-introduction { margin-bottom: 1.8rem; padding: 1rem 1.1rem; border-left: 3px solid ${accent}; background: #FAF9F7; color: ${ink}; font-size: 0.93rem; line-height: 1.7; }
+        .legal-section { margin-bottom: 1.65rem; }
+        .legal-section:last-child { margin-bottom: 0; }
+        .legal-section h3 { margin: 0 0 0.45rem; color: ${ink}; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; line-height: 1.4; text-transform: uppercase; }
+        .legal-section > div { line-height: 1.8; }
         .legal-brand-logo { max-width: 8rem; }
-        .legal-content strong { display: block; margin-bottom: 0.15rem; color: ${ink}; font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; }
-        .legal-content br { display: none; }
+        .legal-document-meta span { white-space: nowrap; }
+        @media (max-width: 520px) { .legal-document-meta { align-items: flex-start; flex-direction: column; } }
         .legal-content::-webkit-scrollbar { width: 8px; }
         .legal-content::-webkit-scrollbar-thumb { border: 2px solid #fff; border-radius: 999px; background: rgba(180,69,74,0.32); }
         @keyframes legalOverlayIn { from { opacity: 0; } to { opacity: 1; } }

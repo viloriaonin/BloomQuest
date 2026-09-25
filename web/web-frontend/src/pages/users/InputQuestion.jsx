@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { UploadCloud, FileText, FileSpreadsheet, Presentation, X, CheckCircle2, AlertCircle, Sparkles, PencilLine, FolderUp, RotateCcw } from 'lucide-react';
+import { UploadCloud, FileText, FileSpreadsheet, Presentation, X, CheckCircle2, AlertCircle, Sparkles, PencilLine, FolderUp, RotateCcw, RefreshCw, Tags } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { usePopup } from '../../components/PopupProvider';
 
@@ -158,6 +158,24 @@ const safeRenderValue = (value) => {
   if (Array.isArray(value)) return value.map(safeRenderValue).filter(Boolean).join(', ');
   if (typeof value === 'object') return Object.values(value).map(safeRenderValue).filter(Boolean).join(' / ');
   return String(value);
+};
+
+const getMcqAnswerLetter = (question) => {
+  const options = Array.isArray(question?.options) ? question.options : [];
+  const answer = safeRenderValue(question?.correct_answer).trim();
+  if (!answer || !options.length) return answer;
+
+  const letterMatch = answer.match(/^([A-Z])(?:[.)\s]|$)/i);
+  if (letterMatch) {
+    const letter = letterMatch[1].toUpperCase();
+    if (letter.charCodeAt(0) - 65 < options.length) return letter;
+  }
+
+  const answerKey = answer.toLowerCase().replace(/\s+/g, ' ');
+  const optionIndex = options.findIndex((option) => (
+    safeRenderValue(option).trim().toLowerCase().replace(/\s+/g, ' ') === answerKey
+  ));
+  return optionIndex >= 0 ? String.fromCharCode(65 + optionIndex) : answer;
 };
 
 // Indeterminate progress bar components
@@ -338,6 +356,7 @@ const InputQuestion = () => {
   const [excludedQuestionIds, setExcludedQuestionIds] = useState([]);
   const [previewBloomTab, setPreviewBloomTab] = useState('Remember'); // Syntax Error Fixed Here
   const [generationProgress, setGenerationProgress] = useState(0);
+  const [previewAction, setPreviewAction] = useState(null);
   const uploadAbortControllerRef = useRef(null);
 
   useEffect(() => {
@@ -1027,11 +1046,50 @@ const InputQuestion = () => {
     }
   };
 
+  const updatePreviewQuestion = (question, summary) => {
+    setGenerationResult((current) => current ? {
+      ...current,
+      questions_preview: (current.questions_preview || []).map((item) => (
+        item.preview_id === question.preview_id ? question : item
+      )),
+      ...(summary.tos ? { tos: summary.tos } : {}),
+      ...(summary.statistics ? { statistics: summary.statistics } : {}),
+    } : current);
+  };
+
+  const handlePreviewAction = async (question, action) => {
+    if (!uploadResult?.upload_id || generationResult?.saved) return;
+    setError('');
+    setSuccessMessage('');
+    setPreviewAction(`${action}:${question.preview_id}`);
+    try {
+      const response = await fetch(`${API_URL}/questions/preview/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ upload_id: uploadResult.upload_id, preview_id: question.preview_id }),
+      });
+      const data = await parseApiResponse(response);
+      if (!response.ok) throw new Error(getErrorMessage(data) || `Unable to ${action} this question.`);
+      updatePreviewQuestion(data.question, data);
+      setPreviewBloomTab(data.question.bloom_level);
+      setSuccessMessage(action === 'reclassify'
+        ? 'Question reclassified with AI. Review the updated Bloom level before saving.'
+        : 'A replacement question was generated. Review it before saving.');
+    } catch (err) {
+      setError(getErrorMessage(err) || `Unable to ${action} this question.`);
+    } finally {
+      setPreviewAction(null);
+    }
+  };
+
   const downloadFile = async (endpoint, filename) => {
     try {
       const userId = localStorage.getItem('user_id');
       const userParam = userId ? `&user_id=${encodeURIComponent(userId)}` : '';
-      const response = await fetch(`${API_URL}/questions/export/${endpoint}?upload_id=${encodeURIComponent(uploadResult.upload_id)}${userParam}`, {
+      const tosParams = endpoint === 'tos'
+        ? `&exam_type=${encodeURIComponent(examType)}&semester=${encodeURIComponent(semester)}&academic_year=${encodeURIComponent(academicYear.trim())}`
+        : '';
+      const response = await fetch(`${API_URL}/questions/export/${endpoint}?upload_id=${encodeURIComponent(uploadResult.upload_id)}${userParam}${tosParams}`, {
         method: 'GET',
       });
       if (!response.ok) throw new Error('Failed to retrieve file asset binary records.');
@@ -1219,7 +1277,7 @@ const InputQuestion = () => {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
                     </svg>
-                    Running ML Classifiers...
+                    Running AI Classifier...
                   </>
                 ) : 'Classify & Save Question'}
               </button>
@@ -1565,7 +1623,29 @@ const InputQuestion = () => {
                               </div>
                             </div>
                           )}
-                          <p className="text-xs text-green-700 font-bold mt-2 bg-green-50 border border-green-100 inline-block px-2 py-0.5 rounded">✓ Answer Key: {safeRenderValue(q.correct_answer)}</p>
+                          {!generationResult.saved && (
+                            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-200 pt-3">
+                              <button
+                                type="button"
+                                onClick={() => handlePreviewAction(q, 'reclassify')}
+                                disabled={previewAction !== null}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <Tags className="h-3.5 w-3.5" />
+                                {previewAction === `reclassify:${q.preview_id}` ? 'Reclassifying…' : 'Reclassify with AI'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handlePreviewAction(q, 'recreate')}
+                                disabled={previewAction !== null}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <RefreshCw className="h-3.5 w-3.5" />
+                                {previewAction === `recreate:${q.preview_id}` ? 'Recreating…' : 'Recreate question'}
+                              </button>
+                            </div>
+                          )}
+                          <p className="text-xs text-green-700 font-bold mt-2 bg-green-50 border border-green-100 inline-block px-2 py-0.5 rounded">✓ Answer Key: {q.type === 'MCQ' ? getMcqAnswerLetter(q) : safeRenderValue(q.correct_answer)}</p>
                         </div>
                     ))}
                   </div>

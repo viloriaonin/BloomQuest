@@ -21,6 +21,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 # Import AI utilities and our new layout parsing fallback
 from ai_service import (
     generate_questions_from_tos,
+    generate_questions_for_topic,
     build_preview,
     prepare_database_rows,
     statistics,
@@ -28,11 +29,17 @@ from ai_service import (
     _extract_ilo_label,
     GroqDailyQuotaExceeded,
 )
+from classifier import classify_question
 from file_extractor import extract_text
 from routers.tos_utils import (
     compute_tos,
     generate_tos_from_excel_template,
     check_totals_mismatch,
+)
+from routers.assessment import (
+    build_assessment_docx as build_shared_assessment_docx,
+    cleanup_file,
+    convert_docx_to_pdf,
 )
 
 router = APIRouter(prefix="/api/questions", tags=["Questions"])
@@ -495,112 +502,70 @@ def _format_correct_answer(correct_answer):
     return str(correct_answer)
 
 
-def _build_assessment_docx(questions, course_title, course_code) -> bytes:
-    doc = Document()
-    doc.add_heading(f"{course_code} - {course_title}", level=1)
-    doc.add_paragraph("Examination")
+def _build_assessment_docx(
+    questions,
+    course_title,
+    course_code,
+    exam_type="Final Examination",
+    semester="",
+    academic_year="",
+    class_info="",
+    directions=None,
+) -> bytes:
+    subject = type("SubjectLike", (), {"name": course_title, "code": course_code})()
+    normalized_questions = []
+    for question in questions:
+        left_items, right_items = _normalize_matching_items(question) if question.get("question_type") == "Matching Type" else ([], [])
+        normalized_questions.append(type("QuestionLike", (), {
+            "question": question.get("question", "") or "",
+            "question_type": question.get("question_type", "") or "",
+            "options": question.get("options") or {"left_items": left_items, "right_items": right_items},
+            "correct_answer": question.get("correct_answer", "") or "",
+            "left_items": left_items,
+            "right_items": right_items,
+        })())
 
-    for i, q in enumerate(questions, start=1):
-        p = doc.add_paragraph()
-        p.add_run(f"{i}. {q['question']}").bold = True
-        qtype = q.get("question_type")
-
-        if qtype == "MCQ" and q.get("options"):
-            for idx, opt in enumerate(q["options"]):
-                doc.add_paragraph(f"    {chr(65 + idx)}. {opt}")
-
-        elif qtype == "Matching Type":
-            left_items, right_items = _normalize_matching_items(q)
-            if left_items or right_items:
-                rows = max(len(left_items), len(right_items))
-                table = doc.add_table(rows=rows + 1, cols=2)
-                table.style = "Table Grid"
-                table.rows[0].cells[0].text = "Column A"
-                table.rows[0].cells[1].text = "Column B"
-                for r in range(rows):
-                    left_text = f"{r + 1}. {left_items[r]}" if r < len(left_items) else ""
-                    right_text = f"{chr(65 + r)}. {right_items[r]}" if r < len(right_items) else ""
-                    table.rows[r + 1].cells[0].text = left_text
-                    table.rows[r + 1].cells[1].text = right_text
-                doc.add_paragraph()
-            else:
-                doc.add_paragraph("    Answer: _______________________________________________")
-
-        elif qtype == "Enumeration" and isinstance(q.get("correct_answer"), list):
-            for idx in range(len(q["correct_answer"])):
-                doc.add_paragraph(f"    {idx + 1}. _______________________________")
-
-        elif qtype == "True or False":
-            doc.add_paragraph("    Answer: _____________")
-
-        elif qtype in ("Identification", "Essay", "Situational"):
-            doc.add_paragraph("    Answer: _______________________________________________")
-
-    doc.add_page_break()
-    doc.add_heading("Answer Key", level=1)
-    for i, q in enumerate(questions, start=1):
-        doc.add_paragraph(f"{i}. {_matching_answer_key(q)}")
-
-    buf = io.BytesIO()
-    doc.save(buf)
-    return buf.getvalue()
+    docx_path = build_shared_assessment_docx(
+        subject,
+        normalized_questions,
+        exam_type=exam_type,
+        semester=semester,
+        academic_year=academic_year,
+        class_info=class_info,
+        directions=directions,
+    )
+    try:
+        with open(docx_path, "rb") as document_file:
+            return document_file.read()
+    finally:
+        cleanup_file(docx_path)
 
 
-def _build_assessment_pdf(questions, course_title, course_code) -> bytes:
-    from reportlab.platypus import Table, TableStyle
-    from reportlab.lib import colors
-
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=LETTER)
-    styles = getSampleStyleSheet()
-    story = [Paragraph(f"{course_code} - {course_title}", styles["Title"]), Spacer(1, 12)]
-
-    for i, q in enumerate(questions, start=1):
-        story.append(Paragraph(f"{i}. {q['question']}", styles["Normal"]))
-        qtype = q.get("question_type")
-
-        if qtype == "MCQ" and q.get("options"):
-            for idx, opt in enumerate(q["options"]):
-                story.append(Paragraph(f"&nbsp;&nbsp;{chr(65 + idx)}. {opt}", styles["Normal"]))
-
-        elif qtype == "Matching Type":
-            left_items, right_items = _normalize_matching_items(q)
-            if left_items or right_items:
-                rows = max(len(left_items), len(right_items))
-                table_data = [["Column A", "Column B"]]
-                for r in range(rows):
-                    left_text = f"{r + 1}. {left_items[r]}" if r < len(left_items) else ""
-                    right_text = f"{chr(65 + r)}. {right_items[r]}" if r < len(right_items) else ""
-                    table_data.append([left_text, right_text])
-                tbl = Table(table_data, colWidths=[240, 240])
-                tbl.setStyle(TableStyle([
-                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ]))
-                story.append(tbl)
-            else:
-                story.append(Paragraph("&nbsp;&nbsp;Answer: _______________________________________________", styles["Normal"]))
-
-        elif qtype == "Enumeration" and isinstance(q.get("correct_answer"), list):
-            for idx in range(len(q["correct_answer"])):
-                story.append(Paragraph(f"&nbsp;&nbsp;{idx + 1}. _______________________________", styles["Normal"]))
-
-        elif qtype == "True or False":
-            story.append(Paragraph("&nbsp;&nbsp;Answer: _____________", styles["Normal"]))
-
-        elif qtype in ("Identification", "Essay", "Situational"):
-            story.append(Paragraph("&nbsp;&nbsp;Answer: _______________________________________________", styles["Normal"]))
-
-        story.append(Spacer(1, 8))
-
-    story.append(Spacer(1, 20))
-    story.append(Paragraph("Answer Key", styles["Heading1"]))
-    for i, q in enumerate(questions, start=1):
-        story.append(Paragraph(f"{i}. {_matching_answer_key(q)}", styles["Normal"]))
-
-    doc.build(story)
-    return buf.getvalue()
+def _build_assessment_pdf(questions, course_title, course_code, exam_type="Final Examination", semester="", academic_year="", class_info="", directions=None) -> bytes:
+    docx_path = build_shared_assessment_docx(
+        type("SubjectLike", (), {"name": course_title, "code": course_code})(),
+        [type("QuestionLike", (), {
+            "question": question.get("question", "") or "",
+            "question_type": question.get("question_type", "") or "",
+            "options": question.get("options") or {"left_items": _normalize_matching_items(question)[0], "right_items": _normalize_matching_items(question)[1]},
+            "correct_answer": question.get("correct_answer", "") or "",
+            "left_items": _normalize_matching_items(question)[0],
+            "right_items": _normalize_matching_items(question)[1],
+        })() for question in questions],
+        exam_type=exam_type,
+        semester=semester,
+        academic_year=academic_year,
+        class_info=class_info,
+        directions=directions,
+    )
+    pdf_path = docx_path.replace(".docx", ".pdf")
+    try:
+        convert_docx_to_pdf(docx_path, pdf_path)
+        with open(pdf_path, "rb") as pdf_file:
+            return pdf_file.read()
+    finally:
+        cleanup_file(docx_path)
+        cleanup_file(pdf_path)
 
 
 # --- STEP 1: UPLOAD ENDPOINT ---
@@ -685,6 +650,11 @@ class ConfirmGenerationPayload(BaseModel):
     included_preview_ids: list[int] | None = None
 
 
+class PreviewQuestionActionPayload(BaseModel):
+    upload_id: str = Field(..., min_length=1, max_length=128)
+    preview_id: int = Field(..., ge=0)
+
+
 def _normalize_question_text(value):
     return " ".join(str(value or "").casefold().split())
 
@@ -703,6 +673,50 @@ def _find_similar_question_id(question_text, existing_questions, existing_by_tex
         if SequenceMatcher(None, normalized, existing_text).ratio() >= 0.9:
             return existing.id
     return None
+
+
+def _pending_question(upload_id, preview_id):
+    pending = FILE_CACHE.get(f"{upload_id}_pending")
+    if not pending:
+        raise HTTPException(status_code=404, detail="No pending generation found for this session.")
+    question = next(
+        (item for item in pending["generated_questions"] if item.get("preview_id") == preview_id),
+        None,
+    )
+    if question is None:
+        raise HTTPException(status_code=404, detail="Preview question not found.")
+    return pending, question
+
+
+def _preview_question_response(question):
+    return {
+        "preview_id": question.get("preview_id"),
+        "duplicate_existing_id": question.get("duplicate_existing_id"),
+        "question": question["question"],
+        "correct_answer": question.get("correct_answer"),
+        "bloom_level": question["bloom_level"],
+        "type": question.get("question_type"),
+        "topic_name": question.get("topic_name", ""),
+        "options": question.get("options", []),
+        "left_items": question.get("left_items", []),
+        "right_items": question.get("right_items", []),
+        "explanation": question.get("explanation", ""),
+    }
+
+
+def _refresh_pending_summary(pending):
+    questions = pending["generated_questions"]
+    for topic in pending["selected_topics_data"]:
+        topic_questions = [
+            question for question in questions
+            if question.get("topic_name") == topic.get("topic_name")
+        ]
+        topic["items"] = len(topic_questions)
+        topic["bloom_counts"] = {
+            level: sum(1 for question in topic_questions if question.get("bloom_level") == level)
+            for level in ("Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create")
+        }
+    _attach_bloom_question_numbers(pending["selected_topics_data"], questions)
 
 
 def _attach_bloom_question_numbers(tos_data, generated_questions):
@@ -817,6 +831,69 @@ async def generate_preview(
     }
 
 
+@router.post("/preview/reclassify")
+async def reclassify_preview_question(payload: PreviewQuestionActionPayload):
+    """Reclassify one unsaved preview question with the AI classifier."""
+    pending, question = _pending_question(payload.upload_id, payload.preview_id)
+    question["bloom_level"] = classify_question(question["question"])
+    _refresh_pending_summary(pending)
+    return {
+        "question": _preview_question_response(question),
+        "tos": _build_tos_response_rows(pending["selected_topics_data"]),
+        "statistics": statistics(pending["generated_questions"]),
+        "message": "Question reclassified with AI. Review it before saving.",
+    }
+
+
+@router.post("/preview/recreate")
+async def recreate_preview_question(payload: PreviewQuestionActionPayload):
+    """Replace one unsaved preview question while preserving its preview id."""
+    pending, question = _pending_question(payload.upload_id, payload.preview_id)
+    metadata = FILE_CACHE.get(f"{payload.upload_id}_metadata")
+    if not metadata:
+        raise HTTPException(status_code=410, detail="Upload session expired. Generate a new preview first.")
+
+    topic_name = question.get("topic_name") or "General course content"
+    target_level = question.get("bloom_level", "Understand")
+    module_text = metadata.get("module_text", "")
+    subject = metadata["subject"]
+    topic_module_text = module_text
+    try:
+        from ai_service import extract_topic_section
+        topic_module_text = extract_topic_section(
+            module_text=module_text,
+            topic_name=topic_name,
+            all_topic_names=[topic.get("topic_name", "") for topic in pending["selected_topics_data"]],
+        )
+        replacement = generate_questions_for_topic(
+            subject=f"{subject['code']} - {subject['name']}",
+            topic=topic_name,
+            ilo=next(
+                (topic.get("ilo_description") or topic.get("ilo", "")
+                 for topic in pending["selected_topics_data"]
+                 if topic.get("topic_name") == topic_name),
+                "",
+            ),
+            module_text=topic_module_text,
+            question_distribution={target_level: 1},
+        )[0]
+    except Exception as exc:
+        logger.exception("Preview question recreation failed")
+        raise HTTPException(status_code=502, detail=f"Question recreation failed: {exc}") from exc
+
+    replacement["preview_id"] = payload.preview_id
+    replacement["topic_name"] = topic_name
+    question_index = pending["generated_questions"].index(question)
+    pending["generated_questions"][question_index] = replacement
+    _refresh_pending_summary(pending)
+    return {
+        "question": _preview_question_response(replacement),
+        "tos": _build_tos_response_rows(pending["selected_topics_data"]),
+        "statistics": statistics(pending["generated_questions"]),
+        "message": "Question recreated with AI. Review it before saving.",
+    }
+
+
 @router.post("/confirm-generation")
 async def confirm_generation(
     payload: ConfirmGenerationPayload,
@@ -847,7 +924,7 @@ async def confirm_generation(
     ).first()
     if not upload:
         raise HTTPException(status_code=404, detail="Upload session record not found. Please upload the instructional materials again.")
-    user_id = user_id or upload.user_id
+    user_id = upload.user_id or user_id
 
     if payload.included_preview_ids is None:
         included_preview_ids = {question.get("preview_id") for question in generated_questions}
@@ -890,11 +967,17 @@ async def confirm_generation(
     if user_id and subject_row.user_id is None:
         subject_row.user_id = user_id
     upload.subject_id = subject_row.id
+    creator = db.query(models.User).filter(models.User.id == user_id).first() if user_id else None
 
     tos_record = models.TableOfSpecification(
         upload_id=int(payload.upload_id),
         tos_data=selected_topics_data,
         total_items=whole_total_items,
+        exam_type=exam_type,
+        semester=semester,
+        academic_year=academic_year,
+        instructor_name=(creator.name or creator.email) if creator else "",
+        department=creator.department if creator else "",
     )
     db.add(tos_record)
     db.flush()
@@ -958,6 +1041,7 @@ async def confirm_generation(
     FILE_CACHE[f"{payload.upload_id}_questions"] = generated_questions
     record_activity(db, "Generated Question Set", f"Generated {len(generated_questions)} questions for {subject_row.name}.", "generate", user_id=user_id)
 
+    creator = db.query(models.User).filter(models.User.id == user_id).first() if user_id else None
     workbook = generate_tos_from_excel_template(
         selected_topics_data=selected_topics_data,
         course_code=subject_row.code,
@@ -966,6 +1050,8 @@ async def confirm_generation(
         exam_type=exam_type,
         semester=semester,
         academic_year=academic_year,
+        instructor_name=(creator.name or creator.email) if creator else "",
+        department=creator.department if creator else "",
     )
     stream = io.BytesIO()
     workbook.save(stream)
@@ -1010,7 +1096,14 @@ def _build_tos_response_rows(tos_data):
 # --- STEP 3: EXPORT ROUTES ---
 
 @router.get("/export/tos")
-async def export_institutional_tos(upload_id: str, user_id: int | None = None, db: Session = Depends(get_db)):
+async def export_institutional_tos(
+    upload_id: str,
+    user_id: int | None = None,
+    exam_type: str | None = None,
+    semester: str | None = None,
+    academic_year: str | None = None,
+    db: Session = Depends(get_db),
+):
     """
     Retrieves the generated openpyxl Excel spreadsheet payload matching
     the active session token directly from the shared memory cache.
@@ -1018,16 +1111,44 @@ async def export_institutional_tos(upload_id: str, user_id: int | None = None, d
     meta = FILE_CACHE.get(f"{upload_id}_metadata")
     tos_binary = FILE_CACHE.get(f"{upload_id}_tos")
 
-    if not tos_binary and upload_id.isdigit():
+    # Rebuild from persisted assessment data so downloads cannot return an
+    # older cached workbook with a stale Prepared by name.
+    if upload_id.isdigit():
         upload = db.query(models.UploadedFile).filter(models.UploadedFile.id == int(upload_id)).first()
-        tos_record = db.query(models.TableOfSpecification).filter(models.TableOfSpecification.upload_id == int(upload_id)).order_by(models.TableOfSpecification.id.desc()).first()
+        tos_record = db.query(models.TableOfSpecification).filter(
+            models.TableOfSpecification.upload_id == int(upload_id)
+        ).order_by(models.TableOfSpecification.id.desc()).first()
         subject = upload.subject if upload else None
-        if tos_record and subject:
+        if upload and tos_record and subject:
+            creator = db.query(models.User).filter(models.User.id == upload.user_id).first() if upload.user_id else None
             workbook = generate_tos_from_excel_template(
                 selected_topics_data=tos_record.tos_data or [],
                 course_code=subject.code,
                 course_title=subject.name,
                 whole_total_items=tos_record.total_items or 0,
+                exam_type=exam_type or tos_record.exam_type or (meta or {}).get("exam_type") or "Final Exam",
+                semester=semester or tos_record.semester or (meta or {}).get("semester") or "First Semester",
+                academic_year=academic_year or tos_record.academic_year or (meta or {}).get("academic_year") or "",
+                instructor_name=tos_record.instructor_name or ((creator.name or creator.email) if creator else ""),
+                department=tos_record.department or (creator.department if creator else ""),
+            )
+            stream = io.BytesIO()
+            workbook.save(stream)
+            tos_binary = stream.getvalue()
+            meta = meta or {"subject": {"code": subject.code, "name": subject.name}}
+
+    if not tos_binary and upload_id.isdigit():
+        upload = db.query(models.UploadedFile).filter(models.UploadedFile.id == int(upload_id)).first()
+        tos_record = db.query(models.TableOfSpecification).filter(models.TableOfSpecification.upload_id == int(upload_id)).order_by(models.TableOfSpecification.id.desc()).first()
+        subject = upload.subject if upload else None
+        if tos_record and subject:
+            creator = db.query(models.User).filter(models.User.id == upload.user_id).first() if upload and upload.user_id else None
+            workbook = generate_tos_from_excel_template(
+                selected_topics_data=tos_record.tos_data or [],
+                course_code=subject.code,
+                course_title=subject.name,
+                whole_total_items=tos_record.total_items or 0,
+                instructor_name=(creator.name or creator.email) if creator else "",
             )
             stream = io.BytesIO()
             workbook.save(stream)
@@ -1085,7 +1206,14 @@ async def export_assessment_docx(upload_id: str, user_id: int | None = None, db:
     if not questions or not meta:
         raise HTTPException(status_code=404, detail="Generated assessment not found or session expired.")
 
-    data = _build_assessment_docx(questions, meta["subject"]["name"], meta["subject"]["code"])
+    data = _build_assessment_docx(
+        questions,
+        meta["subject"]["name"],
+        meta["subject"]["code"],
+        exam_type=meta.get("exam_type") or "Final Examination",
+        semester=meta.get("semester") or "",
+        academic_year=meta.get("academic_year") or "",
+    )
     subject = meta["subject"]
     subject_code = re.sub(r"[^A-Za-z0-9]+", "-", subject.get("code") or subject.get("name") or "assessment").strip("-")
     exam_type = re.sub(r"[^A-Za-z0-9]+", "-", meta.get("exam_type") or "Final Exam").strip("-")
@@ -1124,7 +1252,14 @@ async def export_assessment_pdf(upload_id: str, user_id: int | None = None, db: 
     if not questions or not meta:
         raise HTTPException(status_code=404, detail="Generated assessment not found or session expired.")
 
-    data = _build_assessment_pdf(questions, meta["subject"]["name"], meta["subject"]["code"])
+    data = _build_assessment_pdf(
+        questions,
+        meta["subject"]["name"],
+        meta["subject"]["code"],
+        exam_type=meta.get("exam_type") or "Final Examination",
+        semester=meta.get("semester") or "",
+        academic_year=meta.get("academic_year") or "",
+    )
     subject = meta["subject"]
     subject_code = re.sub(r"[^A-Za-z0-9]+", "-", subject.get("code") or subject.get("name") or "assessment").strip("-")
     exam_type = re.sub(r"[^A-Za-z0-9]+", "-", meta.get("exam_type") or "Final Exam").strip("-")

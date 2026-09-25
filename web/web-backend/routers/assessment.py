@@ -4,13 +4,17 @@ from fastapi.responses import FileResponse
 from fastapi.background import BackgroundTasks
 from sqlalchemy.orm import Session
 from docx import Document
-from docx.shared import Pt
+from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-import os, uuid, tempfile, json, re, random
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+import io, os, uuid, tempfile, json, re, random
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 import pythoncom
 from docx2pdf import convert
 from database import get_db
 import models
+from routers.tos_utils import TEMPLATE_PATH
 
 router = APIRouter(prefix="/api/assessment", tags=["Assessment"])
 
@@ -442,7 +446,7 @@ def _format_answer_key_value(question):
             # If the stored answer is already a letter
             # -------------------------------------------------
             if re.fullmatch(r"[A-Za-z]", right_text):
-                letters.append(right_text.upper())
+                letters.append(f"{left_text} -> {right_text.upper()}")
                 continue
 
             # -------------------------------------------------
@@ -460,10 +464,10 @@ def _format_answer_key_value(question):
                     break
 
             if match_index >= 0:
-                letters.append(chr(65 + match_index))
+                letters.append(f"{left_text} -> {chr(65 + match_index)}")
 
         if letters:
-            return ", ".join(letters)
+            return "; ".join(letters)
 
         return "N/A"
 
@@ -488,6 +492,10 @@ def _format_answer_key_value(question):
         )
 
     if isinstance(answer, str):
+        if isinstance(options, list):
+            option_letter = _match_option_letter(options, answer)
+            if option_letter:
+                return option_letter
         return _clean_letter_value(answer)
 
     return "N/A"
@@ -508,38 +516,304 @@ def group_questions_by_type(questions: list):
 
 
 def convert_docx_to_pdf(docx_path: str, pdf_path: str):
+    import win32com.client
+
     pythoncom.CoInitialize()
+    word = None
+    document = None
     try:
-        convert(docx_path, pdf_path)
+        word = win32com.client.DispatchEx("Word.Application")
+        word.Visible = False
+        word.DisplayAlerts = 0
+        document = word.Documents.Open(
+            os.path.abspath(docx_path),
+            ReadOnly=True,
+            AddToRecentFiles=False,
+            ConfirmConversions=False,
+        )
+        document.SaveAs2(os.path.abspath(pdf_path), FileFormat=17)
     finally:
+        if document is not None:
+            document.Close(False)
+        if word is not None:
+            word.Quit(False)
         pythoncom.CoUninitialize()
 
 
-def build_assessment_docx(subject: models.Subject, questions: list, include_answer_key: bool = True, answer_mode: str = "with_key") -> str:
+def _tos_header_data():
+    """Read the institutional identity and logo from the existing TOS template."""
+    import openpyxl
+
+    workbook = openpyxl.load_workbook(TEMPLATE_PATH)
+    sheet = workbook.active
+    values = {
+        "republic": sheet["B7"].value or "",
+        "university": sheet["B8"].value or "",
+        "tagline": sheet["B9"].value or "",
+        "campus": sheet["B10"].value or "",
+        "address": sheet["B11"].value or "",
+        "telephone": sheet["B12"].value or "",
+        "contact": sheet["B13"].value or "",
+        "college": sheet["B14"].value or "",
+        "logo": None,
+    }
+    if getattr(sheet, "_images", None):
+        values["logo"] = sheet._images[0]._data()
+    return values
+
+
+def _add_centered_line(doc, text, size=10, bold=False):
+    paragraph = doc.add_paragraph()
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    paragraph.paragraph_format.space_after = Pt(0)
+    run = paragraph.add_run(str(text).strip())
+    run.bold = bold
+    run.font.size = Pt(size)
+    run.font.name = "Times New Roman"
+    run.font.color.rgb = RGBColor(0, 0, 0)
+
+
+def _add_left_line(doc, text, size=10, bold=False):
+    paragraph = doc.add_paragraph()
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    paragraph.paragraph_format.space_after = Pt(0)
+    run = paragraph.add_run(str(text).strip())
+    run.bold = bold
+    run.font.size = Pt(size)
+    run.font.name = "Times New Roman"
+    run.font.color.rgb = RGBColor(0, 0, 0)
+    return paragraph
+
+
+def _set_paragraph_border(paragraph, color="000000", size="10", space="4", edges=("top", "left", "bottom", "right")):
+    properties = paragraph._p.get_or_add_pPr()
+    borders = properties.find(qn("w:pBdr"))
+    if borders is None:
+        borders = OxmlElement("w:pBdr")
+        properties.append(borders)
+    for edge in edges:
+        border = OxmlElement(f"w:{edge}")
+        border.set(qn("w:val"), "single")
+        border.set(qn("w:sz"), size)
+        border.set(qn("w:space"), space)
+        border.set(qn("w:color"), color)
+        borders.append(border)
+
+
+def _add_values_box(doc):
+    paragraph = doc.add_paragraph()
+    paragraph.paragraph_format.space_before = Pt(5)
+    paragraph.paragraph_format.space_after = Pt(8)
+    paragraph.paragraph_format.left_indent = Inches(0.05)
+    paragraph.paragraph_format.right_indent = Inches(0.05)
+    _set_paragraph_border(paragraph)
+
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    lines = [
+        ("VISION", "A premier national university that develops leaders in the global knowledge economy."),
+        ("MISSION", "A University is committed to producing leaders by providing a 21st century learning environment through innovation in education, multidisciplinary research, and community and industry partnership in order to nurture the spirit of nationhood, propel the national economy and engage the world for sustainable development."),
+        ("CORE VALUES", "Patriotism     Integrity     Service     Resilience     Excellence     Faith"),
+    ]
+    for index, (label, value) in enumerate(lines):
+        if index:
+            paragraph.add_run().add_break()
+        label_run = paragraph.add_run(label)
+        label_run.bold = True
+        label_run.font.name = "Times New Roman"
+        label_run.font.size = Pt(9)
+        label_run.font.color.rgb = RGBColor(0, 0, 0)
+        paragraph.add_run().add_break()
+        value_run = paragraph.add_run(value)
+        value_run.font.name = "Times New Roman"
+        value_run.font.size = Pt(8)
+        value_run.font.color.rgb = RGBColor(0, 0, 0)
+
+
+def _add_exam_header(doc, subject, exam_type="Final Examination", semester="", academic_year="", class_info=""):
+    header = _tos_header_data()
+    identity_lines = [
+        (header["republic"], 12, "Times New Roman", True, "000000"),
+        (header["university"], 20, "Times New Roman", True, "000000"),
+        (header["tagline"], 12, "Arial", True, "FF0000"),
+        (header["campus"], 12, "Times New Roman", True, "000000"),
+        (header["address"], 10, "Times New Roman", True, "363435"),
+        (header["telephone"], 10, "Times New Roman", False, "363435"),
+        (header["contact"], 10, "Times New Roman", False, "000000"),
+    ]
+    section = doc.sections[0]
+    section.different_first_page_header_footer = True
+    header_section = section.first_page_header
+    header_table = header_section.add_table(rows=1, cols=2, width=Inches(7.2))
+    header_table.autofit = False
+    header_table.columns[0].width = Inches(1.35)
+    header_table.columns[1].width = Inches(5.85)
+    logo_cell, identity_cell = header_table.rows[0].cells
+    for cell in (logo_cell, identity_cell):
+        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+        cell.width = Inches(1.35 if cell is logo_cell else 5.85)
+        cell_properties = cell._tc.get_or_add_tcPr()
+        borders = OxmlElement("w:tcBorders")
+        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            border = OxmlElement(f"w:{edge}")
+            border.set(qn("w:val"), "nil")
+            borders.append(border)
+        cell_properties.append(borders)
+
+    if header["logo"]:
+        logo_paragraph = logo_cell.paragraphs[0]
+        logo_paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        logo_paragraph.paragraph_format.space_after = Pt(0)
+        logo_paragraph.add_run().add_picture(io.BytesIO(header["logo"]), width=Inches(1.05))
+
+    for index, (text, size, font_name, bold, color) in enumerate(identity_lines):
+        paragraph = identity_cell.paragraphs[0] if index == 0 else identity_cell.add_paragraph()
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        paragraph.paragraph_format.space_after = Pt(0)
+        paragraph.paragraph_format.line_spacing = 1.0
+        run = paragraph.add_run(str(text).strip())
+        run.font.name = font_name
+        run.font.size = Pt(size)
+        run.bold = bold
+        run.font.color.rgb = RGBColor.from_string(color)
+
+    separator = doc.add_paragraph()
+    separator.paragraph_format.space_before = Pt(2)
+    separator.paragraph_format.space_after = Pt(4)
+    separator_run = separator.add_run(" " * 105)
+    separator_run.bold = True
+    _set_paragraph_border(separator, size="16", space="0", edges=("bottom",))
+
+    _add_left_line(doc, header["college"].strip(), 12, True)
+    _add_centered_line(doc, exam_type or "Examination", 12, True)
+
+    subject_code = getattr(subject, "code", "") or ""
+    subject_name = getattr(subject, "name", "") or ""
+    subject_label = " - ".join(value for value in (subject_code, subject_name) if value)
+    if subject_label:
+        _add_centered_line(doc, subject_label, 11, True)
+
+    period = ", ".join(value for value in (semester, class_info) if value)
+    if academic_year:
+        period = f"{period}, Academic Year {academic_year}" if period else f"Academic Year {academic_year}"
+    if period:
+        _add_centered_line(doc, period, 9)
+
+    fields = [
+        "Name: ____________________________________\tScore: _______________",
+        "Course/Section: ___________________________\tDate: _______________",
+    ]
+    for field_line in fields:
+        paragraph = doc.add_paragraph(field_line)
+        paragraph.paragraph_format.space_after = Pt(2)
+        for run in paragraph.runs:
+            run.font.size = Pt(9)
+            run.font.name = "Times New Roman"
+            run.font.color.rgb = RGBColor(0, 0, 0)
+    _add_values_box(doc)
+
+
+def _add_general_directions(doc, directions=None):
+    doc.add_heading("GENERAL DIRECTIONS", level=2)
+    items = directions or [
+        "Read, understand, analyze, and follow the instructions for each section.",
+        "Cheating or any form of academic dishonesty is not allowed.",
+        "Do not use pencils, friction pens, or erasable pens in answering.",
+        "No extra sheets of paper are allowed. Use the back page of your test paper if needed.",
+    ]
+    for direction in items:
+        doc.add_paragraph(str(direction), style="List Number")
+
+
+def _section_directions(question_type):
+    directions = {
+        "MCQ": "READ and ANALYZE each question carefully. Shade the letter corresponding to your answer on the Answer Sheet provided.",
+        "True or False": "Read each statement carefully. Write TRUE if the statement is correct and FALSE if it is not.",
+        "Identification": "Identify the word, term, or phrase being described. Write your answer clearly on the space provided.",
+        "Matching Type": "Match each item in Column A with the most appropriate answer in Column B. Write the letter of your answer.",
+        "Enumeration": "Enumerate the items requested in each question. Write your answers in the spaces provided.",
+        "Essay": "Answer each question clearly and completely. Support your response with relevant details where appropriate.",
+        "Situation": "Read each situation carefully and provide the best answer based on the information given.",
+        "Situational": "Read each situation carefully and provide the best answer based on the information given.",
+    }
+    return directions.get(question_type, "Answer each item carefully and write your answer in the space provided.")
+
+
+def _add_section_directions(doc, question_type):
+    paragraph = doc.add_paragraph()
+    paragraph.paragraph_format.space_after = Pt(4)
+    label = paragraph.add_run("Directions: ")
+    label.bold = True
+    label.font.size = Pt(9)
+    text = paragraph.add_run(_section_directions(question_type))
+    text.font.size = Pt(9)
+
+
+def _set_compact_paragraph(paragraph):
+    paragraph.paragraph_format.line_spacing = 1.0
+    paragraph.paragraph_format.space_before = Pt(0)
+    paragraph.paragraph_format.space_after = Pt(0)
+
+
+def _apply_document_font(doc):
+    for paragraph in doc.paragraphs:
+        for run in paragraph.runs:
+            run.font.name = "Times New Roman"
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.font.name = "Times New Roman"
+
+
+def build_assessment_docx(
+    subject: models.Subject,
+    questions: list,
+    include_answer_key: bool = True,
+    answer_mode: str = "with_key",
+    exam_type: str = "Final Examination",
+    semester: str = "",
+    academic_year: str = "",
+    class_info: str = "",
+    directions: list | None = None,
+) -> str:
     doc = Document()
+    for style_name in ("Normal", "Title", "Heading 1", "Heading 2", "Heading 3"):
+        style = doc.styles[style_name]
+        style.font.name = "Times New Roman"
+        style.font.color.rgb = RGBColor(0, 0, 0)
+    doc.styles["Normal"].font.size = Pt(10)
+    doc.styles["Heading 1"].font.size = Pt(13)
+    doc.styles["Heading 2"].font.size = Pt(10)
+    doc.styles["Heading 2"].font.bold = True
+    section = doc.sections[0]
+    section.top_margin = Inches(0.55)
+    section.bottom_margin = Inches(0.55)
+    section.left_margin = Inches(0.7)
+    section.right_margin = Inches(0.7)
     grouped_questions = group_questions_by_type(questions)
 
     if answer_mode != "key_only":
-        title = doc.add_heading(f"{subject.name} — Assessment", level=1)
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-        sub = doc.add_paragraph(f"Total Items: {len(questions)}")
-        sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        doc.add_paragraph("Name: ____________________    Score: _______")
-        doc.add_paragraph()
+        _add_exam_header(doc, subject, exam_type, semester, academic_year, class_info)
+        _add_general_directions(doc, directions)
 
         letters = ['A', 'B', 'C', 'D', 'E', 'F']
+        item_number = 1
         for section_index, group in enumerate(grouped_questions, start=1):
             question_type = _normalize_question_type(group["type"])
-            doc.add_heading(f"{_roman_numeral(section_index)}. {_question_type_label(question_type)}", level=2)
+            points = getattr(group["questions"][0], "points", None) if group["questions"] else None
+            points_label = f" ({points:g} point{'s' if points != 1 else ''} each)" if isinstance(points, (int, float)) and points > 0 else ""
+            doc.add_heading(f"{_roman_numeral(section_index)}. {_question_type_label(question_type)}{points_label}", level=2)
+            _add_section_directions(doc, question_type)
 
-            for i, q in enumerate(group["questions"], start=1):
+            for q in group["questions"]:
                 p = doc.add_paragraph()
-                p.add_run(f"{i}. {q.question}").bold = True
+                p.add_run(f"{item_number}. {q.question}").bold = True
 
                 if q.question_type == "MCQ" and isinstance(q.options, list) and q.options:
                     for j, opt in enumerate(q.options):
-                        doc.add_paragraph(f"   {letters[j]}. {opt}")
+                        option_paragraph = doc.add_paragraph(f"   {letters[j]}. {opt}")
+                        _set_compact_paragraph(option_paragraph)
                 elif q.question_type == "Matching Type":
                     left_items, right_items = _get_matching_items(q)
                     if left_items or right_items:
@@ -550,11 +824,16 @@ def build_assessment_docx(subject: models.Subject, questions: list, include_answ
                         for row_index in range(max(len(left_items), len(right_items))):
                             table.rows[row_index + 1].cells[0].text = f"{row_index + 1}. {left_items[row_index]}" if row_index < len(left_items) else ""
                             table.rows[row_index + 1].cells[1].text = f"{chr(65 + row_index)}. {right_items[row_index]}" if row_index < len(right_items) else ""
+                        for row in table.rows:
+                            for cell in row.cells:
+                                for paragraph in cell.paragraphs:
+                                    _set_compact_paragraph(paragraph)
                     else:
                         doc.add_paragraph("   Answer: ____________________________________")
                 else:
                     doc.add_paragraph("   Answer: ____________________________________")
                 doc.add_paragraph()
+                item_number += 1
 
     if answer_mode in {"with_key", "key_only"}:
         if answer_mode == "with_key":
@@ -565,10 +844,13 @@ def build_assessment_docx(subject: models.Subject, questions: list, include_answ
             question_type = _normalize_question_type(group["type"])
             doc.add_heading(f"{_roman_numeral(section_index)}. {_question_type_label(question_type)}", level=2)
 
-            for i, q in enumerate(group["questions"], start=1):
+            item_number = 1
+            for q in questions:
                 answer = _format_answer_key_value(q)
-                doc.add_paragraph(f"{i}. {answer}")
+                doc.add_paragraph(f"{item_number}. {answer}")
+                item_number += 1
 
+    _apply_document_font(doc)
     file_path = os.path.join(TEMP_DIR, f"assessment_{uuid.uuid4().hex}.docx")
     doc.save(file_path)
     return file_path

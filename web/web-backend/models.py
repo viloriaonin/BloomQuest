@@ -61,7 +61,7 @@ class Subject(Base):
 class UploadedFile(Base):
     __tablename__ = "uploaded_files"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     subject_id = Column(Integer, ForeignKey("subjects.id"), nullable=True)
     module_filename = Column(String)
     syllabus_filename = Column(String)
@@ -77,6 +77,11 @@ class TableOfSpecification(Base):
     tos_data = Column(JSON)
     total_items = Column(Integer)
     created_at = Column(DateTime, server_default=func.now())
+    exam_type = Column(String(64), nullable=True)
+    semester = Column(String(32), nullable=True)
+    academic_year = Column(String(32), nullable=True)
+    instructor_name = Column(String(255), nullable=True)
+    department = Column(String(255), nullable=True)
 
 class GeneratedQuestion(Base):
     __tablename__ = "generated_questions"

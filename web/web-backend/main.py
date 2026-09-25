@@ -14,7 +14,7 @@ from database import engine, get_db, SessionLocal
 from file_extractor import extract_text
 from ai_service import generate_questions_from_tos, build_preview, prepare_database_rows, statistics, parse_syllabus_text_with_ai
 from routers.tos_utils import compute_tos, generate_tos_from_excel_template
-from classifier import classify_question, classify_question_ml, classify_question_dual
+from classifier import classify_question
 import models
 from datetime import datetime, timedelta
 import logging
@@ -28,7 +28,7 @@ import time
 from collections import defaultdict
 from routers import assessment 
 from routers import questions
-from routers.assessment import build_assessment_docx, cleanup_file
+from routers.assessment import build_assessment_docx, cleanup_file, convert_docx_to_pdf
 from routers import activity
 import smtplib
 import string
@@ -65,9 +65,19 @@ with engine.begin() as connection:
     connection.execute(text("ALTER TABLE departments ADD COLUMN IF NOT EXISTS dean_name VARCHAR(255)"))
     connection.execute(text("ALTER TABLE departments ADD COLUMN IF NOT EXISTS chair_name VARCHAR(255)"))
     connection.execute(text("ALTER TABLE programs ADD COLUMN IF NOT EXISTS chair_name VARCHAR(255)"))
+    if connection.dialect.name == "postgresql":
+        connection.execute(text("ALTER TABLE uploaded_files ALTER COLUMN user_id DROP NOT NULL"))
     binary_definition = "BYTEA" if connection.dialect.name == "postgresql" else "BLOB"
     for column, definition in (("filename", "VARCHAR(255)"), ("media_type", "VARCHAR(255)"), ("file_content", binary_definition), ("archived", "BOOLEAN NOT NULL DEFAULT FALSE")):
         connection.execute(text(f"ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS {column} {definition}"))
+    for column, definition in (
+        ("exam_type", "VARCHAR(64)"),
+        ("semester", "VARCHAR(32)"),
+        ("academic_year", "VARCHAR(32)"),
+        ("instructor_name", "VARCHAR(255)"),
+        ("department", "VARCHAR(255)"),
+    ):
+        connection.execute(text(f"ALTER TABLE table_of_specification ADD COLUMN IF NOT EXISTS {column} {definition}"))
 
 
 def log_activity(db: Session, action: str, details: str, type: str, status: str = "success", user_id: int = None):
@@ -99,9 +109,31 @@ def detect_topics(syllabus_text: str, module_text: str):
     return {"course_title": course_title, "course_code": course_code, "topics": topics}
 
 
-def build_assessment_document(questions, subject_name, export_format, include_answer_key=True, answer_mode="with_key"):
-    SubjectLike = type("SubjectLike", (), {"name": subject_name})
-    docx_path = build_assessment_docx(SubjectLike(), questions, include_answer_key=include_answer_key, answer_mode=answer_mode)
+def build_assessment_document(
+    questions,
+    subject_name,
+    export_format,
+    include_answer_key=True,
+    answer_mode="with_key",
+    subject_code="",
+    exam_type="Final Examination",
+    semester="",
+    academic_year="",
+    class_info="",
+    directions=None,
+):
+    SubjectLike = type("SubjectLike", (), {"name": subject_name, "code": subject_code})
+    docx_path = build_assessment_docx(
+        SubjectLike(),
+        questions,
+        include_answer_key=include_answer_key,
+        answer_mode=answer_mode,
+        exam_type=exam_type,
+        semester=semester,
+        academic_year=academic_year,
+        class_info=class_info,
+        directions=directions,
+    )
     try:
         if export_format == "docx":
             with open(docx_path, "rb") as f:
@@ -110,13 +142,8 @@ def build_assessment_document(questions, subject_name, export_format, include_an
             return content, filename
 
         if export_format == "pdf":
-            try:
-                from docx2pdf import convert
-            except ImportError as exc:
-                raise Exception("PDF export requires the docx2pdf package.") from exc
-
             pdf_path = docx_path.replace(".docx", ".pdf")
-            convert(docx_path, pdf_path)
+            convert_docx_to_pdf(docx_path, pdf_path)
             with open(pdf_path, "rb") as f:
                 content = f.read()
             filename = f"{subject_name.replace(' ', '_')}_Assessment.pdf"
@@ -201,6 +228,7 @@ with engine.begin() as conn:
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR"))
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS program_id INTEGER"))
     conn.execute(text("ALTER TABLE account_requests ADD COLUMN IF NOT EXISTS program_id INTEGER"))
+    conn.execute(text("ALTER TABLE users DROP CONSTRAINT IF EXISTS chk_department"))
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
     conn.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS department_id INTEGER"))
     conn.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS program_id INTEGER"))
@@ -1419,6 +1447,23 @@ def delete_user(email: str, db: Session = Depends(get_db), _admin: models.User =
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
 
+    # Preserve audit history and user-created content while removing the account.
+    db.query(models.ActivityLog).filter(models.ActivityLog.user_id == user.id).update(
+        {models.ActivityLog.user_id: None}, synchronize_session=False
+    )
+    db.query(models.Subject).filter(models.Subject.user_id == user.id).update(
+        {models.Subject.user_id: None}, synchronize_session=False
+    )
+    db.query(models.UploadedFile).filter(models.UploadedFile.user_id == user.id).update(
+        {models.UploadedFile.user_id: None}, synchronize_session=False
+    )
+    db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.user_id == user.id).update(
+        {models.GeneratedQuestion.user_id: None}, synchronize_session=False
+    )
+    db.query(models.UserSession).filter(models.UserSession.user_id == user.id).delete(
+        synchronize_session=False
+    )
+
     db.delete(user)
     db.commit()
     log_activity(db, "User Deleted", f"Deleted user {normalized_email}.", "user")
@@ -1690,14 +1735,12 @@ async def generate_questions(
             question_type_distribution[q["type"]] = question_type_distribution.get(q["type"], 0) + 1
 
         for q in questions:
-            # ML model assigns the Bloom level; Gemini only wrote the question text.
-            bloom_level = classify_question_ml(q["question"])
             question = models.GeneratedQuestion(
                 tos_id=tos_record.id,
                 subject_id=upload.subject_id,
                 user_id=upload.user_id,
                 topic_name=q.get("topic_name", ""),
-                bloom_level=bloom_level,
+                bloom_level=q.get("bloom_level", "Understand"),
                 question_type=q.get("type"),
                 question=q["question"],
                 options=q.get("options"),
@@ -2466,8 +2509,8 @@ def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Sessio
     if duplicate_check:
         raise HTTPException(status_code=400, detail="This identical question text already exists inside this subject pool.")
 
-    # ML model assigns the Bloom level for manually entered questions too.
-    bloom_level = classify_question_ml(normalized_question)
+    # AI classifier assigns the Bloom level for manually entered questions too.
+    bloom_level = classify_question(normalized_question)
 
     new_question = models.GeneratedQuestion(
         subject_id=payload.subject_id,
@@ -3171,8 +3214,17 @@ def export_question_bank_tos(
             level: ", ".join(numbers) for level, numbers in topic["bloom_question_numbers"].items()
         }
 
+    creator = db.query(models.User).filter(models.User.id == user_id).first() if user_id else None
     workbook = generate_tos_from_excel_template(
-        selected_topics, subject.code, subject.name, len(questions), exam_type=exam_type, semester=semester
+        selected_topics,
+        subject.code,
+        subject.name,
+        len(questions),
+        exam_type=exam_type,
+        semester=semester,
+        instructor_name=(creator.name or creator.email) if creator else "",
+        academic_year=academic_year,
+        department=creator.department if creator else "",
     )
     stream = io.BytesIO()
     workbook.save(stream)
@@ -3215,7 +3267,17 @@ def export_question_set(
             "left_items": matching_choices(question)[0] if question.question_type == "Matching Type" else [],
             "right_items": matching_choices(question)[1] if question.question_type == "Matching Type" else [],
         })() for question in questions]
-        content, filename = build_assessment_document(normalized_questions, question_set.subject.name, export_format, include_answer_key=include_answer_key, answer_mode=answer_mode)
+        content, filename = build_assessment_document(
+            normalized_questions,
+            question_set.subject.name,
+            export_format,
+            include_answer_key=include_answer_key,
+            answer_mode=answer_mode,
+            subject_code=question_set.subject.code or "",
+            exam_type=exam_type or question_set.exam_title or "Final Examination",
+            class_info=question_set.name or "",
+            directions=[question_set.instructions] if question_set.instructions else None,
+        )
         question_set.status = "exported"
         db.add(models.QuestionSetExport(question_set_id=question_set.id, export_format=export_format, filename=filename))
         db.commit()
@@ -3237,6 +3299,8 @@ def export_assessment(
     question_ids: str = Form(...),
     export_format: str = Form("pdf"),
     exam_type: str = Form("Final Exam"),
+    semester: str = Form(""),
+    academic_year: str = Form(""),
     include_answer_key: bool = Form(True),
     answer_mode: str = Form("with_key"),
     user_id: int | None = Form(None),
@@ -3276,7 +3340,17 @@ def export_assessment(
                 "right_items": right_items,
             })())
 
-        content, filename = build_assessment_document(normalized_questions, subject.name, export_format.lower(), include_answer_key=include_answer_key, answer_mode=answer_mode)
+        content, filename = build_assessment_document(
+            normalized_questions,
+            subject.name,
+            export_format.lower(),
+            include_answer_key=include_answer_key,
+            answer_mode=answer_mode,
+            subject_code=subject.code or "",
+            exam_type=exam_type or "Final Examination",
+            semester=semester or "",
+            academic_year=academic_year or "",
+        )
         media_type = "application/pdf" if export_format.lower() == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         filename_subject = subject.code or subject.name
         filename_subject = re.sub(r"[^A-Za-z0-9]+", "-", filename_subject).strip("-")
