@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { usePopup } from "../../components/PopupProvider";
 import { useNavigate, useParams } from "react-router-dom";
-import { BookOpen, CalendarDays, ChevronRight, FileText, FlaskConical, Search, Shield, Sigma, UserRound } from "lucide-react";
+import { ArrowLeft, BookOpen, CalendarDays, ChevronRight, FileText, FlaskConical, Search, Shield, Sigma, UserRound } from "lucide-react";
 
 const API_URL = "http://localhost:8000";
 
@@ -1083,6 +1083,13 @@ const AdminQuestionBankPage = () => {
     if (level === "program") choose({ campusId: selection.campusId, departmentId: selection.departmentId, programId: null, subjectId: null });
     if (level === "subject") choose({ ...selection, subjectId: null });
   };
+  const goBack = () => {
+    if (selection.subjectId) return backTo("subject");
+    if (selection.programId) return backTo("program");
+    if (selection.departmentId) return backTo("department");
+    if (selection.campusId) return backTo("campus");
+    navigate("/admin/dashboard");
+  };
   const formatDate = (value) => value ? new Date(value).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "Date unavailable";
 
   const Card = ({ icon: Icon, title, code, detail, onClick, accent = "#B4454A" }) => (
@@ -1105,7 +1112,7 @@ const AdminQuestionBankPage = () => {
         </nav>
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
           <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#B4454A]">Faculty collections</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{selectedSubject ? selectedSubject.name : selectedProgram ? selectedProgram.name : selectedDepartment ? selectedDepartment.name : selectedCampus ? selectedCampus.name : "Question Bank"}</h2><p className="mt-1 text-sm text-slate-500">Browse questions through the academic structure.</p></div>
-          {selectedSubject && <button type="button" onClick={() => navigate(`/admin/questions/${selectedSubject.id}`)} className="hidden" aria-hidden="true" />}
+          <button type="button" onClick={goBack} className="inline-flex items-center gap-1.5 self-start rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:border-[#B4454A] hover:text-[#B4454A] sm:self-auto"><ArrowLeft size={14} /> Back</button>
         </div>
       </section>
 
