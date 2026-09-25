@@ -116,7 +116,7 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col page-transition relative overflow-x-hidden" style={{ minHeight: '100vh', backgroundColor: paper }}>
+    <div className="bq-login-page h-screen flex flex-col page-transition relative overflow-hidden" style={{ height: '100vh', backgroundColor: paper }}>
       <PublicNav />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
@@ -215,6 +215,7 @@ const Login = () => {
           gap: clamp(2rem, 6vw, 6rem);
           width: min(100%, 70rem);
         }
+        .bq-login-page .bq-login-center { padding-top: 6.75rem; }
         .bq-auth-brand {
           animation: bq-auth-brand-in 620ms 80ms ease-out both;
         }
@@ -248,12 +249,14 @@ const Login = () => {
           .bq-auth-brand, .bq-login-card, .bq-brand-mark, .bq-login-backdrop { animation: none; }
         }
         @media (max-width: 768px) {
+          .bq-login-page .bq-login-center { padding-top: 6rem; }
           .bq-auth-layout { grid-template-columns: 1fr; gap: 0.75rem; max-width: 28rem; }
           .bq-auth-brand { display: flex; align-items: center; justify-content: center; gap: 0.75rem; text-align: left; }
           .bq-auth-brand-copy { display: none; }
         }
 
         @media (max-height: 760px) {
+          .bq-login-page .bq-login-center { padding-top: 5.75rem; }
           .bq-login-eyebrow { padding-top: 0.5rem; padding-bottom: 0; }
           .bq-brand-mark { width: min(100%, 18rem); }
           .bq-login-center { padding-top: 0.25rem; padding-bottom: 0.25rem; }

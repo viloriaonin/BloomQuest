@@ -47,6 +47,7 @@ const ContactAdmin = () => {
 
   const [fullName, setFullName] = useState("");
   const [department, setDepartment] = useState("");
+  const [programId, setProgramId] = useState("");
   const [departments, setDepartments] = useState([]);
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
@@ -75,6 +76,9 @@ const ContactAdmin = () => {
       active = false;
     };
   }, []);
+
+  const selectedDepartment = departments.find((item) => item.name === department);
+  const availablePrograms = selectedDepartment?.programs || [];
 
   const isValidEmail = (value) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -137,6 +141,10 @@ const ContactAdmin = () => {
       setError("Department or Section is required.");
       return;
     }
+    if (!programId) {
+      setError("Program is required.");
+      return;
+    }
     if (!email.trim()) {
       setError("Email address is required.");
       return;
@@ -166,7 +174,12 @@ const ContactAdmin = () => {
         headers: { "Content-Type": "application/json" },
         body: otpSent
           ? JSON.stringify({ email: payloadEmail, otp: otp.trim() })
-          : JSON.stringify({ full_name: fullName, department, email: payloadEmail }),
+          : JSON.stringify({
+              full_name: fullName,
+              department,
+              program_id: Number(programId),
+              email: payloadEmail,
+            }),
       });
 
       const data = await response.json().catch(() => ({}));
@@ -198,6 +211,7 @@ const ContactAdmin = () => {
       setOtp("");
       setOtpSent(false);
       setDemoCode("");
+      setProgramId("");
     } catch (err) {
       setError("Unable to connect to the server. Please verify your backend application is running.");
     } finally {
@@ -206,7 +220,7 @@ const ContactAdmin = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col page-transition relative overflow-x-hidden" style={{ minHeight: '100vh', backgroundColor: paper }}>
+    <div className="bq-contact-page h-screen flex flex-col page-transition relative overflow-hidden" style={{ height: '100vh', backgroundColor: paper }}>
       <PublicNav />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
@@ -293,6 +307,10 @@ const ContactAdmin = () => {
             gap: clamp(2rem, 6vw, 6rem);
             width: min(100%, 70rem);
           }
+          .bq-contact-page .bq-contact-center { padding-top: 6.75rem; }
+          .bq-contact-page .bq-contact-center { box-sizing: border-box; align-items: flex-start; overflow: hidden; padding-bottom: 0.5rem; }
+          .bq-contact-page .bq-contact-card { margin-top: 0; margin-bottom: 0; }
+          .bq-contact-page .bq-contact-form > :not([hidden]) ~ :not([hidden]) { margin-top: 0.8rem; }
           .bq-contact-brand { animation: bq-contact-brand-in 620ms 80ms ease-out both; }
           .bq-typewriter::after { content: "|"; margin-left: 2px; color: ${accent}; animation: bq-contact-caret-blink 800ms steps(1, end) infinite; }
           .bq-contact-brand-mark {
@@ -325,13 +343,21 @@ const ContactAdmin = () => {
             .bq-contact-brand, .bq-contact-card, .bq-contact-brand-mark, .bq-contact-backdrop { animation: none; }
           }
           @media (max-width: 768px) {
+            .bq-contact-page .bq-contact-center { padding-top: 6rem; padding-bottom: 1rem; }
             .bq-contact-layout { grid-template-columns: 1fr; gap: 0.75rem; max-width: 28rem; }
             .bq-contact-brand { flex-direction: row; align-items: center; justify-content: center; gap: 0.75rem; text-align: left; }
             .bq-contact-brand-copy { display: none; }
           }
 
         @media (max-height: 760px) {
+          .bq-contact-page .bq-contact-center { padding-top: 5.5rem; padding-bottom: 0; }
           .bq-contact-brand-mark { width: min(100%, 18rem); }
+          .bq-contact-card { padding: 0.8rem 1.25rem; }
+          .bq-contact-card-header { margin-bottom: 0.65rem; }
+          .bq-contact-card-title { font-size: 2.15rem; }
+          .bq-contact-form > :not([hidden]) ~ :not([hidden]) { margin-top: 0.55rem; }
+          .bq-contact-card .bq-field { padding-top: 0.45rem; padding-bottom: 0.45rem; }
+          .bq-contact-footer { padding-top: 0.35rem; padding-bottom: 0.35rem; }
         }
 
         @media (max-height: 600px) {
@@ -445,12 +471,23 @@ const ContactAdmin = () => {
               </label>
               <select
                 value={department}
-                onChange={(e) => setDepartment(e.target.value)}
+                onChange={(e) => {
+                  setDepartment(e.target.value);
+                  setProgramId("");
+                }}
                 className="bq-field"
                 required
               >
                 <option value="">Select your department</option>
                 {departments.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="bq-label block mb-2">Program</label>
+              <select value={programId} onChange={(e) => setProgramId(e.target.value)} className="bq-field" required disabled={!department || !availablePrograms.length}>
+                <option value="">{department ? (availablePrograms.length ? "Select your program" : "No programs available") : "Select a department first"}</option>
+                {availablePrograms.map((program) => <option key={program.id} value={program.id}>{program.name}{program.code ? ` (${program.code})` : ""}</option>)}
               </select>
             </div>
 

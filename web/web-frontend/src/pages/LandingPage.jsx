@@ -72,7 +72,7 @@ const LandingPage = () => {
   };
 
   return (
-    <div className="bq-landing" style={{ "--bq-accent": accent, "--bq-accent-strong": accentStrong, "--bq-ink": ink, "--bq-muted": muted, "--bq-paper": paper }}>
+    <div className="bq-landing" style={{ "--bq-accent": accent, "--bq-accent-strong": accentStrong, "--bq-ink": ink, "--bq-muted": muted, "--bq-paper": paper, "--bq-grid-line": "rgba(180, 69, 74, .055)", "--bq-wash": "rgba(180, 69, 74, .045)", "--bq-surface-soft": "rgba(255, 255, 255, .58)" }}>
       <PublicNav />
 
       <main>

@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { usePopup } from "../../components/PopupProvider";
 import LoadingSpinner from "../../components/LoadingSpinner";
 import LegalModal from "../../components/LegalModal";
+import PublicNav from "../../components/PublicNav";
+import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
 
 const SEND_OTP_URL    = "http://localhost:8000/api/forgot-password/send-otp";
 const VERIFY_OTP_URL  = "http://localhost:8000/api/forgot-password/verify-otp";
@@ -260,9 +262,9 @@ const ForgotPassword = () => {
       onClick={onClick}
       disabled={disabled}
       className="w-full text-white font-semibold py-3.5 transition duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-      style={{ backgroundColor: accent, fontFamily: 'Inter, sans-serif', letterSpacing: '0.08em', textTransform: 'uppercase', fontSize: '13px' }}
-      onMouseOver={(e) => !disabled && (e.currentTarget.style.backgroundColor = accentHover)}
-      onMouseOut={(e) => !disabled && (e.currentTarget.style.backgroundColor = accent)}
+      style={{ backgroundColor: textPrimary, fontFamily: 'Inter, sans-serif', letterSpacing: '0.08em', textTransform: 'uppercase', fontSize: '13px' }}
+      onMouseOver={(e) => !disabled && (e.currentTarget.style.backgroundColor = accent)}
+      onMouseOut={(e) => !disabled && (e.currentTarget.style.backgroundColor = textPrimary)}
     >
       {children}
     </button>
@@ -526,14 +528,15 @@ const ForgotPassword = () => {
   const STEP_LABELS = ["Email", "Code", "New Password"];
 
   return (
-    <div className="min-h-screen flex flex-col page-transition relative" style={{ minHeight: '100vh', overflow: 'hidden', backgroundColor: paper }}>
+    <div className="bq-forgot-page min-h-screen flex flex-col page-transition relative" style={{ minHeight: '100vh', overflow: 'hidden', backgroundColor: paper }}>
+      <PublicNav />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
         .bq-card-shell {
           position: relative;
           background: ${surface};
           border: 1px solid ${border};
-          border-radius: 28px;
+          border-radius: 12px;
           box-shadow: 0 18px 48px rgba(20, 20, 15, 0.08);
         }
         .bq-corner {
@@ -573,14 +576,25 @@ const ForgotPassword = () => {
         }
         .bq-field::placeholder { color: #A6A39A; }
         .bq-field:focus { outline: none; border-bottom-color: ${accent}; }
+        .bq-forgot-layout { display: grid; grid-template-columns: minmax(180px, 0.72fr) minmax(0, 28rem); align-items: center; gap: clamp(2rem, 6vw, 6rem); width: min(100%, 70rem); }
+        .bq-forgot-brand { display: flex; flex-direction: column; align-items: flex-start; gap: 1rem; }
+        .bq-forgot-brand-mark { width: min(100%, 22rem); height: auto; filter: drop-shadow(0 12px 18px rgba(20, 20, 15, 0.16)); }
+        .bq-forgot-page .bq-forgot-center { box-sizing: border-box; min-height: 0; padding-top: 6.75rem; }
+        @media (max-width: 768px) { .bq-forgot-page .bq-forgot-center { padding-top: 6rem; } .bq-forgot-layout { grid-template-columns: 1fr; gap: 0.75rem; max-width: 28rem; } .bq-forgot-brand { display: none; } }
+        @media (max-height: 760px) { .bq-forgot-page .bq-forgot-center { padding-top: 5.5rem; } }
       `}</style>
 
-      <div className="absolute inset-0 -z-10" style={{ background: `linear-gradient(135deg, #F1F0EC 0%, #EEF2F8 100%)` }} />
-      <div className="absolute -top-20 -right-20 rounded-full opacity-20" style={{ width: 420, height: 420, background: `radial-gradient(circle, ${accent} 0%, transparent 70%)` }} />
-      <div className="absolute -bottom-28 -left-24 rounded-full opacity-15" style={{ width: 500, height: 500, background: `radial-gradient(circle, ${accent} 0%, transparent 70%)` }} />
+      <div className="absolute inset-0 -z-10" style={{ background: `linear-gradient(135deg, ${paper} 0%, #EEF2F8 100%)` }} />
+      <div className="bq-forgot-grid absolute inset-0 -z-10 pointer-events-none" style={{ backgroundImage: `linear-gradient(rgba(180, 69, 74, .055) 1px, transparent 1px), linear-gradient(90deg, rgba(180, 69, 74, .055) 1px, transparent 1px)`, backgroundSize: '44px 44px' }} />
+      <div className="absolute inset-0 -z-10 pointer-events-none" style={{ background: `radial-gradient(circle at 84% 10%, rgba(180, 69, 74, .08), transparent 28rem)` }} />
 
-      <div className="flex-1 flex items-center justify-center px-4 py-6">
-        <div className="bq-card-shell w-full max-w-md p-8 md:p-10">
+      <div className="bq-forgot-center flex-1 flex items-center justify-center px-4 py-6">
+        <div className="bq-forgot-layout">
+          <div className="bq-forgot-brand">
+            <img src={bloomquestLogo} alt="BloomQuest" className="bq-forgot-brand-mark" />
+            <p className="max-w-xs text-sm leading-6" style={{ color: textMuted }}>A focused workspace for building thoughtful, measurable assessments.</p>
+          </div>
+          <div className="bq-card-shell w-full max-w-md p-8 md:p-10">
           <span className="bq-corner bq-corner-tl" />
           <span className="bq-corner bq-corner-tr" />
           <span className="bq-corner bq-corner-bl" />
@@ -623,6 +637,7 @@ const ForgotPassword = () => {
           {step === "otp" && renderOtp()}
           {step === "reset" && renderReset()}
           {step === "done" && renderDone()}
+          </div>
         </div>
       </div>
 
