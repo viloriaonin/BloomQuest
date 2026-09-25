@@ -2653,7 +2653,20 @@ def get_questions(
         query = query.filter(models.GeneratedQuestion.subject_id == subject_id)
     if bloom_level:
         query = query.filter(models.GeneratedQuestion.bloom_level == bloom_level)
-    return [serialize_question(question) for question in query.all()]
+    questions = query.all()
+    creator_ids = {question.user_id for question in questions if question.user_id}
+    creators = {
+        user.id: {"name": user.name or user.email, "email": user.email}
+        for user in db.query(models.User).filter(models.User.id.in_(creator_ids)).all()
+    } if creator_ids else {}
+    serialized = []
+    for question in questions:
+        item = serialize_question(question)
+        creator = creators.get(question.user_id)
+        item["creator_name"] = creator["name"] if creator else "System or unassigned"
+        item["creator_email"] = creator["email"] if creator else None
+        serialized.append(item)
+    return serialized
 
 
 def serialize_question_set(question_set):

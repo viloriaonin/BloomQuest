@@ -3,6 +3,7 @@ import DashboardBtn from "./Dashboard";
 import AcademicMgmtBtn from "./AcademicMgmt";
 import UserMgmtBtn from "./UserMgmt";
 import ReportsBtn from "./Reports";
+import QuestionBankBtn from "./QuestionBank";
 import LogoutBtn from "./Logout";
 import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
 import { FolderArchive, Settings, Sun, Moon } from "lucide-react";
@@ -38,6 +39,7 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle }) => {
       <nav className="flex-1 px-2.5 space-y-1 overflow-y-auto pb-4">
         <DashboardBtn activeTab={activeTab} setActiveTab={setActiveTab} />
         <AcademicMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} />
+        <QuestionBankBtn activeTab={activeTab} setActiveTab={setActiveTab} />
         <UserMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} />
         <ReportsBtn activeTab={activeTab} setActiveTab={setActiveTab} />
         <button
@@ -66,12 +68,17 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle }) => {
           onClick={onThemeToggle}
           className="bq-admin-theme-toggle mb-2 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors"
           aria-label={`Switch to ${adminTheme === "dark" ? "light" : "dark"} mode`}
+          aria-checked={adminTheme === "light"}
+          role="switch"
         >
           <span className="bq-admin-theme-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg">
             {adminTheme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </span>
-          <span className="bq-admin-theme-copy min-w-0">
+          <span className="bq-admin-theme-copy min-w-0 flex-1">
             <span className="bq-admin-theme-label block text-xs font-semibold">Appearance</span>
+          </span>
+          <span className={`bq-admin-theme-switch ${adminTheme === "light" ? "is-light" : "is-dark"}`} aria-hidden="true">
+            <span className="bq-admin-theme-switch-thumb" />
           </span>
         </button>
         <LogoutBtn />

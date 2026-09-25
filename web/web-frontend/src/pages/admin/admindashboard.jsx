@@ -8,6 +8,7 @@ import Governance from "./Governance";
 import RecycleBin from "./RecycleBin";
 import UserDetailPage from "./UserDetailPage";
 import AdminSettings from "./AdminSettings";
+import { QuestionBankContent } from "./QuestionBank";
 import { Bar, Doughnut } from "react-chartjs-2";
 import { Radio, ShieldCheck, ChevronRight, Bell } from "lucide-react";
 import { ArcElement, BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from "chart.js";
@@ -22,6 +23,10 @@ const TAB_META = {
   academic: {
     label: "Academic Management",
     description: "Configure departments, courses, and academic assignments.",
+  },
+  "question-bank": {
+    label: "Question Bank",
+    description: "Browse faculty-created questions by campus, department, program, and subject.",
   },
   users: {
     label: "User Management",
@@ -50,6 +55,8 @@ const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState(
     location.pathname.startsWith("/admin/academic")
         ? "academic"
+      : location.pathname.startsWith("/admin/questions")
+        ? "question-bank"
       : location.pathname.startsWith("/admin/users/")
         ? "users"
         : "dashboard",
@@ -71,6 +78,8 @@ const AdminDashboard = () => {
   useEffect(() => {
     if (location.pathname.startsWith("/admin/academic")) {
       setActiveTab("academic");
+    } else if (location.pathname.startsWith("/admin/questions")) {
+      setActiveTab("question-bank");
     } else if (location.pathname.startsWith("/admin/users/")) {
       setActiveTab("users");
     }
@@ -167,6 +176,8 @@ const AdminDashboard = () => {
         return renderDashboardContent();
       case "academic":
         return <AcademicMgmtContent />;
+      case "question-bank":
+        return <QuestionBankContent />;
       case "users":
         return <UserMgmtContent />;
       case "reports":

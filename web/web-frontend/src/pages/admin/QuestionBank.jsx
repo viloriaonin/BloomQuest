@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { usePopup } from "../../components/PopupProvider";
 import { useNavigate, useParams } from "react-router-dom";
-import { FlaskConical, Shield, Sigma, FileText } from "lucide-react";
-import UserQuestionBank from "../users/QuestionBank";
+import { BookOpen, CalendarDays, ChevronRight, FileText, FlaskConical, Search, Shield, Sigma, UserRound } from "lucide-react";
 
 const API_URL = "http://localhost:8000";
 
@@ -1013,36 +1012,117 @@ const QuestionBankBtn = ({ activeTab, setActiveTab }) => {
 };
 
 const AdminQuestionBankPage = () => {
-  const [adminFetchReady, setAdminFetchReady] = useState(false);
+  const navigate = useNavigate();
+  const [hierarchy, setHierarchy] = useState({ campuses: [] });
+  const [subjects, setSubjects] = useState([]);
+  const [questions, setQuestions] = useState([]);
+  const [selection, setSelection] = useState({ campusId: null, departmentId: null, programId: null, subjectId: null });
+  const [searchTerm, setSearchTerm] = useState("");
+  const [questionType, setQuestionType] = useState("All types");
+  const [loading, setLoading] = useState(true);
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  useLayoutEffect(() => {
-    const originalFetch = window.fetch;
-    window.fetch = async (input, init) => {
-      let requestUrl = typeof input === "string" ? input : input.url;
-      if (requestUrl.includes("user_id")) {
-        const url = new URL(requestUrl, window.location.origin);
-        url.searchParams.delete("user_id");
-        requestUrl = `${url.pathname}${url.search}${url.hash}`;
+  useEffect(() => {
+    const loadAcademicData = async () => {
+      try {
+        const [hierarchyResponse, subjectsResponse] = await Promise.all([
+          fetch(`${API_URL}/api/academic-hierarchy`),
+          fetch(`${API_URL}/api/subjects`),
+        ]);
+        if (!hierarchyResponse.ok || !subjectsResponse.ok) throw new Error("Could not load the academic structure.");
+        setHierarchy(await hierarchyResponse.json());
+        setSubjects(await subjectsResponse.json());
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
       }
-
-      if (init?.body instanceof FormData) {
-        init.body.delete("user_id");
-      }
-      if (typeof init?.body === "string" && init.body.includes('"user_id"')) {
-        const body = JSON.parse(init.body);
-        delete body.user_id;
-        init.body = JSON.stringify(body);
-      }
-
-      return originalFetch(requestUrl, init);
     };
-    setAdminFetchReady(true);
-    return () => {
-      window.fetch = originalFetch;
-    };
+    loadAcademicData();
   }, []);
 
-  return adminFetchReady ? <div className="bq-admin-question-bank"><UserQuestionBank /></div> : <div className="bq-panel p-6 text-sm text-slate-500">Loading question bank...</div>;
+  useEffect(() => {
+    if (!selection.subjectId) {
+      setQuestions([]);
+      return;
+    }
+    const loadQuestions = async () => {
+      setQuestionsLoading(true);
+      try {
+        const response = await fetch(`${API_URL}/api/questions?subject_id=${selection.subjectId}`);
+        if (!response.ok) throw new Error("Could not load questions for this subject.");
+        setQuestions(await response.json());
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setQuestionsLoading(false);
+      }
+    };
+    loadQuestions();
+  }, [selection.subjectId]);
+
+  const selectedCampus = hierarchy.campuses.find((campus) => campus.id === selection.campusId);
+  const selectedDepartment = selectedCampus?.departments.find((department) => department.id === selection.departmentId);
+  const selectedProgram = selectedDepartment?.programs.find((program) => program.id === selection.programId);
+  const programSubjects = subjects.filter((subject) => subject.program_id === selection.programId);
+  const selectedSubject = subjects.find((subject) => subject.id === selection.subjectId);
+  const visibleQuestions = questions.filter((question) => {
+    const haystack = `${question.question || ""} ${question.topic_name || ""} ${question.creator_name || ""}`.toLowerCase();
+    return (questionType === "All types" || question.question_type === questionType) && haystack.includes(searchTerm.toLowerCase());
+  });
+
+  const choose = (nextSelection) => {
+    setError("");
+    setQuestions([]);
+    setSelection(nextSelection);
+  };
+  const backTo = (level) => {
+    if (level === "campus") choose({ campusId: null, departmentId: null, programId: null, subjectId: null });
+    if (level === "department") choose({ campusId: selection.campusId, departmentId: null, programId: null, subjectId: null });
+    if (level === "program") choose({ campusId: selection.campusId, departmentId: selection.departmentId, programId: null, subjectId: null });
+    if (level === "subject") choose({ ...selection, subjectId: null });
+  };
+  const formatDate = (value) => value ? new Date(value).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "Date unavailable";
+
+  const Card = ({ icon: Icon, title, code, detail, onClick, accent = "#B4454A" }) => (
+    <button type="button" onClick={onClick} className="group rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#B4454A]/50 hover:shadow-md">
+      <span className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl text-white" style={{ backgroundColor: accent }}><Icon size={21} /></span>
+      <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold text-slate-900">{title}</h3>{code && <span className="mt-1 inline-block rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">{code}</span>}</div><ChevronRight size={17} className="mt-1 text-slate-300 transition group-hover:text-[#B4454A]" /></div>
+      <p className="mt-3 text-xs text-slate-500">{detail}</p>
+    </button>
+  );
+
+  return (
+    <div className="bq-admin-question-bank space-y-5">
+      <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 shadow-sm">
+        <nav className="mb-3 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500" aria-label="Question Bank navigation">
+          <button type="button" onClick={() => backTo("campus")} className="font-semibold hover:text-[#B4454A]">Question Bank</button>
+          {selectedCampus && <><ChevronRight size={13} /><button type="button" onClick={() => backTo("department")} className="hover:text-[#B4454A]">{selectedCampus.name}</button></>}
+          {selectedDepartment && <><ChevronRight size={13} /><button type="button" onClick={() => backTo("program")} className="hover:text-[#B4454A]">{selectedDepartment.name}</button></>}
+          {selectedProgram && <><ChevronRight size={13} /><button type="button" onClick={() => backTo("subject")} className="hover:text-[#B4454A]">{selectedProgram.name}</button></>}
+          {selectedSubject && <><ChevronRight size={13} /><span className="font-semibold text-slate-700">{selectedSubject.name}</span></>}
+        </nav>
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#B4454A]">Faculty collections</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{selectedSubject ? selectedSubject.name : selectedProgram ? selectedProgram.name : selectedDepartment ? selectedDepartment.name : selectedCampus ? selectedCampus.name : "Question Bank"}</h2><p className="mt-1 text-sm text-slate-500">Browse questions through the academic structure.</p></div>
+          {selectedSubject && <button type="button" onClick={() => navigate(`/admin/questions/${selectedSubject.id}`)} className="hidden" aria-hidden="true" />}
+        </div>
+      </section>
+
+      {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">Loading academic structure...</div> : !selectedCampus ? (
+        <section><div className="mb-3 flex items-end justify-between"><div><h3 className="text-lg font-semibold text-slate-900">Choose a campus</h3></div><span className="text-xs text-slate-500">{hierarchy.campuses.length} campus{hierarchy.campuses.length === 1 ? "" : "es"}</span></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{hierarchy.campuses.map((campus) => <Card key={campus.id} icon={Shield} title={campus.name} code={campus.code} detail={`${campus.departments.length} department${campus.departments.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: campus.id, departmentId: null, programId: null, subjectId: null })} />)}</div></section>
+      ) : !selectedDepartment ? (
+        <section><div className="mb-3"><h3 className="text-lg font-semibold text-slate-900">Choose a department</h3></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{selectedCampus.departments.map((department) => <Card key={department.id} icon={FlaskConical} title={department.name} code={department.code} detail={`${department.programs.length} program${department.programs.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: selectedCampus.id, departmentId: department.id, programId: null, subjectId: null })} />)}</div></section>
+      ) : !selectedProgram ? (
+        <section><div className="mb-3"><h3 className="text-lg font-semibold text-slate-900">Choose a program</h3></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{selectedDepartment.programs.map((program) => <Card key={program.id} icon={BookOpen} title={program.name} code={program.code} detail={`${program.faculty?.length || 0} faculty member${program.faculty?.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: selectedCampus.id, departmentId: selectedDepartment.id, programId: program.id, subjectId: null })} />)}</div></section>
+      ) : !selectedSubject ? (
+        <section><div className="mb-3"><h3 className="text-lg font-semibold text-slate-900">Choose a subject</h3></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{programSubjects.map((subject, index) => <Card key={subject.id} icon={[Shield, Sigma, FlaskConical][index % 3]} title={subject.name} code={subject.code} detail={`${subject.question_count || 0} question${subject.question_count === 1 ? "" : "s"} in this collection`} onClick={() => choose({ ...selection, subjectId: subject.id })} accent={["#F0645A", "#6FA8E0", "#5CB37B"][index % 3]} />)}</div>{!programSubjects.length && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">No subjects are assigned to this program yet.</div>}</section>
+      ) : (
+        <section className="space-y-4"><div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center"><span className="text-sm font-semibold text-slate-700">{questions.length} question{questions.length === 1 ? "" : "s"}</span><div className="ml-auto flex w-full flex-wrap gap-2 sm:w-auto"><label className="relative min-w-[220px] flex-1"><Search size={15} className="absolute left-3 top-2.5 text-slate-400" /><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search question bank" className="bq-field w-full py-2 pl-9 text-sm" /></label><select value={questionType} onChange={(event) => setQuestionType(event.target.value)} className="bq-field py-2 text-sm"><option>All types</option>{QUESTION_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div></div>{questionsLoading ? <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">Loading questions...</div> : <div className="grid gap-4 lg:grid-cols-2">{visibleQuestions.map((question) => <article key={question.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-[#B4454A]/40 hover:shadow-md"><div className="flex items-start justify-between gap-3"><span className="rounded-full bg-rose-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#B4454A]">{question.question_type || "Question"}</span><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">{question.bloom_level || "Unclassified"}</span></div><h3 className="mt-4 text-sm font-semibold leading-6 text-slate-900">{question.question}</h3>{question.topic_name && <p className="mt-2 text-xs text-slate-500">Topic: {question.topic_name}</p>}<div className="mt-5 grid gap-2 border-t border-slate-100 pt-4 text-xs text-slate-500 sm:grid-cols-2"><span className="flex items-center gap-1.5"><UserRound size={14} className="text-[#B4454A]" />{question.creator_name || "System or unassigned"}</span><span className="flex items-center gap-1.5 sm:justify-end"><CalendarDays size={14} className="text-[#B4454A]" />{formatDate(question.created_at)}</span></div></article>)}</div>}{!questionsLoading && !visibleQuestions.length && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">No questions match this view.</div>}</section>
+      )}
+    </div>
+  );
 };
 
 export const QuestionBankContent = () => <AdminQuestionBankPage />;

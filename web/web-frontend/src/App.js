@@ -20,8 +20,6 @@ import TopBar from "./components/TopBar";
 
 // Admin Pages
 import AdminDashboard from "./pages/admin/admindashboard";
-// IMPORT YOUR ADMIN QUESTION BANK HERE:
-// import AdminQuestionBank from "./pages/admin/QuestionBank"; 
 
 // ---------------------------------------------------------
 // 1. User Layout (Standard Sidebar)
@@ -236,6 +234,8 @@ function App() {
         <Route path="/admin/academic/campus/:campusId" element={<AdminAcademicRoute />} />
         <Route path="/admin/academic/campus/:campusId/department/:departmentId" element={<AdminAcademicRoute />} />
         <Route path="/admin/academic/campus/:campusId/department/:departmentId/program/:programId" element={<AdminAcademicRoute />} />
+        <Route path="/admin/questions" element={<AdminAcademicRoute />} />
+        <Route path="/admin/questions/:subjectId" element={<AdminAcademicRoute />} />
 
         <Route
           path="/admin/users/:userId"
