@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 from database import get_db
 import models
+from security import assert_campus_access, assert_user_subject_campus_access, get_current_user
 
 from docx import Document
 from reportlab.lib.pagesizes import LETTER
@@ -42,7 +43,7 @@ from routers.assessment import (
     convert_docx_to_pdf,
 )
 
-router = APIRouter(prefix="/api/questions", tags=["Questions"])
+router = APIRouter(prefix="/api/questions", tags=["Questions"], dependencies=[Depends(get_current_user)])
 logger = logging.getLogger(__name__)
 
 FILE_CACHE = {}
@@ -56,6 +57,36 @@ DISALLOWED_MIME_SIGNATURES = {
     "image/gif": b"GIF89a",
     "image/webp": b"RIFF",
 }
+
+
+def _assert_upload_access(upload_id: str, current_user, db: Session) -> None:
+    role = str(current_user.role).lower()
+    if role == "super_admin":
+        return
+    metadata = FILE_CACHE.get(f"{upload_id}_metadata", {})
+    pending = FILE_CACHE.get(f"{upload_id}_pending", {})
+    owner_id = metadata.get("user_id") or pending.get("user_id")
+    upload = None
+    if upload_id.isdigit():
+        upload = db.query(models.UploadedFile).filter(models.UploadedFile.id == int(upload_id)).first()
+        if upload:
+            owner_id = upload.user_id or owner_id
+            if upload.subject_id and role in {"faculty", "student"}:
+                subject = db.query(models.Subject).filter(models.Subject.id == upload.subject_id).first()
+                if subject:
+                    assert_user_subject_campus_access(db, current_user, subject)
+    if role == "campus_admin" and upload and upload.subject_id:
+        subject = db.query(models.Subject).filter(models.Subject.id == upload.subject_id).first()
+        if subject:
+            department_id = subject.department_id
+            if subject.program_id:
+                department_id = db.query(models.Program.department_id).filter(models.Program.id == subject.program_id).scalar()
+            campus_id = db.query(models.Department.campus_id).filter(models.Department.id == department_id).scalar() if department_id else None
+            if campus_id is not None:
+                assert_campus_access(current_user, campus_id)
+                return
+    if owner_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Upload session not found")
 
 
 def record_activity(db, action, details, activity_type, status="success", user_id=None):
@@ -574,8 +605,10 @@ async def upload_and_analyze_syllabus(
     module_file: UploadFile = File(...),
     syllabus_file: UploadFile = File(...),
     user_id: int | None = Form(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
+    user_id = current_user.id
     upload_id = uuid.uuid4().hex
     filename = (syllabus_file.filename or "").lower()
 
@@ -620,6 +653,7 @@ async def upload_and_analyze_syllabus(
         )
         db.add(subject_row)
         db.flush()
+    assert_user_subject_campus_access(db, current_user, subject_row)
 
     upload_record = models.UploadedFile(
         user_id=user_id,
@@ -634,7 +668,7 @@ async def upload_and_analyze_syllabus(
     db.refresh(upload_record)
     upload_id = str(upload_record.id)
 
-    FILE_CACHE[f"{upload_id}_metadata"] = {"subject": detected_subject, "topics": detected_topics, "module_text": module_text}
+    FILE_CACHE[f"{upload_id}_metadata"] = {"subject": detected_subject, "topics": detected_topics, "module_text": module_text, "user_id": user_id}
     record_activity(db, "Uploaded Learning Materials", f"Analyzed '{module_file.filename}' and '{syllabus_file.filename}'.", "upload", user_id=user_id)
 
     return {
@@ -737,6 +771,7 @@ def _attach_bloom_question_numbers(tos_data, generated_questions):
 async def generate_preview(
     payload: TOSGenerationPayload,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     """Step 1 of 2: run the AI generation and hand back a preview -- nothing
     is written to the database and no TOS file is built yet. The caller
@@ -744,6 +779,8 @@ async def generate_preview(
     Keeping this a pure preview means a bad AI generation (wrong question
     type, awkward matching pairs, etc.) never has to be manually deleted
     out of the question bank -- just discard and regenerate."""
+    _assert_upload_access(payload.upload_id, current_user, db)
+    payload.user_id = current_user.id
     meta = FILE_CACHE.get(f"{payload.upload_id}_metadata")
     if not meta:
         raise HTTPException(
@@ -832,8 +869,9 @@ async def generate_preview(
 
 
 @router.post("/preview/reclassify")
-async def reclassify_preview_question(payload: PreviewQuestionActionPayload):
+async def reclassify_preview_question(payload: PreviewQuestionActionPayload, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Reclassify one unsaved preview question with the AI classifier."""
+    _assert_upload_access(payload.upload_id, current_user, db)
     pending, question = _pending_question(payload.upload_id, payload.preview_id)
     question["bloom_level"] = classify_question(question["question"])
     _refresh_pending_summary(pending)
@@ -846,8 +884,9 @@ async def reclassify_preview_question(payload: PreviewQuestionActionPayload):
 
 
 @router.post("/preview/recreate")
-async def recreate_preview_question(payload: PreviewQuestionActionPayload):
+async def recreate_preview_question(payload: PreviewQuestionActionPayload, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Replace one unsaved preview question while preserving its preview id."""
+    _assert_upload_access(payload.upload_id, current_user, db)
     pending, question = _pending_question(payload.upload_id, payload.preview_id)
     metadata = FILE_CACHE.get(f"{payload.upload_id}_metadata")
     if not metadata:
@@ -898,10 +937,12 @@ async def recreate_preview_question(payload: PreviewQuestionActionPayload):
 async def confirm_generation(
     payload: ConfirmGenerationPayload,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     """Step 2 of 2: persist the previewed questions to the database and
     build the actual TOS/exam files. Only reachable after /generate-preview
     has populated the pending cache entry for this upload_id."""
+    _assert_upload_access(payload.upload_id, current_user, db)
     pending = FILE_CACHE.get(f"{payload.upload_id}_pending")
     if not pending:
         raise HTTPException(
@@ -916,7 +957,7 @@ async def confirm_generation(
     exam_type = pending["exam_type"]
     semester = pending["semester"]
     academic_year = pending.get("academic_year", "")
-    user_id = pending.get("user_id")
+    user_id = current_user.id
     subject = pending["subject"]
 
     upload = db.query(models.UploadedFile).filter(
@@ -924,7 +965,9 @@ async def confirm_generation(
     ).first()
     if not upload:
         raise HTTPException(status_code=404, detail="Upload session record not found. Please upload the instructional materials again.")
-    user_id = upload.user_id or user_id
+    if upload.user_id and upload.user_id != current_user.id and str(current_user.role).lower() != "super_admin":
+        _assert_upload_access(payload.upload_id, current_user, db)
+    user_id = current_user.id
 
     if payload.included_preview_ids is None:
         included_preview_ids = {question.get("preview_id") for question in generated_questions}
@@ -1042,6 +1085,8 @@ async def confirm_generation(
     record_activity(db, "Generated Question Set", f"Generated {len(generated_questions)} questions for {subject_row.name}.", "generate", user_id=user_id)
 
     creator = db.query(models.User).filter(models.User.id == user_id).first() if user_id else None
+    department_name = (creator.department if creator and creator.department else "")
+    leadership = _resolve_department_leadership(db, creator=creator, subject=subject_row, department_name=department_name)
     workbook = generate_tos_from_excel_template(
         selected_topics_data=selected_topics_data,
         course_code=subject_row.code,
@@ -1051,7 +1096,9 @@ async def confirm_generation(
         semester=semester,
         academic_year=academic_year,
         instructor_name=(creator.name or creator.email) if creator else "",
-        department=creator.department if creator else "",
+        department=leadership["department_name"],
+        dean_name=leadership["dean_name"],
+        program_chair_name=leadership["program_chair_name"],
     )
     stream = io.BytesIO()
     workbook.save(stream)
@@ -1071,6 +1118,79 @@ async def confirm_generation(
         "total_questions": len(generated_questions),
         "saved_question_count": saved_question_count,
         "subject_id": subject_row.id,
+    }
+
+
+def _resolve_department_leadership(db, creator=None, subject=None, department_name=""):
+    department = None
+    department_value = (department_name or "").strip()
+    program = None
+
+    def _candidate_department_names(value):
+        if not value:
+            return []
+        cleaned = value.strip()
+        variants = [cleaned, re.sub(r"\s*department\b", "", cleaned, flags=re.IGNORECASE).strip()]
+        seen = set()
+        result = []
+        for item in variants:
+            if item and item.lower() not in seen:
+                seen.add(item.lower())
+                result.append(item)
+        return result
+
+    if creator and getattr(creator, "program_id", None) is not None:
+        program = db.query(models.Program).filter(models.Program.id == creator.program_id).first()
+        if program and program.department_id is not None:
+            department = db.query(models.Department).filter(models.Department.id == program.department_id).first()
+
+    if not department and creator and getattr(creator, "department", None):
+        creator_campus_id = user_campus_id(db, creator)
+        for candidate in _candidate_department_names(creator.department):
+            department_query = db.query(models.Department).filter(func.lower(models.Department.name) == candidate.lower())
+            if creator_campus_id is not None:
+                department_query = department_query.filter(models.Department.campus_id == creator_campus_id)
+            department = department_query.order_by(models.Department.id.asc()).first()
+            if department:
+                break
+
+    if not department:
+        for candidate in _candidate_department_names(department_value):
+            department_query = db.query(models.Department).filter(func.lower(models.Department.name) == candidate.lower())
+            creator_campus_id = user_campus_id(db, creator) if creator else None
+            if creator_campus_id is not None:
+                department_query = department_query.filter(models.Department.campus_id == creator_campus_id)
+            department = department_query.order_by(models.Department.id.asc()).first()
+            if department:
+                break
+
+    if not department and subject:
+        if getattr(subject, "program_id", None) is not None:
+            program = db.query(models.Program).filter(models.Program.id == subject.program_id).first()
+            if program and program.department_id is not None:
+                department = db.query(models.Department).filter(models.Department.id == program.department_id).first()
+        if not department and getattr(subject, "department_id", None) is not None:
+            department = db.query(models.Department).filter(models.Department.id == subject.department_id).first()
+
+    if not program and subject and getattr(subject, "program_id", None) is not None:
+        program = db.query(models.Program).filter(models.Program.id == subject.program_id).first()
+
+    program_chair_name = ""
+    if program:
+        program_chair_name = (program.chair_name or "").strip()
+    if not program_chair_name and department:
+        program_chair_name = (department.chair_name or "").strip()
+
+    dean_name = (department.dean_name or "").strip() if department else ""
+    if not dean_name and department and department.dean_id:
+        dean_user = db.query(models.User).filter(models.User.id == department.dean_id, models.User.archived == False).first()
+        if dean_user:
+            dean_name = dean_user.name or dean_user.email or ""
+
+    return {
+        "department_name": department.name if department else department_value,
+        "dean_name": dean_name,
+        "program_chair_name": program_chair_name,
     }
 
 
@@ -1103,11 +1223,14 @@ async def export_institutional_tos(
     semester: str | None = None,
     academic_year: str | None = None,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     """
     Retrieves the generated openpyxl Excel spreadsheet payload matching
     the active session token directly from the shared memory cache.
     """
+    _assert_upload_access(upload_id, current_user, db)
+    user_id = current_user.id
     meta = FILE_CACHE.get(f"{upload_id}_metadata")
     tos_binary = FILE_CACHE.get(f"{upload_id}_tos")
 
@@ -1121,6 +1244,8 @@ async def export_institutional_tos(
         subject = upload.subject if upload else None
         if upload and tos_record and subject:
             creator = db.query(models.User).filter(models.User.id == upload.user_id).first() if upload.user_id else None
+            department_name = tos_record.department or (creator.department if creator and creator.department else "")
+            leadership = _resolve_department_leadership(db, creator=creator, subject=subject, department_name=department_name)
             workbook = generate_tos_from_excel_template(
                 selected_topics_data=tos_record.tos_data or [],
                 course_code=subject.code,
@@ -1130,7 +1255,9 @@ async def export_institutional_tos(
                 semester=semester or tos_record.semester or (meta or {}).get("semester") or "First Semester",
                 academic_year=academic_year or tos_record.academic_year or (meta or {}).get("academic_year") or "",
                 instructor_name=tos_record.instructor_name or ((creator.name or creator.email) if creator else ""),
-                department=tos_record.department or (creator.department if creator else ""),
+                department=leadership["department_name"],
+                dean_name=leadership["dean_name"],
+                program_chair_name=leadership["program_chair_name"],
             )
             stream = io.BytesIO()
             workbook.save(stream)
@@ -1143,12 +1270,17 @@ async def export_institutional_tos(
         subject = upload.subject if upload else None
         if tos_record and subject:
             creator = db.query(models.User).filter(models.User.id == upload.user_id).first() if upload and upload.user_id else None
+            department_name = tos_record.department or (creator.department if creator and creator.department else "")
+            leadership = _resolve_department_leadership(db, creator=creator, subject=subject, department_name=department_name)
             workbook = generate_tos_from_excel_template(
                 selected_topics_data=tos_record.tos_data or [],
                 course_code=subject.code,
                 course_title=subject.name,
                 whole_total_items=tos_record.total_items or 0,
                 instructor_name=(creator.name or creator.email) if creator else "",
+                department=leadership["department_name"],
+                dean_name=leadership["dean_name"],
+                program_chair_name=leadership["program_chair_name"],
             )
             stream = io.BytesIO()
             workbook.save(stream)
@@ -1184,7 +1316,9 @@ async def export_institutional_tos(
 
 
 @router.get("/export/assessment/docx")
-async def export_assessment_docx(upload_id: str, user_id: int | None = None, db: Session = Depends(get_db)):
+async def export_assessment_docx(upload_id: str, user_id: int | None = None, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    _assert_upload_access(upload_id, current_user, db)
+    user_id = current_user.id
     questions = FILE_CACHE.get(f"{upload_id}_questions")
     meta = FILE_CACHE.get(f"{upload_id}_metadata")
     if (not questions or not meta) and upload_id.isdigit():
@@ -1230,7 +1364,9 @@ async def export_assessment_docx(upload_id: str, user_id: int | None = None, db:
 
 
 @router.get("/export/assessment/pdf")
-async def export_assessment_pdf(upload_id: str, user_id: int | None = None, db: Session = Depends(get_db)):
+async def export_assessment_pdf(upload_id: str, user_id: int | None = None, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    _assert_upload_access(upload_id, current_user, db)
+    user_id = current_user.id
     questions = FILE_CACHE.get(f"{upload_id}_questions")
     meta = FILE_CACHE.get(f"{upload_id}_metadata")
     if (not questions or not meta) and upload_id.isdigit():

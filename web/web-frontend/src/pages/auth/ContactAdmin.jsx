@@ -46,6 +46,9 @@ const ContactAdmin = () => {
   const navigate = useNavigate();
 
   const [fullName, setFullName] = useState("");
+  const [campusId, setCampusId] = useState("");
+  const [campuses, setCampuses] = useState([]);
+  const [campusesLoading, setCampusesLoading] = useState(true);
   const [department, setDepartment] = useState("");
   const [programId, setProgramId] = useState("");
   const [departments, setDepartments] = useState([]);
@@ -63,13 +66,29 @@ const ContactAdmin = () => {
 
   useEffect(() => {
     let active = true;
-    fetch("http://localhost:8000/api/departments")
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Failed to load departments")))
-      .then((data) => {
-        if (active) setDepartments(Array.isArray(data) ? data : []);
+    Promise.all([
+      fetch("http://localhost:8000/api/campuses"),
+      fetch("http://localhost:8000/api/departments"),
+    ])
+      .then(async ([campusResponse, departmentResponse]) => {
+        if (!campusResponse.ok || !departmentResponse.ok) {
+          throw new Error("Failed to load campus and department options");
+        }
+        return Promise.all([campusResponse.json(), departmentResponse.json()]);
+      })
+      .then(([campusData, departmentData]) => {
+        if (!active) return;
+        setCampuses(Array.isArray(campusData) ? campusData : []);
+        setDepartments(Array.isArray(departmentData) ? departmentData : []);
       })
       .catch(() => {
-        if (active) setDepartments([]);
+        if (active) {
+          setCampuses([]);
+          setDepartments([]);
+        }
+      })
+      .finally(() => {
+        if (active) setCampusesLoading(false);
       });
 
     return () => {
@@ -77,7 +96,8 @@ const ContactAdmin = () => {
     };
   }, []);
 
-  const selectedDepartment = departments.find((item) => item.name === department);
+  const campusDepartments = departments.filter((item) => Number(item.campus_id) === Number(campusId));
+  const selectedDepartment = campusDepartments.find((item) => item.name === department);
   const availablePrograms = selectedDepartment?.programs || [];
 
   const isValidEmail = (value) => {
@@ -137,6 +157,10 @@ const ContactAdmin = () => {
       setError("Full name is required.");
       return;
     }
+    if (!campusId) {
+      setError("Please select your campus.");
+      return;
+    }
     if (!department.trim()) {
       setError("Department or Section is required.");
       return;
@@ -176,6 +200,7 @@ const ContactAdmin = () => {
           ? JSON.stringify({ email: payloadEmail, otp: otp.trim() })
           : JSON.stringify({
               full_name: fullName,
+              campus_id: Number(campusId),
               department,
               program_id: Number(programId),
               email: payloadEmail,
@@ -207,6 +232,7 @@ const ContactAdmin = () => {
       
       // Clear personal fields on successful submission
       setFullName("");
+      setCampusId("");
       setDepartment("");
       setOtp("");
       setOtpSent(false);
@@ -220,7 +246,10 @@ const ContactAdmin = () => {
   };
 
   return (
-    <div className="bq-contact-page h-screen flex flex-col page-transition relative overflow-hidden" style={{ height: '100vh', backgroundColor: paper }}>
+    <div
+      className="bq-login-page min-h-screen flex flex-col page-transition relative overflow-x-hidden pt-24 sm:pt-28"
+      style={{ minHeight: '100vh', backgroundColor: paper }}
+    >
       <PublicNav />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
@@ -277,29 +306,18 @@ const ContactAdmin = () => {
         .bq-corner-tr { top: -10px; right: -10px; border-top: 1.5px solid; border-right: 1.5px solid; }
         .bq-corner-bl { bottom: -10px; left: -10px; border-bottom: 1.5px solid; border-left: 1.5px solid; }
         .bq-corner-br { bottom: -10px; right: -10px; border-bottom: 1.5px solid; border-right: 1.5px solid; }
-
-        @media (max-height: 760px) {
-          .bq-contact-eyebrow { padding-top: 0.5rem; padding-bottom: 0; }
-          .bq-contact-center { padding-top: 0.25rem; padding-bottom: 0.25rem; }
-          .bq-contact-card { padding: 1rem 1.5rem; }
-          .bq-contact-card-header { margin-bottom: 1rem; }
-          .bq-contact-card-title { font-size: 2.25rem; }
-          .bq-contact-form { gap: 0.75rem; }
-          .bq-contact-card .bq-field { padding-top: 0.55rem; padding-bottom: 0.55rem; }
-          .bq-contact-footer { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+        .bq-contact-center { overflow: visible; }
+        .bq-contact-card {
+          box-shadow: 0 24px 60px rgba(20, 20, 15, 0.09), 0 3px 12px rgba(20, 20, 15, 0.04);
+          border-radius: 12px;
+          animation: bq-contact-rise 520ms ease-out both;
         }
-
-          .bq-contact-card {
-            box-shadow: 0 24px 60px rgba(20, 20, 15, 0.09), 0 3px 12px rgba(20, 20, 15, 0.04);
-            border-radius: 12px;
-            animation: bq-contact-rise 520ms ease-out both;
-          }
-          .bq-contact-backdrop {
-            background-image: linear-gradient(rgba(180, 69, 74, 0.09) 1px, transparent 1px), linear-gradient(90deg, rgba(180, 69, 74, 0.09) 1px, transparent 1px);
-            background-size: 44px 44px;
-            mask-image: linear-gradient(to bottom, black, transparent 72%);
-            animation: bq-contact-grid-wave 9s ease-in-out infinite;
-          }
+        .bq-contact-backdrop {
+          background-image: linear-gradient(rgba(180, 69, 74, 0.09) 1px, transparent 1px), linear-gradient(90deg, rgba(180, 69, 74, 0.09) 1px, transparent 1px);
+          background-size: 44px 44px;
+          mask-image: linear-gradient(to bottom, black, transparent 72%);
+          animation: bq-contact-grid-wave 9s ease-in-out infinite;
+        }
           .bq-contact-layout {
             display: grid;
             grid-template-columns: minmax(180px, 0.72fr) minmax(0, 28rem);
@@ -308,7 +326,6 @@ const ContactAdmin = () => {
             width: min(100%, 70rem);
           }
           .bq-contact-page .bq-contact-center { padding-top: 6.75rem; }
-          .bq-contact-page .bq-contact-center { box-sizing: border-box; align-items: flex-start; overflow: hidden; padding-bottom: 0.5rem; }
           .bq-contact-page .bq-contact-card { margin-top: 0; margin-bottom: 0; }
           .bq-contact-page .bq-contact-form > :not([hidden]) ~ :not([hidden]) { margin-top: 0.8rem; }
           .bq-contact-brand { animation: bq-contact-brand-in 620ms 80ms ease-out both; }
@@ -352,12 +369,12 @@ const ContactAdmin = () => {
         @media (max-height: 760px) {
           .bq-contact-page .bq-contact-center { padding-top: 5.5rem; padding-bottom: 0; }
           .bq-contact-brand-mark { width: min(100%, 18rem); }
-          .bq-contact-card { padding: 0.8rem 1.25rem; }
-          .bq-contact-card-header { margin-bottom: 0.65rem; }
-          .bq-contact-card-title { font-size: 2.15rem; }
+          .bq-contact-card { padding: 1rem 1.5rem; }
+          .bq-contact-card-header { margin-bottom: 1rem; }
+          .bq-contact-card-title { font-size: 2.25rem; }
           .bq-contact-form > :not([hidden]) ~ :not([hidden]) { margin-top: 0.55rem; }
-          .bq-contact-card .bq-field { padding-top: 0.45rem; padding-bottom: 0.45rem; }
-          .bq-contact-footer { padding-top: 0.35rem; padding-bottom: 0.35rem; }
+          .bq-contact-card .bq-field { padding-top: 0.55rem; padding-bottom: 0.55rem; }
+          .bq-contact-footer { padding-top: 0.5rem; padding-bottom: 0.5rem; }
         }
 
         @media (max-height: 600px) {
@@ -371,13 +388,10 @@ const ContactAdmin = () => {
         }
       `}</style>
 
-      <div className="absolute inset-0 -z-10" style={{ background: `linear-gradient(135deg, ${paper} 0%, #EEF2F8 100%)` }} />
-      <div className="bq-contact-backdrop pointer-events-none absolute inset-0 -z-10" />
-      <div className="absolute -top-20 -right-20 rounded-full opacity-20" style={{ width: 420, height: 420, background: `radial-gradient(circle, ${accent} 0%, transparent 70%)` }} />
-      <div className="absolute -bottom-28 -left-24 rounded-full opacity-15" style={{ width: 500, height: 500, background: `radial-gradient(circle, ${accent} 0%, transparent 70%)` }} />
+      <div className="bq-login-backdrop pointer-events-none absolute inset-0 -z-10" />
 
       {/* Centered Contact Admin Card */}
-      <div className="bq-contact-center min-h-0 flex-1 flex items-center justify-center overflow-y-auto px-4 py-4 sm:py-6">
+      <div className="bq-login-center min-h-0 flex-1 flex items-center justify-center overflow-visible px-4 py-6 sm:py-8">
         <div className="bq-contact-layout">
           <div className="bq-contact-brand flex flex-col items-start gap-4 text-left">
             <img src={bloomquestLogo} alt="BloomQuest" className="bq-contact-brand-mark" />
@@ -387,7 +401,7 @@ const ContactAdmin = () => {
             </div>
           </div>
           <div
-          className="bq-contact-card bq-card my-2 w-full max-w-md shrink-0 p-5 sm:p-6 md:p-8"
+          className="bq-login-card bq-contact-card bq-card w-full max-w-md shrink-0 p-5 sm:p-6 md:p-8"
           style={{ backgroundColor: surface, border: `1px solid ${rule}` }}
         >
           <span className="bq-corner bq-corner-tl" />
@@ -395,8 +409,8 @@ const ContactAdmin = () => {
           <span className="bq-corner bq-corner-bl" />
           <span className="bq-corner bq-corner-br" />
 
-          <div className="bq-contact-card-header mb-5 sm:mb-6">
-            <h2 className="bq-contact-card-title bq-headline text-3xl sm:text-4xl" style={{ color: ink }}>
+          <div className="bq-login-card-header bq-contact-card-header mb-5 sm:mb-6">
+            <h2 className="bq-login-card-title bq-contact-card-title bq-headline text-3xl sm:text-4xl" style={{ color: ink }}>
               Contact Admin
             </h2>
             <div style={{ width: '36px', height: '2px', backgroundColor: accent, marginTop: '14px', marginBottom: '14px' }} />
@@ -451,7 +465,7 @@ const ContactAdmin = () => {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="bq-contact-form space-y-4 sm:space-y-5">
+          <form onSubmit={handleSubmit} className="bq-contact-form bq-login-fields space-y-4 sm:space-y-5">
             <div>
               <label className="bq-label block mb-2">
                 Full Name
@@ -466,6 +480,25 @@ const ContactAdmin = () => {
             </div>
 
             <div>
+              <label className="bq-label block mb-2">Campus</label>
+              <select
+                value={campusId}
+                onChange={(e) => {
+                  setCampusId(e.target.value);
+                  setDepartment("");
+                  setProgramId("");
+                }}
+                className="bq-field"
+                required
+                disabled={campusesLoading || otpSent}
+              >
+                <option value="">{campusesLoading ? "Loading campuses..." : "Select your campus"}</option>
+                {campuses.map((campus) => <option key={campus.id} value={campus.id}>{campus.name}{campus.code ? ` (${campus.code})` : ""}</option>)}
+              </select>
+              {!campusesLoading && !campuses.length && <p className="mt-1 text-xs text-red-700">No active campuses are available. Please contact your administrator.</p>}
+            </div>
+
+            <div>
               <label className="bq-label block mb-2">
                 Department / Section
               </label>
@@ -477,15 +510,16 @@ const ContactAdmin = () => {
                 }}
                 className="bq-field"
                 required
+                disabled={!campusId || otpSent}
               >
-                <option value="">Select your department</option>
-                {departments.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+                <option value="">{campusId ? "Select your department" : "Select a campus first"}</option>
+                {campusDepartments.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
               </select>
             </div>
 
             <div>
               <label className="bq-label block mb-2">Program</label>
-              <select value={programId} onChange={(e) => setProgramId(e.target.value)} className="bq-field" required disabled={!department || !availablePrograms.length}>
+              <select value={programId} onChange={(e) => setProgramId(e.target.value)} className="bq-field" required disabled={!department || !availablePrograms.length || otpSent}>
                 <option value="">{department ? (availablePrograms.length ? "Select your program" : "No programs available") : "Select a department first"}</option>
                 {availablePrograms.map((program) => <option key={program.id} value={program.id}>{program.name}{program.code ? ` (${program.code})` : ""}</option>)}
               </select>
@@ -561,30 +595,12 @@ const ContactAdmin = () => {
       </div>
 
       <footer
-        className="bq-contact-footer w-full shrink-0 py-4 px-6 flex flex-col sm:flex-row items-center justify-between gap-2"
+        className="bq-login-footer w-full shrink-0 py-4 px-6 flex flex-col sm:flex-row items-center justify-between gap-2"
         style={{ backgroundColor: paper, borderTop: `1px solid ${ruleSoft}`, fontFamily: 'Inter, sans-serif' }}
       >
         <p className="text-xs" style={{ color: textMuted }}>
           © 2026 BloomQuest. All rights reserved.
         </p>
-        <div className="flex gap-4 text-xs" style={{ color: textMuted }}>
-          <button
-            type="button"
-            onClick={() => setLegalModal("privacy")}
-            className="hover:opacity-70 transition"
-            style={{ color: textMuted }}
-          >
-            Privacy Policy
-          </button>
-          <button
-            type="button"
-            onClick={() => setLegalModal("terms")}
-            className="hover:opacity-70 transition"
-            style={{ color: textMuted }}
-          >
-            Terms of Service
-          </button>
-        </div>
       </footer>
 
       <LegalModal type={legalModal} onClose={() => setLegalModal(null)} />

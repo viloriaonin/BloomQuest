@@ -317,11 +317,13 @@ const FilterSelect = ({ label, value, onChange, options }) => (
   </div>
 );
 
-const ReportsBtn = ({ activeTab, setActiveTab }) => {
+const ReportsBtn = ({ activeTab, setActiveTab, collapsed }) => {
   const isActive = activeTab === "reports";
 
   return (
     <button
+      title={collapsed ? "Reports" : undefined}
+      aria-label={collapsed ? "Reports" : undefined}
       onClick={() => setActiveTab("reports")}
       className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150 relative"
       style={

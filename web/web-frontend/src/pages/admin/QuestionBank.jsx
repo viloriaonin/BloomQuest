@@ -969,11 +969,13 @@ const LegacyQuestionBankContent = () => {
   );
 };
 
-const QuestionBankBtn = ({ activeTab, setActiveTab }) => {
+const QuestionBankBtn = ({ activeTab, setActiveTab, collapsed }) => {
   const isActive = activeTab === "question-bank";
 
   return (
     <button
+      title={collapsed ? "Question Bank" : undefined}
+      aria-label={collapsed ? "Question Bank" : undefined}
       onClick={() => setActiveTab("question-bank")}
       className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150 relative"
       style={
@@ -1011,14 +1013,16 @@ const QuestionBankBtn = ({ activeTab, setActiveTab }) => {
   );
 };
 
-const AdminQuestionBankPage = () => {
+const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
   const navigate = useNavigate();
   const [hierarchy, setHierarchy] = useState({ campuses: [] });
+  const [allSubjects, setAllSubjects] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [selection, setSelection] = useState({ campusId: null, departmentId: null, programId: null, subjectId: null });
   const [searchTerm, setSearchTerm] = useState("");
   const [questionType, setQuestionType] = useState("All types");
+  const [bloomLevel, setBloomLevel] = useState("All levels");
   const [loading, setLoading] = useState(true);
   const [questionsLoading, setQuestionsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1031,8 +1035,11 @@ const AdminQuestionBankPage = () => {
           fetch(`${API_URL}/api/subjects`),
         ]);
         if (!hierarchyResponse.ok || !subjectsResponse.ok) throw new Error("Could not load the academic structure.");
-        setHierarchy(await hierarchyResponse.json());
-        setSubjects(await subjectsResponse.json());
+        const hierarchyData = await hierarchyResponse.json();
+        const allSubjectsData = await subjectsResponse.json();
+        setHierarchy(hierarchyData);
+        setAllSubjects(allSubjectsData);
+        setSubjects(allSubjectsData);
       } catch (err) {
         setError(err.message);
       } finally {
@@ -1043,6 +1050,25 @@ const AdminQuestionBankPage = () => {
   }, []);
 
   useEffect(() => {
+    const loadProgramSubjects = async () => {
+      if (!selection.programId) {
+        setSubjects(allSubjects);
+        return;
+      }
+      setSubjects([]);
+      try {
+        const response = await fetch(`${API_URL}/api/subjects?program_id=${selection.programId}`);
+        if (!response.ok) throw new Error("Could not load subjects for this program.");
+        const data = await response.json();
+        setSubjects(data);
+      } catch (err) {
+        setError(err.message);
+      }
+    };
+    loadProgramSubjects();
+  }, [selection.programId, allSubjects]);
+
+  useEffect(() => {
     if (!selection.subjectId) {
       setQuestions([]);
       return;
@@ -1050,7 +1076,7 @@ const AdminQuestionBankPage = () => {
     const loadQuestions = async () => {
       setQuestionsLoading(true);
       try {
-        const response = await fetch(`${API_URL}/api/questions?subject_id=${selection.subjectId}`);
+        const response = await fetch(`${API_URL}/api/questions?subject_id=${selection.subjectId}&program_id=${selection.programId}`);
         if (!response.ok) throw new Error("Could not load questions for this subject.");
         setQuestions(await response.json());
       } catch (err) {
@@ -1065,11 +1091,13 @@ const AdminQuestionBankPage = () => {
   const selectedCampus = hierarchy.campuses.find((campus) => campus.id === selection.campusId);
   const selectedDepartment = selectedCampus?.departments.find((department) => department.id === selection.departmentId);
   const selectedProgram = selectedDepartment?.programs.find((program) => program.id === selection.programId);
-  const programSubjects = subjects.filter((subject) => subject.program_id === selection.programId);
+  const programSubjects = selection.programId ? subjects : [];
   const selectedSubject = subjects.find((subject) => subject.id === selection.subjectId);
   const visibleQuestions = questions.filter((question) => {
     const haystack = `${question.question || ""} ${question.topic_name || ""} ${question.creator_name || ""}`.toLowerCase();
-    return (questionType === "All types" || question.question_type === questionType) && haystack.includes(searchTerm.toLowerCase());
+    return (questionType === "All types" || question.question_type === questionType)
+      && (bloomLevel === "All levels" || question.bloom_level === bloomLevel)
+      && haystack.includes(searchTerm.toLowerCase());
   });
 
   const choose = (nextSelection) => {
@@ -1088,7 +1116,7 @@ const AdminQuestionBankPage = () => {
     if (selection.programId) return backTo("program");
     if (selection.departmentId) return backTo("department");
     if (selection.campusId) return backTo("campus");
-    navigate("/admin/dashboard");
+    navigate(basePath);
   };
   const formatDate = (value) => value ? new Date(value).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "Date unavailable";
 
@@ -1116,6 +1144,7 @@ const AdminQuestionBankPage = () => {
         <button type="button" onClick={goBack} className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-[#B4454A] px-4 py-2 text-sm font-semibold text-[#B4454A] transition hover:bg-[#B4454A] hover:text-white"><ArrowLeft size={15} /> Back</button>
       </section>
 
+      {selectedSubject && <div className="flex justify-end"><label className="text-xs font-semibold text-slate-600">Bloom level <select value={bloomLevel} onChange={(event) => setBloomLevel(event.target.value)} className="bq-field ml-2 py-2 text-sm"><option>All levels</option>{BLOOMS_LEVELS.map((level) => <option key={level.name}>{level.name}</option>)}</select></label></div>}
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">Loading academic structure...</div> : !selectedCampus ? (
         <section><div className="mb-3 flex items-end justify-between"><div><h3 className="text-lg font-semibold text-slate-900">Choose a campus</h3></div><span className="text-xs text-slate-500">{hierarchy.campuses.length} campus{hierarchy.campuses.length === 1 ? "" : "es"}</span></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{hierarchy.campuses.map((campus) => <Card key={campus.id} icon={Shield} title={campus.name} code={campus.code} detail={`${campus.departments.length} department${campus.departments.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: campus.id, departmentId: null, programId: null, subjectId: null })} />)}</div></section>
@@ -1132,6 +1161,6 @@ const AdminQuestionBankPage = () => {
   );
 };
 
-export const QuestionBankContent = () => <AdminQuestionBankPage />;
+export const QuestionBankContent = ({ basePath = "/admin" }) => <AdminQuestionBankPage basePath={basePath} />;
 
 export default QuestionBankBtn;

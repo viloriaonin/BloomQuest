@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { usePopup } from '../../components/PopupProvider';
 
 const API_URL = '/api';
-const EXAM_TYPE_OPTIONS = ['Midterm Exam', 'Preliminary Exam', 'Final Exam', 'Quiz', 'Long Exam'];
+const EXAM_TYPE_OPTIONS = ['Midterm Exam', 'Preliminary Exam', 'Final Exam', 'Quiz', 'Long Quiz'];
 const SEMESTER_OPTIONS = ['First Semester', 'Second Semester', 'Midterm Class'];
 const PRIMARY = '#8F1424';
 const pageBg = '#F6F7F9';

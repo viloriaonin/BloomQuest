@@ -12,25 +12,31 @@ class User(Base):
     archived = Column(Boolean, default=False, nullable=False)
     name = Column(String, nullable=True)         # <-- new
     department = Column(String, nullable=True)   # <-- new, only set for role == "faculty"
+    campus_id = Column(Integer, ForeignKey("campuses.id"), nullable=True, index=True)
     program_id = Column(Integer, ForeignKey("programs.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
 class Department(Base):
     __tablename__ = "departments"
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), unique=True, nullable=False, index=True)
-    code = Column(String(255), unique=True, nullable=True, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    code = Column(String(255), nullable=True, index=True)
     campus_id = Column(Integer, ForeignKey("campuses.id"), nullable=True, index=True)
     dean_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     dean_name = Column(String(255), nullable=True, index=True)
     chair_name = Column(String(255), nullable=True, index=True)
     created_at = Column(DateTime, server_default=func.now())
+    __table_args__ = (
+        UniqueConstraint("campus_id", "name", name="uq_department_campus_name"),
+        UniqueConstraint("campus_id", "code", name="uq_department_campus_code"),
+    )
 
 class Campus(Base):
     __tablename__ = "campuses"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), unique=True, nullable=False, index=True)
     code = Column(String(255), unique=True, nullable=True, index=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
     created_at = Column(DateTime, server_default=func.now())
 
 class Program(Base):
@@ -109,6 +115,7 @@ class AccountRequest(Base):
     id = Column(Integer, primary_key=True, index=True)
     full_name = Column(String(255), nullable=False)
     department = Column(String(255), nullable=False)
+    campus_id = Column(Integer, ForeignKey("campuses.id"), nullable=True, index=True)
     program_id = Column(Integer, ForeignKey("programs.id"), nullable=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     status = Column(String(50), default="pending")

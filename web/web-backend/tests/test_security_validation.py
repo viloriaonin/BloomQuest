@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from main import normalize_email, read_upload_bytes
 from routers.assessment import group_questions_by_type
 from routers.questions import TOSGenerationPayload
+from routers.tos_utils import generate_tos_from_excel_template
 
 
 def test_normalize_email_trims_and_lowercases():
@@ -58,6 +59,79 @@ def test_tos_generation_payload_accepts_new_assessment_metadata():
 
     assert payload.question_type_points == {"MCQ": 2}
     assert payload.academic_year == "2026-2027"
+
+
+def test_generate_tos_uses_department_leadership_names():
+    workbook = generate_tos_from_excel_template(
+        selected_topics_data=[{
+            "topic_name": "Database Design",
+            "ilo": "Create logical models.",
+            "hours_a": 3,
+            "minutes_b": 0.6,
+            "weight": 100,
+            "items": 5,
+            "bloom_counts": {"Remember": 1, "Understand": 1, "Apply": 1, "Analyze": 1, "Evaluate": 1, "Create": 0},
+            "bloom_question_numbers": {"Remember": "1", "Understand": "2", "Apply": "3", "Analyze": "4", "Evaluate": "5", "Create": ""},
+        }],
+        course_code="CS 101",
+        course_title="Database Management",
+        whole_total_items=5,
+        exam_type="Final Exam",
+        semester="First Semester",
+        academic_year="2026-2027",
+        instructor_name="Prof. Maria Santos",
+        department="Computer Science",
+        dean_name="Dr. Alice Reyes",
+        program_chair_name="Dr. Ben Cruz",
+    )
+
+    values = {str(cell.value).strip() for row in workbook.active.iter_rows() for cell in row if cell.value is not None}
+    assert "Prof. Maria Santos" in values
+    assert "Dr. Ben Cruz" in values
+    assert "Dr. Alice Reyes" in values
+    assert "Program Chair" in values
+    assert "Dean" in values
+    assert "Program Chair, BSIT" not in values
+    assert "Dean, CICS" not in values
+    assert any("2026-2027" in value for value in values)
+    assert any("DEPARTMENT: Computer Science".lower() in value.lower() for value in values)
+    assert "College of Informatics and Computing Sciences" not in str(workbook.active["B14"].value or "")
+    assert "Computer Science" in str(workbook.active["B14"].value or "")
+    assert workbook.active["D23"].value == 3.0
+    assert workbook.active["E23"].value == 0.6
+
+
+def test_generate_tos_uses_consistent_font_styling():
+    workbook = generate_tos_from_excel_template(
+        selected_topics_data=[{
+            "topic_name": "Database Design",
+            "ilo": "Create logical models.",
+            "hours_a": 3,
+            "minutes_b": 0.6,
+            "weight": 100,
+            "items": 5,
+            "bloom_counts": {"Remember": 1, "Understand": 1, "Apply": 1, "Analyze": 1, "Evaluate": 1, "Create": 0},
+            "bloom_question_numbers": {"Remember": "1", "Understand": "2", "Apply": "3", "Analyze": "4", "Evaluate": "5", "Create": ""},
+        }],
+        course_code="CS 101",
+        course_title="Database Management",
+        whole_total_items=5,
+        exam_type="Final Exam",
+        semester="First Semester",
+        academic_year="2026-2027",
+        instructor_name="Prof. Maria Santos",
+        department="Computer Science",
+        dean_name="Dr. Alice Reyes",
+        program_chair_name="Dr. Ben Cruz",
+    )
+
+    ws = workbook.active
+    assert ws["B14"].font.name == "Times New Roman"
+    assert ws["B14"].font.size == 11
+    assert ws["D23"].font.name == "Times New Roman"
+    assert ws["D23"].font.size == 11
+    assert ws["G21"].font.name == "Times New Roman"
+    assert ws["G21"].font.size == 11
 
 
 def test_group_questions_by_type_keeps_same_question_types_together():

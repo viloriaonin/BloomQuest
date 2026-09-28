@@ -664,11 +664,13 @@ export const UserMgmtContent = () => {
   );
 };
 
-const UserMgmtBtn = ({ activeTab, setActiveTab }) => {
+const UserMgmtBtn = ({ activeTab, setActiveTab, collapsed }) => {
   const isActive = activeTab === "users";
 
   return (
     <button
+      title={collapsed ? "User Management" : undefined}
+      aria-label={collapsed ? "User Management" : undefined}
       onClick={() => setActiveTab("users")}
       className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150 relative"
       style={

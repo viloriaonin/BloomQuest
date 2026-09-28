@@ -1,10 +1,12 @@
 import React from "react";
 
-const DashboardBtn = ({ activeTab, setActiveTab }) => {
+const DashboardBtn = ({ activeTab, setActiveTab, collapsed }) => {
   const isActive = activeTab === "dashboard";
 
   return (
     <button
+      title={collapsed ? "Dashboard" : undefined}
+      aria-label={collapsed ? "Dashboard" : undefined}
       onClick={() => setActiveTab("dashboard")}
       className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150 relative"
       style={

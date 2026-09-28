@@ -2,6 +2,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Form
 from fastapi.responses import FileResponse
 from fastapi.background import BackgroundTasks
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
@@ -14,6 +15,7 @@ import pythoncom
 from docx2pdf import convert
 from database import get_db
 import models
+from security import assert_campus_access, get_current_user
 from routers.tos_utils import TEMPLATE_PATH
 
 router = APIRouter(prefix="/api/assessment", tags=["Assessment"])
@@ -890,6 +892,7 @@ def generate_assessment(
     file_type: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     if file_type not in ("docx", "pdf"):
         raise HTTPException(400, "file_type must be 'docx' or 'pdf'")
@@ -898,11 +901,38 @@ def generate_assessment(
     if not subject:
         raise HTTPException(404, "Subject not found")
 
-    questions = (
-        db.query(models.GeneratedQuestion)
-        .filter(models.GeneratedQuestion.subject_id == subject_id)
-        .all()
-    )
+    role = str(current_user.role).lower()
+    if role == "campus_admin":
+        department_id = subject.department_id
+        if subject.program_id:
+            department_id = db.query(models.Program.department_id).filter(models.Program.id == subject.program_id).scalar()
+        campus_id = db.query(models.Department.campus_id).filter(models.Department.id == department_id).scalar() if department_id else None
+        if campus_id is None:
+            raise HTTPException(404, "Subject not found")
+        assert_campus_access(current_user, campus_id)
+    elif role != "super_admin" and subject.user_id != current_user.id:
+        owns_questions = db.query(models.GeneratedQuestion.id).filter(
+            models.GeneratedQuestion.subject_id == subject_id,
+            models.GeneratedQuestion.user_id == current_user.id,
+        ).first()
+        owns_upload = db.query(models.UploadedFile.id).filter(
+            models.UploadedFile.subject_id == subject_id,
+            models.UploadedFile.user_id == current_user.id,
+        ).first()
+        if not owns_questions and not owns_upload:
+            raise HTTPException(404, "Subject not found")
+
+    question_query = db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.subject_id == subject_id)
+    if role not in {"super_admin", "campus_admin"}:
+        question_query = question_query.outerjoin(
+            models.TableOfSpecification, models.TableOfSpecification.id == models.GeneratedQuestion.tos_id
+        ).outerjoin(
+            models.UploadedFile, models.UploadedFile.id == models.TableOfSpecification.upload_id
+        ).filter(or_(
+            models.GeneratedQuestion.user_id == current_user.id,
+            models.UploadedFile.user_id == current_user.id,
+        ))
+    questions = question_query.all()
     if not questions:
         raise HTTPException(404, "No questions found for this subject")
 

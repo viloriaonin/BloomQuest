@@ -10,7 +10,7 @@ import UserDetailPage from "./UserDetailPage";
 import AdminSettings from "./AdminSettings";
 import { QuestionBankContent } from "./QuestionBank";
 import { Bar, Doughnut } from "react-chartjs-2";
-import { Radio, ShieldCheck, ChevronRight, Bell } from "lucide-react";
+import { Radio, ShieldCheck, ChevronRight, Bell, Menu } from "lucide-react";
 import { ArcElement, BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from "chart.js";
 
 ChartJS.register(ArcElement, BarElement, CategoryScale, Legend, LinearScale, Tooltip);
@@ -63,6 +63,8 @@ const AdminDashboard = () => {
   );
   const [userEmail, setUserEmail] = useState("admin@bloomquest.edu");
   const [userRole, setUserRole] = useState("Administrator");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [adminTheme, setAdminTheme] = useState(() => localStorage.getItem("bloomquest-admin-theme") || "dark");
   const [dashboardData, setDashboardData] = useState({ questions: 0, assessments: 0, activeAccounts: 0, avgQuestionsPerFaculty: 0, mostActiveDepartment: "N/A", departments: [], notifications: [], activity: [] });
   const [dashboardLoading, setDashboardLoading] = useState(true);
@@ -73,6 +75,11 @@ const AdminDashboard = () => {
     localStorage.setItem("bloomquest-theme", nextTheme);
     window.dispatchEvent(new CustomEvent("theme-updated", { detail: { theme: nextTheme } }));
     setAdminTheme(nextTheme);
+  };
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((previous) => !previous);
+    setMobileSidebarOpen((previous) => !previous);
   };
 
   useEffect(() => {
@@ -195,15 +202,36 @@ const AdminDashboard = () => {
 
   return (
     <div className={`bq-shell bq-admin-shell ${adminTheme === "light" ? "bq-admin-light" : "bq-admin-dark"} h-screen w-full overflow-hidden`}>
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} adminTheme={adminTheme} onThemeToggle={toggleAdminTheme} />
+      {mobileSidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          className="fixed inset-0 z-30 bg-slate-950/30 md:hidden"
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+      )}
+      <Sidebar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        adminTheme={adminTheme}
+        onThemeToggle={toggleAdminTheme}
+        collapsed={sidebarCollapsed}
+        mobileOpen={mobileSidebarOpen}
+        onNavigate={() => setMobileSidebarOpen(false)}
+      />
       <main className="bq-admin-main flex flex-1 flex-col overflow-auto">
         <header
           className="bq-admin-header sticky top-0 z-10 flex min-h-[76px] items-center justify-between border-b px-6 py-4 backdrop-blur flex-shrink-0"
         >
-          <div>
+          <div className="flex items-start gap-3">
+            <button type="button" onClick={toggleSidebar} className="mt-1 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white" aria-label="Toggle navigation">
+              <Menu size={18} />
+            </button>
+            <div>
             <div className="flex items-center gap-2"><p className="bq-admin-eyebrow">ADMIN WORKSPACE</p><span className="bq-admin-live"><Radio size={10} /> LIVE</span></div>
             <h1 className="bq-admin-title">{meta.label}</h1>
             <p className="bq-admin-muted mt-1">{meta.description}</p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right">
