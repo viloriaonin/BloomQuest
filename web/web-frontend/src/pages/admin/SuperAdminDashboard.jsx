@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Bar, Doughnut } from "react-chartjs-2";
-import { Activity, BookOpen, Building2, GraduationCap, LayoutDashboard, Menu, Moon, Search, ShieldCheck, Sun, Users } from "lucide-react";
+import { Activity, BookOpen, Building2, GraduationCap, LayoutDashboard, Menu, Moon, Search, ShieldCheck, Sparkles, Sun, Users } from "lucide-react";
 import { ArcElement, BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from "chart.js";
 import LogoutBtn from "./Logout";
 import { AcademicMgmtContent } from "./AcademicMgmt";
@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   ["users", "User Management", Users],
   ["academic", "Academic Management", GraduationCap],
   ["questions", "Question Bank", BookOpen],
+  ["ai_usage", "AI Usage", Sparkles],
   ["activity", "Activity Logs", Activity],
 ];
 
@@ -46,6 +47,9 @@ const SuperAdminDashboard = () => {
   const [adminForm, setAdminForm] = useState({ name: "", email: "", password: "", campus_id: "" });
   const [users, setUsers] = useState([]);
   const [userFilters, setUserFilters] = useState({ campus_id: "", role: "", status_filter: "active", search: "" });
+  const [aiUsage, setAIUsage] = useState(null);
+  const [aiUsageFilters, setAIUsageFilters] = useState({ campus_id: "", date_from: "", date_to: "", model_name: "", request_status: "" });
+  const [aiUsageLoading, setAIUsageLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -98,6 +102,22 @@ const SuperAdminDashboard = () => {
     Object.entries(userFilters).forEach(([key, value]) => value && params.set(key, value));
     requestJson(`/super-admin/users?${params}`).then(setUsers).catch((reason) => setError(reason.message));
   }, [activeTab, userFilters]);
+
+  useEffect(() => {
+    if (activeTab !== "ai_usage") return;
+    let active = true;
+    const params = new URLSearchParams();
+    Object.entries(aiUsageFilters).forEach(([key, value]) => value && params.set(key, value));
+    setAIUsageLoading(true);
+    requestJson(`/super-admin/ai-usage?${params}`).then((data) => {
+      if (active) setAIUsage(data);
+    }).catch((reason) => {
+      if (active) setError(reason.message);
+    }).finally(() => {
+      if (active) setAIUsageLoading(false);
+    });
+    return () => { active = false; };
+  }, [activeTab, aiUsageFilters]);
 
   const switchTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
@@ -308,7 +328,7 @@ const SuperAdminDashboard = () => {
       <div className="grid gap-2 md:grid-cols-4">
         <label className="relative"><Search size={15} className="absolute left-3 top-3 text-slate-400" /><input aria-label="Search users" placeholder="Search name or email" value={userFilters.search} onChange={(event) => setUserFilters({ ...userFilters, search: event.target.value })} className="bq-field w-full pl-9" /></label>
         <select aria-label="Filter by campus" value={userFilters.campus_id} onChange={(event) => setUserFilters({ ...userFilters, campus_id: event.target.value })} className="bq-field"><option value="">All campuses</option>{campuses.map((campus) => <option key={campus.id} value={campus.id}>{campus.name}</option>)}</select>
-        <select aria-label="Filter by role" value={userFilters.role} onChange={(event) => setUserFilters({ ...userFilters, role: event.target.value })} className="bq-field"><option value="">All roles</option><option value="super_admin">Super Admin</option><option value="campus_admin">Campus Admin</option><option value="faculty">Faculty</option><option value="student">User</option></select>
+        <select aria-label="Filter by role" value={userFilters.role} onChange={(event) => setUserFilters({ ...userFilters, role: event.target.value })} className="bq-field"><option value="">All roles</option><option value="campus_admin">Campus Admin</option><option value="faculty">Faculty</option></select>
         <select aria-label="Filter by status" value={userFilters.status_filter} onChange={(event) => setUserFilters({ ...userFilters, status_filter: event.target.value })} className="bq-field"><option value="active">Active</option><option value="archived">Inactive</option><option value="">All statuses</option></select>
       </div>
       <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead><tr className="border-b border-slate-700"><th className="py-2 pr-3">Name</th><th className="py-2 pr-3">Role</th><th className="py-2 pr-3">Campus</th><th className="py-2 pr-3">Department / Program</th><th className="py-2">Status</th></tr></thead><tbody>
@@ -316,6 +336,80 @@ const SuperAdminDashboard = () => {
       </tbody></table>{!users.length && <p className="bq-admin-muted py-5">No users match these filters.</p>}</div>
     </section>
   );
+
+  const renderAIUsage = () => {
+    const totals = aiUsage?.totals || {};
+    const campusRows = aiUsage?.requests_by_campus || [];
+    const monthRows = aiUsage?.requests_by_month || [];
+    const modelRows = aiUsage?.model_usage || [];
+    const userRows = aiUsage?.requests_by_user || [];
+    const errorRows = aiUsage?.error_types || [];
+    const tokenUsage = aiUsage?.token_usage;
+    const modelOptions = [...new Set([
+      ...(aiUsage?.available_models || []),
+      ...(aiUsageFilters.model_name ? [aiUsageFilters.model_name] : []),
+    ])];
+    const updateFilter = (key, value) => setAIUsageFilters((current) => ({ ...current, [key]: value }));
+    const chartOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: "bottom" } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    };
+
+    return (
+      <div className="space-y-4">
+        <section className="bq-admin-panel">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><h2>AI usage filters</h2><p className="bq-admin-muted mt-1 text-sm">Filter university-wide Gemini activity.</p></div>
+            <button type="button" className="bq-admin-action" onClick={() => setAIUsageFilters({ campus_id: "", date_from: "", date_to: "", model_name: "", request_status: "" })}>Clear filters</button>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <label className="text-sm">Campus<select aria-label="Filter AI usage by campus" value={aiUsageFilters.campus_id} onChange={(event) => updateFilter("campus_id", event.target.value)} className="bq-field mt-1 w-full"><option value="">All campuses</option>{(overview?.campuses || []).map((campus) => <option key={campus.id} value={campus.id}>{campus.name}</option>)}</select></label>
+            <label className="text-sm">From<input aria-label="AI usage start date" type="date" value={aiUsageFilters.date_from} onChange={(event) => updateFilter("date_from", event.target.value)} className="bq-field mt-1 w-full" /></label>
+            <label className="text-sm">To<input aria-label="AI usage end date" type="date" value={aiUsageFilters.date_to} onChange={(event) => updateFilter("date_to", event.target.value)} className="bq-field mt-1 w-full" /></label>
+            <label className="text-sm">Gemini model<select aria-label="Filter AI usage by Gemini model" value={aiUsageFilters.model_name} onChange={(event) => updateFilter("model_name", event.target.value)} className="bq-field mt-1 w-full"><option value="">All models</option>{modelOptions.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
+            <label className="text-sm">Status<select aria-label="Filter AI usage by status" value={aiUsageFilters.request_status} onChange={(event) => updateFilter("request_status", event.target.value)} className="bq-field mt-1 w-full"><option value="">All statuses</option><option value="success">Successful</option><option value="failed">Failed</option><option value="rate_limited">Rate limited</option><option value="in_progress">In progress</option></select></label>
+          </div>
+        </section>
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            { label: "AI Requests", value: totals.total_ai_requests, color: "#C4485A" },
+            { label: "Generation Requests", value: totals.generation_requests, color: "#5587B8" },
+            { label: "Questions Generated", value: totals.total_questions_generated, color: "#378A87" },
+            { label: "Successful", value: totals.successful_requests, color: "#758B54" },
+            { label: "Failed", value: totals.failed_requests, color: "#E0A458" },
+            { label: "Rate-Limit Events", value: totals.rate_limit_events, color: "#9B7465" },
+            { label: "Gemini API Calls", value: totals.gemini_api_calls, color: "#8C6AA8" },
+          ].map(({ label, value, color }) => (
+            <section key={label} className="bq-admin-stat flex min-h-28 flex-col justify-between">
+              <div className="bq-admin-stat-label">{label}</div>
+              <div className="mt-3 text-3xl font-semibold leading-none" style={{ color: "var(--admin-text, #ecedef)" }}>{aiUsageLoading ? "..." : formatNumber(value)}</div>
+              <span className="mt-3 h-1 w-12 rounded-full" style={{ backgroundColor: color }} />
+            </section>
+          ))}
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          <section className="bq-admin-panel"><h2>Requests and questions by campus</h2><div className="mt-4 h-72">{campusRows.length ? <Bar data={{ labels: campusRows.map((row) => row.campus), datasets: [{ label: "Requests", data: campusRows.map((row) => row.requests), backgroundColor: "#C4485A", borderRadius: 3 }, { label: "Questions", data: campusRows.map((row) => row.questions), backgroundColor: "#378A87", borderRadius: 3 }] }} options={chartOptions} /> : <p className="bq-admin-muted pt-8">No AI usage recorded for these filters.</p>}</div></section>
+          <section className="bq-admin-panel"><h2>Requests by month</h2><div className="mt-4 h-72">{monthRows.length ? <Bar data={{ labels: monthRows.map((row) => row.month), datasets: [{ label: "Requests", data: monthRows.map((row) => row.requests), backgroundColor: "#5587B8", borderRadius: 3 }, { label: "Questions", data: monthRows.map((row) => row.questions), backgroundColor: "#E0A458", borderRadius: 3 }] }} options={chartOptions} /> : <p className="bq-admin-muted pt-8">No monthly activity in this range.</p>}</div></section>
+        </div>
+
+        <section className="bq-admin-panel">
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><h2>Requests by user</h2><p className="bq-admin-muted mt-1 text-sm">Faculty, administrators, and other recorded requesters.</p></div><span className="bq-admin-mono">{formatNumber(userRows.length)} USERS</span></div>
+          <div className="mt-4 max-h-[32rem] overflow-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="sticky top-0 bq-admin-panel"><tr className="border-b border-slate-700"><th className="py-2 pr-3">User</th><th className="py-2 pr-3">Role</th><th className="py-2 pr-3">Requests</th><th className="py-2">Questions</th></tr></thead><tbody>{userRows.map((row) => <tr key={row.user_id} className="border-b border-slate-800"><td className="py-3 pr-3">{row.name}<span className="bq-admin-muted block text-xs">{row.email}</span></td><td className="py-3 pr-3">{row.role || "-"}</td><td className="py-3 pr-3">{formatNumber(row.requests)}</td><td className="py-3">{formatNumber(row.questions)}</td></tr>)}</tbody></table>{!userRows.length && <p className="bq-admin-muted py-5">No requesters match these filters.</p>}</div>
+        </section>
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          <section className="bq-admin-panel"><h2>Gemini model usage</h2><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[520px] text-left text-sm"><thead><tr className="border-b border-slate-700"><th className="py-2 pr-3">Model</th><th className="py-2 pr-3">Requests</th><th className="py-2 pr-3">API calls</th><th className="py-2">Questions</th></tr></thead><tbody>{modelRows.map((row) => <tr key={row.model} className="border-b border-slate-800"><td className="py-3 pr-3">{row.model}</td><td className="py-3 pr-3">{formatNumber(row.requests)}</td><td className="py-3 pr-3">{formatNumber(row.api_calls)}</td><td className="py-3">{formatNumber(row.questions)}</td></tr>)}</tbody></table>{!modelRows.length && <p className="bq-admin-muted py-5">No model activity recorded.</p>}</div></section>
+          <section className="bq-admin-panel"><h2>Token usage</h2>{tokenUsage?.available ? <div className="mt-4 grid gap-3 sm:grid-cols-3">{[["Input", tokenUsage.input_tokens], ["Output", tokenUsage.output_tokens], ["Total", tokenUsage.total_tokens]].map(([label, value]) => <div key={label} className="rounded-lg border border-slate-700 p-4"><p className="bq-admin-stat-label">{label} tokens</p><p className="mt-2 text-2xl font-semibold">{formatNumber(value)}</p></div>)}</div> : <p className="bq-admin-muted mt-4 text-sm">Token totals are hidden because complete Gemini usage metadata is not available for every Gemini request in this selection.</p>}</section>
+        </div>
+
+        <section className="bq-admin-panel"><h2>Failure and rate-limit types</h2><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[440px] text-left text-sm"><thead><tr className="border-b border-slate-700"><th className="py-2 pr-3">Type</th><th className="py-2">Requests</th></tr></thead><tbody>{errorRows.map((row) => <tr key={row.error_type} className="border-b border-slate-800"><td className="py-3 pr-3">{row.error_type}</td><td className="py-3">{formatNumber(row.requests)}</td></tr>)}</tbody></table>{!errorRows.length && <p className="bq-admin-muted py-5">No error or rate-limit events for these filters.</p>}</div></section>
+      </div>
+    );
+  };
 
   const renderAnalytics = () => {
     const campusRows = dashboardCampusRows;
@@ -334,6 +428,7 @@ const SuperAdminDashboard = () => {
     if (activeTab === "users") return renderUsers();
     if (activeTab === "academic") return <AcademicMgmtContent basePath="/super-admin/academic" />;
     if (activeTab === "questions") return <QuestionBankContent basePath="/super-admin/dashboard" />;
+    if (activeTab === "ai_usage") return renderAIUsage();
     if (activeTab === "activity") return <ReportsContent />;
     return renderDashboard();
   };

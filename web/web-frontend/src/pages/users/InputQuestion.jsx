@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { usePopup } from '../../components/PopupProvider';
 
 const API_URL = '/api';
+const MAX_QUESTIONS_PER_GENERATION = 200;
 const EXAM_TYPE_OPTIONS = ['Midterm Exam', 'Preliminary Exam', 'Final Exam', 'Quiz', 'Long Quiz'];
 const SEMESTER_OPTIONS = ['First Semester', 'Second Semester', 'Midterm Class'];
 const PRIMARY = '#8F1424';
@@ -316,6 +317,8 @@ const InputQuestion = () => {
   // Shared Core States
   const [subjects, setSubjects] = useState([]);
   const [selectedSubject, setSelectedSubject] = useState('');
+  const [subjectCodeQuery, setSubjectCodeQuery] = useState('');
+  const [subjectSearchOpen, setSubjectSearchOpen] = useState(false);
   const [isAddingNewSubject, setIsAddingNewSubject] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState('');
   const [newSubjectCode, setNewSubjectCode] = useState('');
@@ -358,6 +361,13 @@ const InputQuestion = () => {
   const [generationProgress, setGenerationProgress] = useState(0);
   const [previewAction, setPreviewAction] = useState(null);
   const uploadAbortControllerRef = useRef(null);
+  const generationRequestInFlightRef = useRef(false);
+  const maxQuestionsPerGeneration = Number(uploadResult?.max_questions_per_generation) || MAX_QUESTIONS_PER_GENERATION;
+  const isFacultyUser = localStorage.getItem('role')?.toLowerCase() === 'faculty';
+  const selectedUploadSubject = subjects.find((subject) => String(subject.id) === String(selectedSubject));
+  const facultySubjectMatches = subjects.filter((subject) => (
+    subject.code && subject.code.toLowerCase().includes(subjectCodeQuery.trim().toLowerCase())
+  )).slice(0, 8);
 
   useEffect(() => {
     const calculatedTotalItems = selectedQuestionTypes.reduce(
@@ -403,6 +413,8 @@ const InputQuestion = () => {
       if (parsed.moduleFile) setModuleFile(restoreFile(parsed.moduleFile));
       if (parsed.syllabusFile) setSyllabusFile(restoreFile(parsed.syllabusFile));
       if (parsed.uploadResult) setUploadResult(parsed.uploadResult);
+      if (parsed.selectedSubject) setSelectedSubject(String(parsed.selectedSubject));
+      if (parsed.subjectCodeQuery) setSubjectCodeQuery(parsed.subjectCodeQuery);
       if (parsed.generationResult) setGenerationResult(parsed.generationResult);
       if (Array.isArray(parsed.excludedQuestionIds)) setExcludedQuestionIds(parsed.excludedQuestionIds);
       if (Array.isArray(parsed.selectedTopics)) setSelectedTopics(parsed.selectedTopics);
@@ -433,6 +445,8 @@ const InputQuestion = () => {
       wizardStep,
       moduleFile: serializeFile(moduleFile),
       syllabusFile: serializeFile(syllabusFile),
+      selectedSubject,
+      subjectCodeQuery,
       uploading,
       generating,
       uploadResult,
@@ -460,6 +474,8 @@ const InputQuestion = () => {
     wizardStep,
     moduleFile,
     syllabusFile,
+    selectedSubject,
+    subjectCodeQuery,
     uploading,
     generating,
     uploadResult,
@@ -489,6 +505,8 @@ const InputQuestion = () => {
     wizardStep,
     moduleFile,
     syllabusFile,
+    selectedSubject,
+    subjectCodeQuery,
     uploadResult,
     generationResult,
     selectedTopics,
@@ -511,7 +529,10 @@ const InputQuestion = () => {
 
   const fetchSubjects = async () => {
     try {
-      const response = await fetch(`${API_URL}/subjects`);
+      const subjectEndpoint = localStorage.getItem('role')?.toLowerCase() === 'faculty'
+        ? '/faculty/subjects'
+        : '/subjects';
+      const response = await fetch(`${API_URL}${subjectEndpoint}`);
       if (!response.ok) {
         const errData = await parseApiResponse(response);
         throw new Error(getErrorMessage(errData) || 'Failed to synchronize subject matrix context data records.');
@@ -531,7 +552,15 @@ const InputQuestion = () => {
     } else {
       setIsAddingNewSubject(false);
       setSelectedSubject(val);
+      setSubjectCodeQuery(subjects.find((subject) => String(subject.id) === String(val))?.code || '');
     }
+  };
+
+  const selectFacultySubject = (subject) => {
+    setSelectedSubject(String(subject.id));
+    setSubjectCodeQuery(subject.code);
+    setSubjectSearchOpen(false);
+    setError('');
   };
 
   const handleCreateCustomSubject = async (e) => {
@@ -555,6 +584,7 @@ const InputQuestion = () => {
 
       setSubjects(prev => [...prev, data]);
       setSelectedSubject(data.id);
+      setSubjectCodeQuery(data.code || '');
       setIsAddingNewSubject(false);
       setNewSubjectName('');
       setNewSubjectCode('');
@@ -766,6 +796,10 @@ const InputQuestion = () => {
       setError('Please upload both module and syllabus files.');
       return;
     }
+    if (isFacultyUser && !subjects.some((subject) => String(subject.id) === String(selectedSubject))) {
+      setError('Search and select a subject code from your program before uploading materials.');
+      return;
+    }
     
     const moduleErr = validateFile(moduleFile, 'module');
     const syllabusErr = validateFile(syllabusFile, 'syllabus');
@@ -793,6 +827,7 @@ const InputQuestion = () => {
       const formData = new FormData();
       formData.append('module_file', moduleFile);
       formData.append('syllabus_file', syllabusFile);
+      if (isFacultyUser) formData.append('subject_id', String(selectedSubject));
       const userId = localStorage.getItem('user_id');
       if (userId) formData.append('user_id', userId);
 
@@ -868,6 +903,7 @@ const InputQuestion = () => {
   };
 
   const handleGenerate = async () => {
+    if (generationRequestInFlightRef.current) return;
     if (!uploadResult?.upload_id) {
       setError('Please upload and analyze the module and syllabus before generating questions.');
       return;
@@ -877,6 +913,10 @@ const InputQuestion = () => {
 
     if (!Number.isInteger(intTotalItems) || intTotalItems < 1) {
       setError('Please enter a valid number of items.');
+      return;
+    }
+    if (intTotalItems > maxQuestionsPerGeneration) {
+      setError(`A generation can contain at most ${maxQuestionsPerGeneration} questions.`);
       return;
     }
     if (!Number.isInteger(intTotalPoints) || intTotalPoints < 1 || intTotalPoints > 1000) {
@@ -930,6 +970,7 @@ const InputQuestion = () => {
 
     setError('');
     setSuccessMessage('');
+    generationRequestInFlightRef.current = true;
     setGenerating(true);
     persistInputQuestionSession({
       activeTab: 'upload',
@@ -999,6 +1040,7 @@ const InputQuestion = () => {
       });
       console.error("TOS Generation Error:", err);
     } finally {
+      generationRequestInFlightRef.current = false;
       setGenerating(false);
       // Keep progress bar visible for 500ms after completion before hiding
       setTimeout(() => {
@@ -1299,6 +1341,61 @@ const InputQuestion = () => {
                   <div className="rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-red-700">Required</div>
                 </div>
 
+                {isFacultyUser && (
+                  <section className="mb-5 grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2 md:items-start">
+                    <div className="relative">
+                      <label htmlFor="faculty-subject-code" className="mb-2 block text-xs font-bold uppercase text-slate-600">Search subject code</label>
+                      <input
+                        id="faculty-subject-code"
+                        type="search"
+                        role="combobox"
+                        aria-label="Search subject code"
+                        aria-autocomplete="list"
+                        aria-expanded={subjectSearchOpen && !!subjectCodeQuery.trim()}
+                        aria-controls="faculty-subject-code-options"
+                        autoComplete="off"
+                        value={subjectCodeQuery}
+                        onFocus={() => setSubjectSearchOpen(true)}
+                        onChange={(event) => {
+                          setSubjectCodeQuery(event.target.value);
+                          setSelectedSubject('');
+                          setSubjectSearchOpen(true);
+                        }}
+                        placeholder="Enter a subject code"
+                        disabled={uploading || !!uploadResult}
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:ring-2 focus:ring-red-100 disabled:bg-slate-100"
+                      />
+                      {subjectSearchOpen && !!subjectCodeQuery.trim() && !uploadResult && (
+                        <div id="faculty-subject-code-options" role="listbox" className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                          {facultySubjectMatches.length ? facultySubjectMatches.map((subject) => (
+                            <button
+                              key={subject.id}
+                              type="button"
+                              role="option"
+                              aria-selected={String(subject.id) === String(selectedSubject)}
+                              onClick={() => selectFacultySubject(subject)}
+                              className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-sm text-slate-700 transition hover:bg-rose-50"
+                            >
+                              <span className="font-semibold">{subject.code}</span>
+                              <span className="truncate text-slate-500">{safeRenderValue(subject.name)}</span>
+                            </button>
+                          )) : <p className="px-3.5 py-3 text-sm text-slate-500">No matching subject codes in your program.</p>}
+                        </div>
+                      )}
+                      {!subjects.length && <p className="mt-2 text-xs text-slate-500">No coded subjects are assigned to your program.</p>}
+                    </div>
+                    <div aria-live="polite" className="min-h-[4.5rem] rounded-lg border border-slate-200 bg-white px-4 py-3">
+                      {selectedUploadSubject ? (
+                        <>
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-rose-500">Selected subject</p>
+                          <p className="mt-1 font-semibold text-slate-800">{safeRenderValue(selectedUploadSubject.name)}</p>
+                          <p className="mt-1 text-xs text-slate-500">{selectedUploadSubject.code}{selectedUploadSubject.program_name ? ` · ${selectedUploadSubject.program_name}` : ''}{selectedUploadSubject.department_name ? ` · ${selectedUploadSubject.department_name}` : ''}</p>
+                        </>
+                      ) : <p className="text-sm text-slate-500">Select a subject code to view its subject and program.</p>}
+                    </div>
+                  </section>
+                )}
+
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <UploadSlot
                     policyKey="module"
@@ -1321,7 +1418,7 @@ const InputQuestion = () => {
                 <div className="mt-6 flex justify-end border-t pt-4" style={{ borderColor: border }}>
                   <button
                     onClick={handleUpload}
-                    disabled={uploading || !moduleFile || !syllabusFile || !!uploadResult}
+                    disabled={uploading || !moduleFile || !syllabusFile || !!uploadResult || (isFacultyUser && !selectedSubject)}
                     className="rounded-lg px-5 py-2.5 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
                     style={{ backgroundColor: PRIMARY }}
                   >
@@ -1364,7 +1461,7 @@ const InputQuestion = () => {
                             {isChecked && (
                               <div className="mt-2 space-y-2">
                                 <input type="number" min="0.01" step="0.01" max="1000" value={questionTypePoints[option.value] || ''} onChange={(e) => setQuestionTypePoints((current) => ({ ...current, [option.value]: e.target.value }))} placeholder="Points per question" className="w-full rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-red-400" />
-                                {questionTypePoints[option.value] && <input type="number" min="1" step="1" max="200" value={questionTypeItems[option.value] || ''} onChange={(e) => setQuestionTypeItems((current) => ({ ...current, [option.value]: e.target.value }))} placeholder="Number of questions" className="w-full rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-red-400" />}
+                                {questionTypePoints[option.value] && <input type="number" min="1" step="1" max={maxQuestionsPerGeneration} value={questionTypeItems[option.value] || ''} onChange={(e) => setQuestionTypeItems((current) => ({ ...current, [option.value]: e.target.value }))} placeholder="Number of questions" className="w-full rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-red-400" />}
                               </div>
                             )}
                           </div>
@@ -1378,7 +1475,7 @@ const InputQuestion = () => {
                         <input type="number" value={totalPoints} readOnly placeholder="Calculated from points and question counts" className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-3.5 py-2.5 text-sm text-slate-700 outline-none" />
                       </div>
                       <div>
-                        <label className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">Total Intended Test Items</label>
+                        <label className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">Total Intended Test Items (Maximum {maxQuestionsPerGeneration})</label>
                         <input type="number" value={totalItems} readOnly placeholder="Calculated from question counts" className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-3.5 py-2.5 text-sm text-slate-700 outline-none" />
                       </div>
                     </div>

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Float, Integer, String, Text, Boolean, DateTime, ForeignKey, JSON, LargeBinary, UniqueConstraint
+from sqlalchemy import Column, Float, Index, Integer, String, Text, Boolean, DateTime, ForeignKey, JSON, LargeBinary, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -134,6 +134,30 @@ class ActivityLog(Base):
     file_content = Column(LargeBinary, nullable=True)
     archived = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime, server_default=func.now())
+
+
+class AIUsage(Base):
+    __tablename__ = "ai_usage"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    campus_id = Column(Integer, ForeignKey("campuses.id"), nullable=True, index=True)
+    generated_at = Column(DateTime, nullable=False, server_default=func.now(), index=True)
+    request_type = Column(String(32), nullable=False)
+    requested_question_count = Column(Integer, nullable=False, default=0, server_default="0")
+    generated_question_count = Column(Integer, nullable=False, default=0, server_default="0")
+    gemini_model = Column(String(128), nullable=True)
+    status = Column(String(24), nullable=False, index=True)
+    error_type = Column(String(128), nullable=True)
+    request_duration_ms = Column(Integer, nullable=True)
+    gemini_api_call_count = Column(Integer, nullable=False, default=0, server_default="0")
+    input_tokens = Column(Integer, nullable=True)
+    output_tokens = Column(Integer, nullable=True)
+    total_tokens = Column(Integer, nullable=True)
+    __table_args__ = (
+        Index("ix_ai_generation_usage_campus_date", "campus_id", "generated_at"),
+        Index("ix_ai_generation_usage_user_date", "user_id", "generated_at"),
+    )
+
 
 class QuestionSet(Base):
     __tablename__ = "question_sets"

@@ -13,11 +13,11 @@ from sqlalchemy.exc import IntegrityError
 from dotenv import load_dotenv
 from database import engine, get_db, SessionLocal
 from file_extractor import extract_text
-from ai_service import generate_questions_from_tos, build_preview, prepare_database_rows, statistics, parse_syllabus_text_with_ai
+from ai_service import GeminiUsageTracker, generate_questions_from_tos, build_preview, prepare_database_rows, statistics, parse_syllabus_text_with_ai
 from routers.tos_utils import compute_tos, generate_tos_from_excel_template
 from classifier import classify_question
 import models
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import logging
 import os
 import random
@@ -110,13 +110,13 @@ def log_download(db: Session, action: str, details: str, filename: str, media_ty
     return entry
 
 
-def detect_subject(syllabus_text: str):
-    course_title, course_code, topics = parse_syllabus_text_with_ai(syllabus_text)
+def detect_subject(syllabus_text: str, usage_tracker: GeminiUsageTracker | None = None):
+    course_title, course_code, topics = parse_syllabus_text_with_ai(syllabus_text, usage_tracker)
     return {"name": course_title, "code": course_code, "description": ""}
 
 
-def detect_topics(syllabus_text: str, module_text: str):
-    course_title, course_code, topics = parse_syllabus_text_with_ai(syllabus_text)
+def detect_topics(syllabus_text: str, module_text: str, usage_tracker: GeminiUsageTracker | None = None):
+    course_title, course_code, topics = parse_syllabus_text_with_ai(syllabus_text, usage_tracker)
     return {"course_title": course_title, "course_code": course_code, "topics": topics}
 
 
@@ -1863,6 +1863,9 @@ async def upload_files(
     current_user: models.User = Depends(get_current_user),
 ):
     user_id = current_user.id
+    request_started_at = time.perf_counter()
+    usage_id = None
+    usage_tracker = GeminiUsageTracker()
     try:
         enforce_rate_limit("upload", request.client.host if request.client else "unknown")
         module_bytes = await read_upload_bytes(module_file, "module_file")
@@ -1872,18 +1875,49 @@ async def upload_files(
 
         subject = None
         subject_info = None
+        topics_data = None
+
+        if str(current_user.role).lower() == "faculty" and subject_id is None:
+            raise HTTPException(status_code=422, detail="Select a subject code from your program before uploading materials.")
 
         if subject_id is not None:
-            subject = db.query(models.Subject).filter(models.Subject.id == subject_id).first()
+            subject_query = db.query(models.Subject).filter(
+                models.Subject.id == subject_id,
+                models.Subject.archived.is_(False),
+            )
+            if str(current_user.role).lower() == "faculty":
+                program = db.query(models.Program).filter(models.Program.id == current_user.program_id).first() if current_user.program_id else None
+                department = db.query(models.Department).filter(models.Department.id == program.department_id).first() if program else None
+                if not program or not department:
+                    raise HTTPException(status_code=403, detail="Your account must be assigned to a program and department before selecting a subject.")
+                if current_user.department and current_user.department.strip().casefold() != department.name.strip().casefold():
+                    raise HTTPException(status_code=403, detail="Your program is not assigned to your department.")
+                faculty_campus_id = user_campus_id(db, current_user)
+                if faculty_campus_id is not None and department.campus_id != faculty_campus_id:
+                    raise HTTPException(status_code=403, detail="Your program is outside your assigned campus.")
+                subject_query = subject_query.filter(
+                    models.Subject.program_id == program.id,
+                    models.Subject.department_id == department.id,
+                    models.Subject.code.is_not(None),
+                    func.trim(models.Subject.code) != "",
+                )
+            subject = subject_query.first()
             if not subject:
-                raise HTTPException(status_code=404, detail=f"Subject with id {subject_id} was not found")
+                raise HTTPException(status_code=404, detail="The selected subject is not available to this account.")
             subject_info = {
                 "name": subject.name,
                 "code": subject.code,
                 "description": subject.description,
             }
+            assert_user_subject_campus_access(db, current_user, subject)
         else:
-            subject_info = detect_subject(syllabus_text)
+            usage_id = questions.start_ai_usage(db, current_user, "syllabus_analysis")
+            topics_data = detect_topics(syllabus_text, module_text, usage_tracker)
+            subject_info = {
+                "name": topics_data["course_title"],
+                "code": topics_data["course_code"],
+                "description": "",
+            }
             subject = db.query(models.Subject).filter(
                 models.Subject.name == subject_info["name"]
             ).first()
@@ -1900,7 +1934,22 @@ async def upload_files(
 
             assert_user_subject_campus_access(db, current_user, subject)
 
-        topics_data = detect_topics(syllabus_text, module_text)
+        if topics_data is None:
+            usage_id = questions.start_ai_usage(db, current_user, "syllabus_analysis")
+            topics_data = detect_topics(syllabus_text, module_text, usage_tracker)
+
+        if usage_id is not None:
+            usage_record = db.query(models.AIUsage).filter(models.AIUsage.id == usage_id).first()
+            if usage_record and usage_record.campus_id is None:
+                usage_record.campus_id = subject_campus_id(db, subject)
+            questions.finish_ai_usage(
+                db,
+                usage_id,
+                usage_tracker,
+                "failed" if usage_tracker.failure_count else "success",
+                request_started_at,
+                usage_tracker.last_error_type,
+            )
 
         upload = models.UploadedFile(
             user_id=user_id,
@@ -1913,6 +1962,7 @@ async def upload_files(
         db.add(upload)
         db.commit()
         db.refresh(upload)
+        questions.FILE_CACHE[f"{upload.id}_legacy_topics"] = topics_data
 
         log_activity(db, "Uploaded Module", f"Processed '{module_file.filename}' for Table of Specifications.", "upload")
 
@@ -1920,12 +1970,17 @@ async def upload_files(
             "upload_id": upload.id,
             "subject": subject_info,
             "topics": topics_data["topics"],
+            "max_questions_per_generation": questions.MAX_QUESTIONS_PER_GENERATION,
             "message": "Files uploaded! Now enter total number of items."
         }
     except HTTPException:
+        if usage_id is not None:
+            questions.finish_ai_usage(db, usage_id, usage_tracker, "failed", request_started_at, "HTTPException")
         log_activity(db, "Failed Upload", f"File '{module_file.filename}' could not be processed.", "upload", status="error", user_id=current_user.id)
         raise
     except Exception as e:
+        if usage_id is not None:
+            questions.finish_ai_usage(db, usage_id, usage_tracker, "failed", request_started_at, type(e).__name__)
         log_activity(db, "Failed Upload", f"File '{module_file.filename}' could not be processed.", "upload", status="error")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1933,11 +1988,14 @@ async def upload_files(
 @app.post("/api/generate")
 async def generate_questions(
     upload_id: int = Form(...),
-    total_items: int = Form(...),
+    total_items: int = Form(..., ge=1, le=questions.MAX_QUESTIONS_PER_GENERATION),
     question_types: str = Form(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    request_started_at = time.perf_counter()
+    usage_id = None
+    usage_tracker = GeminiUsageTracker()
     try:
         upload = db.query(models.UploadedFile).filter(
             models.UploadedFile.id == upload_id
@@ -1945,8 +2003,20 @@ async def generate_questions(
         if not upload:
             raise HTTPException(status_code=404, detail="Upload not found")
         questions._assert_upload_access(str(upload_id), current_user, db)
+        usage_id = questions.reserve_ai_generation(
+            db,
+            current_user,
+            total_items,
+            "legacy_question_generation",
+            upload_id=str(upload_id),
+            request_started_at=request_started_at,
+        )
 
-        topics_data = detect_topics(upload.syllabus_text, upload.module_text)
+        topics_cache_key = f"{upload.id}_legacy_topics"
+        topics_data = questions.FILE_CACHE.get(topics_cache_key)
+        if topics_data is None:
+            topics_data = detect_topics(upload.syllabus_text, upload.module_text, usage_tracker)
+            questions.FILE_CACHE[topics_cache_key] = topics_data
         selected_question_types = [value.strip() for value in question_types.split(",") if value.strip()] if question_types else None
 
         # Default: select all detected topics and assume equal hours if caller
@@ -1977,19 +2047,20 @@ async def generate_questions(
             models.Subject.id == upload.subject_id
         ).first()
 
-        questions = generate_questions_from_tos(
+        generated_questions = generate_questions_from_tos(
             subject={"name": subject.name, "code": subject.code},
             module_text=upload.module_text,
             tos_data=tos,
+            usage_tracker=usage_tracker,
         )
 
         bloom_distribution = {}
         question_type_distribution = {}
-        for q in questions:
+        for q in generated_questions:
             bloom_distribution[q["bloom_level"]] = bloom_distribution.get(q["bloom_level"], 0) + 1
             question_type_distribution[q["type"]] = question_type_distribution.get(q["type"], 0) + 1
 
-        for q in questions:
+        for q in generated_questions:
             question = models.GeneratedQuestion(
                 tos_id=tos_record.id,
                 subject_id=upload.subject_id,
@@ -2005,21 +2076,31 @@ async def generate_questions(
             db.add(question)
         db.commit()
 
-        log_activity(db, "Generated Assessment", f"Created '{subject.name}' with {len(questions)} questions.", "generate")
+        log_activity(db, "Generated Assessment", f"Created '{subject.name}' with {len(generated_questions)} questions.", "generate")
+        questions.finish_ai_usage(db, usage_id, usage_tracker, "success", request_started_at)
 
         return {
             "tos_id": tos_record.id,
             "tos": tos,
-            "total_questions": len(questions),
-            "questions_preview": questions,
+            "total_questions": len(generated_questions),
+            "questions_preview": generated_questions,
             "bloom_distribution": bloom_distribution,
             "question_type_distribution": question_type_distribution,
-            "message": f"Successfully generated and classified {len(questions)} questions!"
+            "message": f"Successfully generated and classified {len(generated_questions)} questions!"
         }
     except HTTPException:
+        if usage_id is not None:
+            questions.finish_ai_usage(
+                db, usage_id, usage_tracker, "failed", request_started_at, "HTTPException"
+            )
         log_activity(db, "Assessment Generation Failed", f"Legacy generation failed for upload {upload_id}.", "generate", status="error", user_id=current_user.id)
         raise
     except Exception as e:
+        if usage_id is not None:
+            questions.finish_ai_usage(
+                db, usage_id, usage_tracker, "failed", request_started_at,
+                usage_tracker.last_error_type or type(e).__name__,
+            )
         log_activity(db, "Assessment Generation Failed", f"Legacy generation failed for upload {upload_id}.", "generate", status="error")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -2419,6 +2500,175 @@ def get_super_admin_overview(db: Session = Depends(get_db), _admin: models.User 
         "bloom_distribution": bloom_distribution,
         "question_type_distribution": question_type_distribution,
         "campuses": campus_stats,
+    }
+
+
+@app.get("/api/super-admin/ai-usage")
+def get_super_admin_ai_usage(
+    campus_id: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    model_name: str | None = None,
+    request_status: str | None = None,
+    db: Session = Depends(get_db),
+    _admin: models.User = Depends(require_super_admin),
+):
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="date_from must not be later than date_to.")
+    allowed_statuses = {"in_progress", "success", "failed", "rate_limited"}
+    if request_status and request_status not in allowed_statuses:
+        raise HTTPException(status_code=422, detail="Unsupported AI usage status filter.")
+
+    filters = []
+    if campus_id is not None:
+        filters.append(models.AIUsage.campus_id == campus_id)
+    if date_from is not None:
+        filters.append(models.AIUsage.generated_at >= datetime.combine(date_from, datetime.min.time()))
+    if date_to is not None:
+        filters.append(models.AIUsage.generated_at < datetime.combine(date_to + timedelta(days=1), datetime.min.time()))
+    if model_name:
+        filters.append(models.AIUsage.gemini_model == model_name)
+    if request_status:
+        filters.append(models.AIUsage.status == request_status)
+
+    usage = db.query(models.AIUsage).filter(*filters)
+    generated_questions = int(
+        usage.with_entities(func.coalesce(func.sum(models.AIUsage.generated_question_count), 0)).scalar() or 0
+    )
+    generation_types = ("question_generation", "question_recreation", "legacy_question_generation")
+    gemini_requests = usage.filter(models.AIUsage.gemini_api_call_count > 0)
+
+    campus_rows = db.query(
+        models.AIUsage.campus_id,
+        models.Campus.name,
+        func.count(models.AIUsage.id).label("request_count"),
+        func.coalesce(func.sum(models.AIUsage.generated_question_count), 0).label("question_count"),
+    ).outerjoin(
+        models.Campus, models.Campus.id == models.AIUsage.campus_id
+    ).filter(*filters).group_by(
+        models.AIUsage.campus_id, models.Campus.name
+    ).order_by(func.count(models.AIUsage.id).desc()).all()
+
+    user_rows = db.query(
+        models.AIUsage.user_id,
+        models.User.name,
+        models.User.email,
+        models.User.role,
+        func.count(models.AIUsage.id).label("request_count"),
+        func.coalesce(func.sum(models.AIUsage.generated_question_count), 0).label("question_count"),
+    ).join(
+        models.User, models.User.id == models.AIUsage.user_id
+    ).filter(*filters).group_by(
+        models.AIUsage.user_id, models.User.name, models.User.email, models.User.role
+    ).order_by(func.count(models.AIUsage.id).desc()).all()
+
+    month_expression = (
+        func.date_trunc("month", models.AIUsage.generated_at)
+        if db.get_bind().dialect.name == "postgresql"
+        else func.strftime("%Y-%m", models.AIUsage.generated_at)
+    )
+    month_rows = db.query(
+        month_expression.label("month"),
+        func.count(models.AIUsage.id).label("request_count"),
+        func.coalesce(func.sum(models.AIUsage.generated_question_count), 0).label("question_count"),
+    ).filter(*filters).group_by(month_expression).order_by(month_expression.asc()).all()
+
+    model_rows = db.query(
+        func.coalesce(models.AIUsage.gemini_model, "No Gemini call").label("model"),
+        func.count(models.AIUsage.id).label("request_count"),
+        func.coalesce(func.sum(models.AIUsage.gemini_api_call_count), 0).label("api_call_count"),
+        func.coalesce(func.sum(models.AIUsage.generated_question_count), 0).label("question_count"),
+    ).filter(*filters).group_by(
+        models.AIUsage.gemini_model
+    ).order_by(func.count(models.AIUsage.id).desc()).all()
+
+    error_rows = db.query(
+        models.AIUsage.error_type,
+        func.count(models.AIUsage.id).label("request_count"),
+    ).filter(
+        *filters,
+        models.AIUsage.error_type.is_not(None),
+    ).group_by(models.AIUsage.error_type).order_by(func.count(models.AIUsage.id).desc()).all()
+
+    gemini_request_count = gemini_requests.count()
+
+    def complete_token_total(column) -> int | None:
+        known_count = gemini_requests.filter(column.is_not(None)).count()
+        if gemini_request_count == 0 or known_count != gemini_request_count:
+            return None
+        return int(gemini_requests.with_entities(func.coalesce(func.sum(column), 0)).scalar() or 0)
+
+    input_tokens = complete_token_total(models.AIUsage.input_tokens)
+    output_tokens = complete_token_total(models.AIUsage.output_tokens)
+    total_tokens = complete_token_total(models.AIUsage.total_tokens)
+
+    return {
+        "totals": {
+            "total_ai_requests": usage.count(),
+            "generation_requests": usage.filter(models.AIUsage.request_type.in_(generation_types)).count(),
+            "total_questions_generated": generated_questions,
+            "successful_requests": usage.filter(models.AIUsage.status == "success").count(),
+            "failed_requests": usage.filter(models.AIUsage.status == "failed").count(),
+            "rate_limit_events": usage.filter(models.AIUsage.status == "rate_limited").count(),
+            "in_progress_requests": usage.filter(models.AIUsage.status == "in_progress").count(),
+            "gemini_api_calls": int(gemini_requests.with_entities(
+                func.coalesce(func.sum(models.AIUsage.gemini_api_call_count), 0)
+            ).scalar() or 0),
+        },
+        "requests_by_campus": [
+            {
+                "campus_id": row.campus_id,
+                "campus": row.name or "Unassigned",
+                "requests": row.request_count,
+                "questions": int(row.question_count or 0),
+            }
+            for row in campus_rows
+        ],
+        "requests_by_user": [
+            {
+                "user_id": row.user_id,
+                "name": row.name or row.email,
+                "email": row.email,
+                "role": row.role,
+                "requests": row.request_count,
+                "questions": int(row.question_count or 0),
+            }
+            for row in user_rows
+        ],
+        "requests_by_month": [
+            {
+                "month": row.month.strftime("%Y-%m") if hasattr(row.month, "strftime") else str(row.month),
+                "requests": row.request_count,
+                "questions": int(row.question_count or 0),
+            }
+            for row in month_rows
+        ],
+        "model_usage": [
+            {
+                "model": row.model,
+                "requests": row.request_count,
+                "api_calls": int(row.api_call_count or 0),
+                "questions": int(row.question_count or 0),
+            }
+            for row in model_rows
+        ],
+        "error_types": [
+            {"error_type": row.error_type, "requests": row.request_count}
+            for row in error_rows
+        ],
+        "token_usage": {
+            "available": input_tokens is not None and output_tokens is not None and total_tokens is not None,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+            "requests_with_gemini_calls": gemini_request_count,
+        },
+        "available_models": [
+            row[0]
+            for row in db.query(models.AIUsage.gemini_model).filter(
+                models.AIUsage.gemini_model.is_not(None)
+            ).distinct().order_by(models.AIUsage.gemini_model).all()
+        ],
     }
 
 
@@ -3167,7 +3417,23 @@ def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Sessio
         raise HTTPException(status_code=400, detail="This identical question text already exists inside this subject pool.")
 
     # AI classifier assigns the Bloom level for manually entered questions too.
-    bloom_level = classify_question(normalized_question)
+    request_started_at = time.perf_counter()
+    usage_id = questions.start_ai_usage(
+        db,
+        current_user,
+        "bloom_classification",
+        campus_id=subject_campus_id(db, subject),
+    )
+    usage_tracker = GeminiUsageTracker()
+    bloom_level = classify_question(normalized_question, usage_tracker=usage_tracker)
+    questions.finish_ai_usage(
+        db,
+        usage_id,
+        usage_tracker,
+        "failed" if usage_tracker.failure_count else "success",
+        request_started_at,
+        usage_tracker.last_error_type,
+    )
 
     new_question = models.GeneratedQuestion(
         subject_id=payload.subject_id,
@@ -3191,6 +3457,49 @@ def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Sessio
         "bloom_level": bloom_level,
         "message": f"Question saved in the Question Bank under {bloom_level}."
     }
+
+@app.get("/api/faculty/subjects")
+def get_faculty_program_subjects(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if str(current_user.role).lower() != "faculty":
+        raise HTTPException(status_code=403, detail="Faculty subject search is not available for this role.")
+    if not current_user.program_id:
+        return []
+
+    program = db.query(models.Program).filter(models.Program.id == current_user.program_id).first()
+    department = db.query(models.Department).filter(
+        models.Department.id == program.department_id
+    ).first() if program else None
+    if not program or not department:
+        return []
+    if current_user.department and current_user.department.strip().casefold() != department.name.strip().casefold():
+        return []
+    faculty_campus_id = user_campus_id(db, current_user)
+    if faculty_campus_id is not None and department.campus_id != faculty_campus_id:
+        return []
+
+    subjects = db.query(models.Subject).filter(
+        models.Subject.archived.is_(False),
+        models.Subject.program_id == program.id,
+        models.Subject.department_id == department.id,
+        models.Subject.code.is_not(None),
+        func.trim(models.Subject.code) != "",
+    ).order_by(models.Subject.code.asc(), models.Subject.name.asc()).all()
+    return [
+        {
+            "id": subject.id,
+            "code": subject.code,
+            "name": subject.name,
+            "department_id": department.id,
+            "department_name": department.name,
+            "program_id": program.id,
+            "program_name": program.name,
+        }
+        for subject in subjects
+    ]
+
 
 @app.get("/api/subjects")
 def get_subjects(

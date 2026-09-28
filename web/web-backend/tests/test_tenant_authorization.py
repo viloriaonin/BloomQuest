@@ -1,21 +1,26 @@
+import asyncio
 import os
 import sys
+from datetime import date, datetime
 from io import BytesIO
 from types import SimpleNamespace
 
 import openpyxl
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import models
 from database import Base
-from main import assert_question_access, validate_account_request_scope, create_department, DepartmentCreateRequest, get_subjects, get_questions, get_super_admin_overview, get_question_sets, export_question_bank_tos
-from routers.questions import _assert_upload_access, _resolve_department_leadership
-from security import assert_campus_access, assert_user_subject_campus_access, require_admin, require_campus_admin, require_super_admin, visible_campus_id
+from database import get_db
+from main import app, assert_question_access, validate_account_request_scope, create_department, DepartmentCreateRequest, get_subjects, get_faculty_program_subjects, get_questions, get_super_admin_overview, get_super_admin_ai_usage, get_question_sets, export_question_bank_tos, upload_files
+from routers.questions import _assert_upload_access, _resolve_department_leadership, upload_and_analyze_syllabus
+from security import assert_campus_access, assert_user_subject_campus_access, get_current_user, require_admin, require_campus_admin, require_super_admin, visible_campus_id
 
 
 @pytest.fixture
@@ -250,6 +255,210 @@ def test_campus_admin_can_list_subjects_by_program_membership(db_session):
     assert {item["id"] for item in super_admin_questions} == {first_question.id, second_question.id}
 
 
+def test_faculty_subject_code_search_is_scoped_to_program_and_department():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    db_session = session_factory()
+    previous_overrides = app.dependency_overrides.copy()
+    campus = models.Campus(name="Subject Search Campus", code="SUBSEARCH")
+    other_campus = models.Campus(name="Other Subject Search Campus", code="SUBSEARCH-OTHER")
+    db_session.add_all([campus, other_campus])
+    db_session.flush()
+    department = models.Department(name="Computing Department", campus_id=campus.id)
+    other_department = models.Department(name="Other Department", campus_id=campus.id)
+    foreign_department = models.Department(name="Foreign Department", campus_id=other_campus.id)
+    db_session.add_all([department, other_department, foreign_department])
+    db_session.flush()
+    program = models.Program(name="BSIT", department_id=department.id)
+    other_program = models.Program(name="BSCS", department_id=department.id)
+    foreign_program = models.Program(name="BSIT Foreign", department_id=foreign_department.id)
+    db_session.add_all([program, other_program, foreign_program])
+    db_session.flush()
+    faculty = models.User(
+        email="subject_search_faculty@example.com",
+        password="secret",
+        role="faculty",
+        campus_id=campus.id,
+        program_id=program.id,
+        department=department.name,
+    )
+    db_session.add(faculty)
+    db_session.add_all([
+        models.Subject(name="Programming 1", code="IT101", department_id=department.id, program_id=program.id),
+        models.Subject(name="Department Only", code="DEP101", department_id=department.id),
+        models.Subject(name="Other Program", code="CS201", department_id=department.id, program_id=other_program.id),
+        models.Subject(name="Mismatched Department", code="BAD201", department_id=other_department.id, program_id=program.id),
+        models.Subject(name="Foreign Campus", code="EXT301", department_id=foreign_department.id, program_id=foreign_program.id),
+        models.Subject(name="Uncoded", code=None, department_id=department.id, program_id=program.id),
+        models.Subject(name="Archived", code="OLD101", department_id=department.id, program_id=program.id, archived=True),
+    ])
+    db_session.commit()
+
+    results = get_faculty_program_subjects(db=db_session, current_user=faculty)
+
+    assert [(subject["code"], subject["name"]) for subject in results] == [("IT101", "Programming 1")]
+    assert results[0]["program_name"] == "BSIT"
+    assert results[0]["department_name"] == department.name
+
+    def override_db():
+        request_session = session_factory()
+        try:
+            yield request_session
+        finally:
+            request_session.close()
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_current_user] = lambda: faculty
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/faculty/subjects")
+        assert response.status_code == 200
+        assert [item["code"] for item in response.json()] == ["IT101"]
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous_overrides)
+        db_session.close()
+        engine.dispose()
+
+
+def test_faculty_upload_uses_only_the_selected_program_subject(db_session, monkeypatch):
+    import main
+    from routers import questions as questions_router
+
+    campus = models.Campus(name="Upload Subject Campus", code="UPLOAD-SUBJECT")
+    db_session.add(campus)
+    db_session.flush()
+    department = models.Department(name="Upload Computing", campus_id=campus.id)
+    db_session.add(department)
+    db_session.flush()
+    program = models.Program(name="Upload BSIT", department_id=department.id)
+    other_program = models.Program(name="Upload BSCS", department_id=department.id)
+    db_session.add_all([program, other_program])
+    db_session.flush()
+    faculty = models.User(
+        email="upload_subject_faculty@example.com",
+        password="secret",
+        role="faculty",
+        campus_id=campus.id,
+        program_id=program.id,
+        department=department.name,
+    )
+    assigned_subject = models.Subject(
+        name="Assigned Programming",
+        code="UP101",
+        department_id=department.id,
+        program_id=program.id,
+    )
+    other_subject = models.Subject(
+        name="Other Program Subject",
+        code="CS202",
+        department_id=department.id,
+        program_id=other_program.id,
+    )
+    db_session.add_all([faculty, assigned_subject, other_subject])
+    db_session.commit()
+
+    monkeypatch.setattr(main, "extract_text", lambda _contents, _filename: "Mocked extracted material.")
+    monkeypatch.setattr(main, "detect_topics", lambda *_args, **_kwargs: {
+        "course_title": "Syllabus Course",
+        "course_code": "SYL101",
+        "topics": [{"name": "Mock Topic", "ilo": "ILO 1", "weight": 1.0}],
+    })
+
+    def upload_for_subject(subject_id):
+        return asyncio.run(upload_files(
+            request=SimpleNamespace(client=SimpleNamespace(host="subject-upload-test")),
+            module_file=UploadFile(filename="module.docx", file=BytesIO(b"module")),
+            syllabus_file=UploadFile(filename="syllabus.docx", file=BytesIO(b"syllabus")),
+            subject_id=subject_id,
+            user_id=None,
+            db=db_session,
+            current_user=faculty,
+        ))
+
+    with pytest.raises(HTTPException) as denied:
+        upload_for_subject(other_subject.id)
+    assert denied.value.status_code == 404
+
+    result = upload_for_subject(assigned_subject.id)
+    assert result["subject"]["code"] == "UP101"
+    upload_record = db_session.query(models.UploadedFile).filter_by(id=result["upload_id"]).one()
+    assert upload_record.subject_id == assigned_subject.id
+    questions_router.FILE_CACHE.pop(f"{result['upload_id']}_legacy_topics", None)
+
+
+def test_active_question_upload_uses_selected_faculty_program_subject(db_session, monkeypatch):
+    from routers import questions as questions_router
+
+    campus = models.Campus(name="Active Upload Campus", code="ACTIVE-UPLOAD")
+    db_session.add(campus)
+    db_session.flush()
+    department = models.Department(name="Active Upload Department", campus_id=campus.id)
+    db_session.add(department)
+    db_session.flush()
+    program = models.Program(name="Active Upload Program", department_id=department.id)
+    other_program = models.Program(name="Other Active Program", department_id=department.id)
+    db_session.add_all([program, other_program])
+    db_session.flush()
+    faculty = models.User(
+        email="active_upload_faculty@example.com",
+        password="secret",
+        role="faculty",
+        campus_id=campus.id,
+        program_id=program.id,
+        department=department.name,
+    )
+    assigned_subject = models.Subject(
+        name="Selected Course",
+        code="ACTIVE101",
+        department_id=department.id,
+        program_id=program.id,
+    )
+    other_subject = models.Subject(
+        name="Other Program Course",
+        code="OTHER201",
+        department_id=department.id,
+        program_id=other_program.id,
+    )
+    db_session.add_all([faculty, assigned_subject, other_subject])
+    db_session.commit()
+    monkeypatch.setattr(questions_router, "extract_text", lambda *_args: "Module text.")
+    monkeypatch.setattr(questions_router, "parse_syllabus_text_with_ai", lambda *_args, **_kwargs: (
+        "Syllabus title",
+        "SYL101",
+        [{"name": "Test topic", "weight": 1.0, "ilo": "ILO 1", "ilo_description": "Test outcome."}],
+    ))
+
+    def upload(subject_id):
+        return asyncio.run(upload_and_analyze_syllabus(
+            module_file=UploadFile(filename="module.docx", file=BytesIO(b"module")),
+            syllabus_file=UploadFile(filename="syllabus.docx", file=BytesIO(b"syllabus")),
+            subject_id=subject_id,
+            user_id=None,
+            db=db_session,
+            current_user=faculty,
+        ))
+
+    with pytest.raises(HTTPException) as missing_subject:
+        upload(None)
+    assert missing_subject.value.status_code == 422
+    with pytest.raises(HTTPException) as foreign_subject:
+        upload(other_subject.id)
+    assert foreign_subject.value.status_code == 404
+
+    result = upload(assigned_subject.id)
+    assert result["subject"]["name"] == assigned_subject.name
+    assert result["subject"]["code"] == assigned_subject.code
+    upload_record = db_session.query(models.UploadedFile).filter_by(id=int(result["upload_id"])).one()
+    assert upload_record.subject_id == assigned_subject.id
+    questions_router.FILE_CACHE.pop(f"{result['upload_id']}_metadata", None)
+
+
 def test_super_admin_overview_counts_only_campus_attributed_questions(db_session):
     lipa = models.Campus(name="Alpha Campus", code="ALPHA")
     main = models.Campus(name="Beta Campus", code="BETA")
@@ -298,6 +507,149 @@ def test_super_admin_overview_counts_only_campus_attributed_questions(db_session
     assert campuses["Alpha Campus"]["bloom_distribution"] == {"Remember": 5, "Analyze": 5}
     assert campuses["Beta Campus"]["bloom_distribution"] == {"Remember": 5, "Analyze": 5}
     assert overview["bloom_distribution"] == {"Remember": 10, "Analyze": 10}
+
+
+def test_super_admin_ai_usage_aggregates_and_filters_by_campus_date_and_status(db_session):
+    alpha = models.Campus(name="Usage Alpha", code="USAGE-ALPHA")
+    beta = models.Campus(name="Usage Beta", code="USAGE-BETA")
+    db_session.add_all([alpha, beta])
+    db_session.flush()
+    alpha_user = models.User(
+        email="usage_alpha@example.com",
+        password="secret",
+        role="faculty",
+        campus_id=alpha.id,
+    )
+    beta_user = models.User(
+        email="usage_beta@example.com",
+        password="secret",
+        role="faculty",
+        campus_id=beta.id,
+    )
+    super_admin = models.User(email="usage_admin@example.com", password="secret", role="super_admin")
+    db_session.add_all([alpha_user, beta_user, super_admin])
+    db_session.flush()
+    db_session.add_all([
+        models.AIUsage(
+            user_id=alpha_user.id,
+            campus_id=alpha.id,
+            generated_at=datetime(2026, 9, 8, 12),
+            request_type="question_generation",
+            requested_question_count=8,
+            generated_question_count=8,
+            gemini_model="gemini-flash-lite-latest",
+            gemini_api_call_count=2,
+            status="success",
+            request_duration_ms=2400,
+            input_tokens=10,
+            output_tokens=5,
+            total_tokens=15,
+        ),
+        models.AIUsage(
+            user_id=alpha_user.id,
+            campus_id=alpha.id,
+            generated_at=datetime(2026, 8, 20, 12),
+            request_type="question_recreation",
+            requested_question_count=2,
+            generated_question_count=1,
+            gemini_model="gemini-flash-lite-latest",
+            gemini_api_call_count=3,
+            status="failed",
+            error_type="RuntimeError",
+        ),
+        models.AIUsage(
+            user_id=beta_user.id,
+            campus_id=beta.id,
+            generated_at=datetime(2026, 9, 9, 12),
+            request_type="question_generation",
+            requested_question_count=4,
+            generated_question_count=0,
+            status="rate_limited",
+            error_type="generation_cooldown",
+        ),
+        models.AIUsage(
+            user_id=beta_user.id,
+            campus_id=beta.id,
+            generated_at=datetime(2026, 9, 10, 12),
+            request_type="syllabus_analysis",
+            requested_question_count=0,
+            generated_question_count=0,
+            gemini_model="gemini-flash-lite-latest",
+            gemini_api_call_count=1,
+            status="success",
+            input_tokens=20,
+            output_tokens=5,
+            total_tokens=25,
+        ),
+    ])
+    db_session.commit()
+
+    overview = get_super_admin_ai_usage(db=db_session, _admin=super_admin)
+    assert overview["totals"]["total_ai_requests"] == 4
+    assert overview["totals"]["generation_requests"] == 3
+    assert overview["totals"]["total_questions_generated"] == 9
+    assert overview["totals"]["successful_requests"] == 2
+    assert overview["totals"]["failed_requests"] == 1
+    assert overview["totals"]["rate_limit_events"] == 1
+    assert overview["totals"]["gemini_api_calls"] == 6
+    assert overview["token_usage"]["available"] is False
+    campuses = {row["campus"]: row for row in overview["requests_by_campus"]}
+    assert campuses["Usage Alpha"]["requests"] == 2
+    assert campuses["Usage Alpha"]["questions"] == 9
+    assert campuses["Usage Beta"]["requests"] == 2
+    assert campuses["Usage Beta"]["questions"] == 0
+
+    filtered = get_super_admin_ai_usage(
+        db=db_session,
+        _admin=super_admin,
+        campus_id=alpha.id,
+        date_from=date(2026, 9, 1),
+        date_to=date(2026, 9, 30),
+        request_status="success",
+    )
+    assert filtered["totals"]["total_ai_requests"] == 1
+    assert filtered["totals"]["total_questions_generated"] == 8
+    assert filtered["token_usage"] == {
+        "available": True,
+        "input_tokens": 10,
+        "output_tokens": 5,
+        "total_tokens": 15,
+        "requests_with_gemini_calls": 1,
+    }
+
+
+def test_super_admin_ai_usage_route_requires_super_admin():
+    route = next(
+        route for route in app.routes
+        if getattr(route, "path", None) == "/api/super-admin/ai-usage"
+    )
+    dependency_calls = {dependency.call for dependency in route.dependant.dependencies}
+    assert require_super_admin in dependency_calls
+    for user in (
+        SimpleNamespace(role="campus_admin", campus_id=1),
+        SimpleNamespace(role="faculty", campus_id=1),
+    ):
+        with pytest.raises(HTTPException) as error:
+            require_super_admin(user)
+        assert error.value.status_code == 403
+
+
+def test_campus_admin_cannot_access_foreign_campus_ai_usage_api(db_session):
+    campus_admin = SimpleNamespace(role="campus_admin", campus_id=10)
+
+    def override_db():
+        yield db_session
+
+    previous_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_current_user] = lambda: campus_admin
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/super-admin/ai-usage", params={"campus_id": 11})
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous_overrides)
 
 
 def test_tos_leadership_uses_faculty_program_department_before_subject_department(db_session):

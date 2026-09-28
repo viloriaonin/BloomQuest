@@ -1,17 +1,36 @@
 import io
+import json
 import os
 import sys
+import time
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from main import normalize_email, read_upload_bytes
+from main import app, normalize_email, read_upload_bytes
 from routers.assessment import group_questions_by_type
-from routers.questions import TOSGenerationPayload
+from routers.questions import (
+    MAX_QUESTIONS_PER_GENERATION,
+    TOSGenerationPayload,
+    reserve_ai_generation,
+    finish_ai_usage,
+    start_ai_usage,
+)
 from routers.tos_utils import generate_tos_from_excel_template
+from ai_service import GeminiUsageTracker
+import ai_service
+import models
+from database import get_db
+from routers import questions as questions_router
+from security import get_current_user
 
 
 def test_normalize_email_trims_and_lowercases():
@@ -59,6 +78,420 @@ def test_tos_generation_payload_accepts_new_assessment_metadata():
 
     assert payload.question_type_points == {"MCQ": 2}
     assert payload.academic_year == "2026-2027"
+
+
+def test_tos_generation_payload_enforces_max_questions_per_generation():
+    payload = TOSGenerationPayload(
+        upload_id="demo-upload",
+        total_items=MAX_QUESTIONS_PER_GENERATION,
+        whole_total_points=50,
+    )
+    assert payload.total_items == MAX_QUESTIONS_PER_GENERATION
+
+    with pytest.raises(ValueError):
+        TOSGenerationPayload(
+            upload_id="demo-upload",
+            total_items=MAX_QUESTIONS_PER_GENERATION + 1,
+            whole_total_points=50,
+        )
+
+
+def test_ai_generation_reservations_enforce_cooldown_and_daily_quota(monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    models.Campus.__table__.create(engine)
+    models.User.__table__.create(engine)
+    models.ActivityLog.__table__.create(engine)
+    models.AIUsage.__table__.create(engine)
+    session = sessionmaker(bind=engine)()
+    campus = models.Campus(name="Limit Test Campus", code="LTC")
+    session.add(campus)
+    session.commit()
+    user = models.User(
+        email="limit@example.com",
+        password="unused",
+        role="faculty",
+        campus_id=campus.id,
+    )
+    session.add(user)
+    session.commit()
+    current_user = session.query(models.User).filter_by(email="limit@example.com").first()
+
+    monkeypatch.setattr("routers.questions.MAX_GENERATIONS_PER_USER_PER_DAY", 2)
+    monkeypatch.setattr("routers.questions.GENERATION_COOLDOWN_SECONDS", 60)
+    request_started_at = time.perf_counter()
+    usage_id = reserve_ai_generation(
+        session, current_user, 3, "question_generation", request_started_at=request_started_at
+    )
+    tracker = GeminiUsageTracker(generated_question_count=3)
+    tracker.begin_api_call()
+    tracker.record_response(SimpleNamespace(usage_metadata=SimpleNamespace(
+        prompt_token_count=120,
+        candidates_token_count=44,
+        total_token_count=164,
+    )))
+    finish_ai_usage(session, usage_id, tracker, "success", request_started_at)
+    first_usage = session.query(models.AIUsage).filter_by(id=usage_id).first()
+    assert first_usage.campus_id == campus.id
+    assert first_usage.requested_question_count == 3
+    assert first_usage.generated_question_count == 3
+    assert first_usage.input_tokens == 120
+    assert first_usage.output_tokens == 44
+    assert first_usage.total_tokens == 164
+    assert first_usage.status == "success"
+    failed_usage_id = start_ai_usage(
+        session, current_user, "question_generation", requested_question_count=2
+    )
+    failed_tracker = GeminiUsageTracker()
+    failed_tracker.begin_api_call()
+    failed_tracker.record_response(None)
+    failed_tracker.record_failure(TimeoutError("request timed out"))
+    finish_ai_usage(
+        session,
+        failed_usage_id,
+        failed_tracker,
+        "failed",
+        request_started_at,
+        failed_tracker.last_error_type,
+    )
+    failed_usage = session.query(models.AIUsage).filter_by(id=failed_usage_id).first()
+    assert failed_usage.user_id == current_user.id
+    assert failed_usage.campus_id == campus.id
+    assert failed_usage.status == "failed"
+    assert failed_usage.error_type == "TimeoutError"
+    assert failed_usage.generated_question_count == 0
+
+    with pytest.raises(HTTPException) as rate_error:
+        reserve_ai_generation(session, current_user, 3, "question_generation")
+    assert rate_error.value.status_code == 429
+    assert "wait" in rate_error.value.detail.lower()
+    assert session.query(models.AIUsage).filter_by(status="rate_limited").count() == 1
+
+    monkeypatch.setattr("routers.questions.GENERATION_COOLDOWN_SECONDS", 1)
+    session.query(models.ActivityLog).filter_by(action="AI generation reservation").update({
+        models.ActivityLog.created_at: datetime.utcnow() - timedelta(seconds=120)
+    })
+    session.commit()
+    reserve_ai_generation(session, current_user, 3, "question_generation")
+
+    with pytest.raises(HTTPException) as daily_error:
+        reserve_ai_generation(session, current_user, 3, "question_generation")
+    assert daily_error.value.status_code == 429
+    assert "daily" in daily_error.value.detail.lower()
+    assert session.query(models.AIUsage).filter_by(status="rate_limited").count() == 2
+
+    session.close()
+    engine.dispose()
+
+
+def test_direct_generation_api_enforces_maximum_and_daily_limit(monkeypatch):
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    models.Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    session = session_factory()
+    campus = models.Campus(name="Direct API Campus", code="DIRECT-API")
+    session.add(campus)
+    session.flush()
+    current_user = models.User(
+        email="direct_api@example.com",
+        password="unused",
+        role="faculty",
+        campus_id=campus.id,
+    )
+    session.add(current_user)
+    session.commit()
+
+    monkeypatch.setattr("routers.questions.MAX_GENERATIONS_PER_USER_PER_DAY", 5)
+    monkeypatch.setattr("routers.questions.GENERATION_COOLDOWN_SECONDS", 1)
+    reserve_ai_generation(session, current_user, 1, "question_generation")
+
+    upload_id = "direct-api-limit-upload"
+    questions_router.FILE_CACHE[f"{upload_id}_metadata"] = {
+        "user_id": current_user.id,
+        "subject": {"name": "Biology", "code": "BIO"},
+        "topics": [{"name": "Cell Structure", "ilo": "Describe cell components."}],
+        "module_text": "Cell membranes control transport.",
+    }
+
+    def override_db():
+        request_session = session_factory()
+        try:
+            yield request_session
+        finally:
+            request_session.close()
+
+    def override_user():
+        return current_user
+
+    previous_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_current_user] = override_user
+    try:
+        with TestClient(app) as client:
+            oversized = client.post(
+                "/api/questions/generate-preview",
+                json={
+                    "upload_id": upload_id,
+                    "total_items": MAX_QUESTIONS_PER_GENERATION + 1,
+                    "whole_total_points": 1,
+                },
+            )
+            assert oversized.status_code == 422
+
+            valid_payload = {
+                "upload_id": upload_id,
+                "total_items": 1,
+                "whole_total_points": 1,
+                "question_types": ["MCQ"],
+                "selected_topic_indices": [0],
+                "subcolumn_a_hours": {"0": "1"},
+                "question_type_items": {"MCQ": 1},
+            }
+            rapid_repeat = client.post(
+                "/api/questions/generate-preview",
+                json=valid_payload,
+            )
+            assert rapid_repeat.status_code == 429
+            assert "wait" in rapid_repeat.json()["detail"].lower()
+
+            with session_factory() as aging_session:
+                aging_session.query(models.ActivityLog).filter_by(
+                    action="AI generation reservation"
+                ).update({models.ActivityLog.created_at: datetime.utcnow() - timedelta(seconds=120)})
+                aging_session.commit()
+            monkeypatch.setattr("routers.questions.MAX_GENERATIONS_PER_USER_PER_DAY", 1)
+            daily_limit = client.post("/api/questions/generate-preview", json=valid_payload)
+            assert daily_limit.status_code == 429
+            assert "daily" in daily_limit.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous_overrides)
+        questions_router.FILE_CACHE.pop(f"{upload_id}_metadata", None)
+        session.close()
+        engine.dispose()
+
+
+def test_gemini_usage_tracker_leaves_missing_token_metadata_null():
+    tracker = GeminiUsageTracker()
+    tracker.begin_api_call()
+    tracker.record_response(SimpleNamespace(usage_metadata=SimpleNamespace(
+        prompt_token_count=25,
+        candidates_token_count=10,
+        total_token_count=35,
+    )))
+    tracker.begin_api_call()
+    tracker.record_response(SimpleNamespace(usage_metadata=None))
+
+    assert tracker.api_call_count == 2
+    assert tracker.token_totals() == (None, None, None)
+
+
+@pytest.mark.parametrize("question_count", [2, MAX_QUESTIONS_PER_GENERATION])
+def test_topic_generation_returns_exact_requested_batch_in_one_gemini_call(monkeypatch, question_count):
+    generated = [
+        {
+            "bloom_level": "Remember",
+            "question_type": "MCQ",
+            "question": f"Which statement describes ATP, item {index}?",
+            "options": ["A", "B", "C", "D"],
+            "correct_answer": "A",
+            "explanation": "Supported by the material.",
+        }
+        for index in range(question_count)
+    ]
+    calls = []
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(
+                text=json.dumps({"questions": generated}),
+                usage_metadata=SimpleNamespace(
+                    prompt_token_count=120,
+                    candidates_token_count=80,
+                    total_token_count=200,
+                ),
+            )
+
+    monkeypatch.setattr(ai_service, "client", SimpleNamespace(models=FakeModels()))
+    monkeypatch.setattr(ai_service, "MIN_SECONDS_BETWEEN_JOBS", 0)
+    tracker = GeminiUsageTracker()
+
+    questions = ai_service.generate_questions_for_topic(
+        "BIO 101",
+        "Cell Structure",
+        "Describe cell components.",
+        "Cell membranes control transport.",
+        {"Remember": ["MCQ"] * question_count},
+        usage_tracker=tracker,
+    )
+
+    assert len(questions) == question_count
+    assert tracker.generated_question_count == question_count
+    assert tracker.api_call_count == 1
+    assert tracker.token_totals() == (120, 80, 200)
+    assert calls[0]["model"] == ai_service.MODEL_NAME
+    assert "Cell membranes control transport." in calls[0]["contents"]
+
+
+def test_topic_context_prefers_matching_heading_and_omits_other_sections():
+    module_text = (
+        "## Cell Structure\nCell membranes control transport.\n\n"
+        "## Energy Transfer\nATP stores transferable chemical energy."
+    )
+
+    cell_context = ai_service.extract_topic_section(
+        module_text,
+        "Cell Structure",
+        ["Cell Structure", "Energy Transfer"],
+    )
+    energy_context = ai_service.extract_topic_section(
+        module_text,
+        "Energy Transfer",
+        ["Cell Structure", "Energy Transfer"],
+    )
+
+    assert "Cell membranes" in cell_context
+    assert "ATP" not in cell_context
+    assert "ATP" in energy_context
+    assert "Cell membranes" not in energy_context
+
+
+def test_normal_preview_does_not_call_gemini_classifier(monkeypatch):
+    import classifier
+
+    monkeypatch.setattr(classifier, "classify_question_ml", lambda _: "Remember")
+    monkeypatch.setattr(
+        classifier,
+        "classify_question",
+        lambda *_args, **_kwargs: pytest.fail("Preview should not call Gemini classification."),
+    )
+    monkeypatch.setattr("builtins.open", lambda *_args, **_kwargs: io.StringIO())
+
+    preview = ai_service.build_preview([{
+        "question": "Which statement defines ATP?",
+        "correct_answer": "A",
+        "bloom_level": "Understand",
+        "question_type": "MCQ",
+        "topic_name": "Energy Transfer",
+        "options": ["A", "B", "C", "D"],
+        "explanation": "Supported by the material.",
+    }])
+
+    assert preview[0]["bloom_level"] == "Remember"
+
+
+@pytest.mark.parametrize("failure", [TimeoutError("timed out"), RuntimeError("quota exceeded")])
+def test_gemini_failures_retry_same_model_and_record_failed_attempts(monkeypatch, failure):
+    models_called = []
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            models_called.append(kwargs["model"])
+            raise failure
+
+    monkeypatch.setattr(ai_service, "client", SimpleNamespace(models=FakeModels()))
+    monkeypatch.setattr(ai_service.time, "sleep", lambda _: None)
+    tracker = GeminiUsageTracker()
+
+    with pytest.raises(RuntimeError):
+        ai_service.generate_with_retry(
+            "small test prompt",
+            expected_question_count=1,
+            usage_tracker=tracker,
+        )
+
+    assert models_called == [ai_service.MODEL_NAME] * ai_service.MAX_RETRIES
+    assert tracker.api_call_count == ai_service.MAX_RETRIES
+    assert tracker.failure_count == ai_service.MAX_RETRIES
+    assert tracker.token_totals() == (None, None, None)
+
+
+def test_invalid_and_empty_gemini_responses_are_retried(monkeypatch):
+    response_texts = iter(["not json", "", "not json"])
+    calls = []
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            calls.append(kwargs["model"])
+            return SimpleNamespace(
+                text=next(response_texts),
+                usage_metadata=SimpleNamespace(
+                    prompt_token_count=10,
+                    candidates_token_count=2,
+                    total_token_count=12,
+                ),
+            )
+
+    monkeypatch.setattr(ai_service, "client", SimpleNamespace(models=FakeModels()))
+    monkeypatch.setattr(ai_service.time, "sleep", lambda _: None)
+    tracker = GeminiUsageTracker()
+
+    with pytest.raises(RuntimeError):
+        ai_service.generate_with_retry(
+            "small test prompt",
+            expected_question_count=1,
+            usage_tracker=tracker,
+        )
+
+    assert calls == [ai_service.MODEL_NAME] * ai_service.MAX_RETRIES
+    assert tracker.api_call_count == ai_service.MAX_RETRIES
+    assert tracker.token_totals() == (30, 6, 36)
+
+
+def test_over_count_gemini_response_is_retried_until_exact_count(monkeypatch):
+    question = {
+        "bloom_level": "Remember",
+        "question_type": "MCQ",
+        "question": "What is ATP?",
+        "options": ["A", "B", "C", "D"],
+        "correct_answer": "A",
+        "explanation": "Supported by the material.",
+    }
+    responses = iter([
+        {"questions": [question, {**question, "question": "What stores energy?"}]},
+        {"questions": [question]},
+    ])
+    calls = []
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            calls.append(kwargs["model"])
+            return SimpleNamespace(text=json.dumps(next(responses)), usage_metadata=None)
+
+    monkeypatch.setattr(ai_service, "client", SimpleNamespace(models=FakeModels()))
+    monkeypatch.setattr(ai_service.time, "sleep", lambda _: None)
+
+    result = ai_service.generate_with_retry(
+        "Generate one question.",
+        expected_question_count=1,
+    )
+
+    assert len(result["questions"]) == 1
+    assert calls == [ai_service.MODEL_NAME, ai_service.MODEL_NAME]
+
+
+def test_syllabus_gemini_failure_keeps_existing_fallback(monkeypatch):
+    monkeypatch.setattr(
+        ai_service,
+        "_call_syllabus_ai",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(TimeoutError("timed out")),
+    )
+    tracker = GeminiUsageTracker()
+
+    course_title, course_code, topics = ai_service.parse_syllabus_text_with_ai(
+        "Syllabus text that cannot be parsed.",
+        usage_tracker=tracker,
+    )
+
+    assert course_title == "Fundamentals of Analytics Modeling"
+    assert course_code == "BAT402"
+    assert topics == []
+    assert tracker.failure_count == 1
+    assert tracker.last_error_type == "TimeoutError"
 
 
 def test_generate_tos_uses_department_leadership_names():
