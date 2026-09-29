@@ -4,10 +4,12 @@ import logging
 import random
 import re
 import time
+from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
+from file_extractor import clean_extracted_text
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -26,6 +28,52 @@ MIN_SECONDS_BETWEEN_JOBS = 3
 # which silently tripped the except-branch fallback (empty topics).
 SYLLABUS_MAX_OUTPUT_TOKENS = 3500
 SYLLABUS_TEXT_CHAR_LIMIT = 30000
+
+
+@dataclass
+class GeminiUsageTracker:
+    api_call_count: int = 0
+    generated_question_count: int = 0
+    failure_count: int = 0
+    last_error_type: str | None = None
+    _token_usage: list[tuple[int | None, int | None, int | None]] = field(default_factory=list)
+
+    def begin_api_call(self) -> None:
+        self.api_call_count += 1
+        self._token_usage.append((None, None, None))
+
+    def record_response(self, response) -> None:
+        metadata = getattr(response, "usage_metadata", None) if response else None
+
+        def token_count(field_name: str) -> int | None:
+            if isinstance(metadata, dict):
+                value = metadata.get(field_name)
+            else:
+                value = getattr(metadata, field_name, None)
+            return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+        values = (
+            token_count("prompt_token_count"),
+            token_count("candidates_token_count"),
+            token_count("total_token_count"),
+        )
+        if not self._token_usage:
+            self.begin_api_call()
+        self._token_usage[-1] = values
+
+    def record_failure(self, error) -> None:
+        self.failure_count += 1
+        self.last_error_type = type(error).__name__
+
+    def token_totals(self) -> tuple[int | None, int | None, int | None]:
+        if not self._token_usage:
+            return None, None, None
+
+        totals = []
+        for index in range(3):
+            values = [usage[index] for usage in self._token_usage]
+            totals.append(sum(values) if all(value is not None for value in values) else None)
+        return tuple(totals)
 
 
 class GroqDailyQuotaExceeded(RuntimeError):
@@ -104,10 +152,10 @@ Never return markdown formatting codeblocks. Never use ```. Never explain. Retur
 def truncate_module(module_text: str):
     if not module_text:
         return ""
-    module_text = module_text.strip()
+    module_text = clean_extracted_text(module_text).strip()
     if len(module_text) <= MAX_MODULE_LENGTH:
         return module_text
-    return module_text[:MAX_MODULE_LENGTH]
+    return _limit_context(module_text, MAX_MODULE_LENGTH)
 
 _ILO_LABEL_RE = re.compile(
     r"ILO\s*[-#]?\s*\d+(?:\s*(?:,|&|and)\s*ILO\s*[-#]?\s*\d+)*",
@@ -200,6 +248,30 @@ _STOPWORDS = {
 }
 
 
+def _normalize_topic_heading(value: str) -> str:
+    value = re.sub(r"^\s*#{1,6}\s*", "", value)
+    value = re.sub(
+        r"^\s*(?:(?:chapter|unit|module|section)\s+)?\d+(?:\.\d+)*(?:\s*[:.)-]\s*|\s+)",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
+    value = re.sub(r"^\s*(?:chapter|unit|module|section)\s+\d+(?:\.\d+)?\s*[:.)-]?\s*", "", value, flags=re.IGNORECASE)
+    return " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
+
+
+def _limit_context(text: str, limit: int) -> str:
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+
+    excerpt = text[:limit]
+    boundary = max(excerpt.rfind("\n\n"), excerpt.rfind("\n"))
+    if boundary >= limit * 0.75:
+        excerpt = excerpt[:boundary]
+    return excerpt.strip()
+
+
 def _topic_keywords(topic_name: str):
     clean_name = re.sub(r"^Chapter\s*\d+(\.\d+)?\s*:\s*", "", topic_name, flags=re.IGNORECASE).strip()
     words = re.findall(r"[A-Za-z]{4,}", clean_name)
@@ -215,33 +287,88 @@ def extract_topic_section(
     if not module_text:
         return ""
 
-    module_text = module_text.strip()
+    module_text = clean_extracted_text(module_text).strip()
+    if not module_text:
+        return ""
 
-    # Only skip slicing when the whole doc already fits in the window
-    # we're about to hand the AI. Previously this compared against a
-    # fixed 35,000-char threshold unrelated to window_chars (6000), so
-    # modules under 35k were returned whole here and then silently cut
-    # to the same first 6000 chars for every topic inside
-    # build_prompt()'s truncate_module() call -- meaning every topic in
-    # a typical module was generated from the same first few pages
-    # instead of its own section.
-    if len(module_text) <= window_chars:
-        return module_text
+    normalized_topics = {
+        _normalize_topic_heading(name): name
+        for name in all_topic_names
+        if _normalize_topic_heading(name)
+    }
+    target_heading = _normalize_topic_heading(topic_name)
+    heading_positions = []
+    offset = 0
+    for line in module_text.splitlines(keepends=True):
+        normalized_line = _normalize_topic_heading(line)
+        if normalized_line in normalized_topics:
+            heading_positions.append((offset, normalized_line))
+        offset += len(line)
+
+    target_positions = [
+        position for position, heading in heading_positions
+        if heading == target_heading
+    ]
+    if target_positions:
+        sections = []
+        for position in target_positions:
+            next_headings = [
+                next_position for next_position, _ in heading_positions
+                if next_position > position
+            ]
+            end = min(next_headings) if next_headings else len(module_text)
+            section = module_text[position:end].strip()
+            if section:
+                sections.append(section)
+        if sections:
+            return _limit_context(max(sections, key=len), window_chars)
 
     keywords = _topic_keywords(topic_name)
-    lower_text = module_text.lower()
+    matches = []
+    for keyword in keywords:
+        pattern = re.compile(rf"(?<!\w){re.escape(keyword)}(?!\w)", re.IGNORECASE)
+        matches.extend((match.start(), keyword.casefold()) for match in pattern.finditer(module_text))
 
-    match_positions = []
-    for kw in keywords:
-        idx = lower_text.find(kw.lower())
-        if idx != -1:
-            match_positions.append(idx)
+    if matches:
+        paragraphs = [
+            paragraph.strip()
+            for paragraph in re.split(r"\n\s*\n+", module_text)
+            if paragraph.strip()
+        ]
+        if len(paragraphs) == 1:
+            paragraphs = [line.strip() for line in module_text.splitlines() if line.strip()]
 
-    if match_positions:
-        anchor = min(match_positions)
-        start = max(0, anchor - 400)
-        end = min(len(module_text), start + window_chars)
-        return module_text[start:end]
+        ranked_paragraphs = []
+        for index, paragraph in enumerate(paragraphs):
+            matched_keywords = {
+                keyword.casefold() for keyword in keywords
+                if re.search(rf"(?<!\w){re.escape(keyword)}(?!\w)", paragraph, re.IGNORECASE)
+            }
+            occurrences = sum(
+                len(re.findall(rf"(?<!\w){re.escape(keyword)}(?!\w)", paragraph, re.IGNORECASE))
+                for keyword in keywords
+            )
+            if matched_keywords:
+                ranked_paragraphs.append((index, (len(matched_keywords), occurrences), paragraph))
+
+        ranked_paragraphs.sort(key=lambda item: (item[1], -len(item[2])), reverse=True)
+        selected_paragraphs = []
+        selected_length = 0
+        for _, _, paragraph in ranked_paragraphs:
+            separator_length = 2 if selected_paragraphs else 0
+            remaining = window_chars - selected_length - separator_length
+            if remaining <= 0:
+                break
+            if len(paragraph) > remaining:
+                if selected_paragraphs:
+                    continue
+                paragraph = _limit_context(paragraph, remaining)
+            excerpt = paragraph.strip()
+            if excerpt:
+                selected_paragraphs.append(excerpt)
+                selected_length += len(excerpt) + separator_length
+
+        return "\n\n".join(selected_paragraphs)
 
     try:
         idx = all_topic_names.index(topic_name)
@@ -249,12 +376,10 @@ def extract_topic_section(
         idx = 0
 
     topic_count = max(1, len(all_topic_names))
-    chunk_size = max(1, len(module_text) // topic_count)
+    chunk_size = max(1, (len(module_text) + topic_count - 1) // topic_count)
     start = idx * chunk_size
-    end = min(len(module_text), start + max(chunk_size, window_chars))
-
-    section = module_text[start:end]
-    return section if section.strip() else truncate_module(module_text)
+    end = min(len(module_text), start + chunk_size)
+    return _limit_context(module_text[start:end], window_chars)
 
 
 # ============================================================
@@ -263,67 +388,40 @@ def extract_topic_section(
 
 def build_prompt(subject, topic, ilo, module_text, bloom_distribution):
     module_text = truncate_module(module_text)
-    instructions = []
+    distribution_lines = []
     total_questions = 0
-
+    requested_types = set()
     for bloom, question_types in bloom_distribution.items():
         if not question_types:
             continue
         total_questions += len(question_types)
-        instructions.append(f"- {bloom}: {len(question_types)} question(s) using {', '.join(question_types)}")
+        requested_types.update(question_types)
+        distribution_lines.append(f"- {bloom}: {', '.join(question_types)}")
 
-    distribution = "\n".join(instructions)
+    bloom_guidance = {
+        bloom: BLOOM_DESCRIPTIONS[bloom]
+        for bloom in bloom_distribution
+        if bloom in BLOOM_DESCRIPTIONS and bloom_distribution[bloom]
+    }
+    type_guidance = {
+        question_type: QUESTION_TYPE_RULES[question_type]
+        for question_type in requested_types
+        if question_type in QUESTION_TYPE_RULES
+    }
 
-    prompt = f"""
-You are an expert university professor, assessment specialist, and Bloom's Taxonomy expert.
-
-==================================================
-COURSE INFORMATION
-==================================================
-Subject: {subject}
-Topic: {topic}
-Intended Learning Outcome: {ilo}
-
-==================================================
-LEARNING MATERIAL
-==================================================
-{module_text}
-
-==================================================
-BLOOM'S TAXONOMY
-==================================================
-{json.dumps(BLOOM_DESCRIPTIONS, indent=2)}
-
-==================================================
-QUESTION REQUIREMENTS
-==================================================
-Generate EXACTLY {total_questions} questions. Follow this distribution EXACTLY:
-{distribution}
-
-==================================================
-QUESTION TYPE RULES
-==================================================
-{json.dumps(QUESTION_TYPE_RULES, indent=2)}
-
-==================================================
-STRICT RULES
-==================================================
-1. Generate ONLY questions that are explicitly supported by the text provided in the LEARNING MATERIAL section.
-2. Every question generated must specifically target and be guided by the assigned boundaries of the current Topic: {topic}.
-3. Every question must match its assigned Bloom level.
-4. Every question must match its assigned question type.
-5. Difficulty should be appropriate for college students.
-6. Avoid duplicate questions.
-7. Avoid repeating the same wording.
-8. Make distractors realistic.
-9. Essay questions must require reasoning.
-10. Situational questions must use realistic scenarios.
-11. Return EXACTLY {total_questions} questions.
-12. Return ONLY valid JSON.
-
-OUTPUT FORMAT
-{QUESTION_SCHEMA}
-"""
+    prompt = (
+        "Create assessment questions using only the relevant material below.\n"
+        f"Subject: {subject}\nTopic: {topic}\nLearning outcome: {ilo}\n\n"
+        f"Material:\n{module_text}\n\n"
+        f"Bloom targets:\n{json.dumps(bloom_guidance, separators=(',', ':'))}\n"
+        f"Generate exactly {total_questions} questions, one for each listed type:\n"
+        f"{chr(10).join(distribution_lines)}\n"
+        f"Type requirements:\n{json.dumps(type_guidance, separators=(',', ':'))}\n"
+        "Keep every question within the topic and supported by the material. Match its Bloom level and type; "
+        "use college-level difficulty, distinct wording, plausible distractors, and reasoning for essays. "
+        "Situational scenarios must be grounded in the material. Return exactly the requested count as valid JSON only.\n"
+        f"{QUESTION_SCHEMA}"
+    )
     return prompt, total_questions
 
 
@@ -331,13 +429,17 @@ OUTPUT FORMAT
 # CORE AI ENGINE WRAPPER (Rerouted from Groq to Gemini)
 # ============================================================
 
-def ask_groq(prompt: str, max_tokens: int = 4096) -> str:
+def ask_groq(prompt: str, max_tokens: int = 4096, usage_tracker: GeminiUsageTracker | None = None) -> str:
     """
     Maintains the interface name 'ask_groq' to prevent breaking dependencies,
     but routes all payloads directly through Google Gemini's native client.
     """
     logger.info("Sending request to Google Gemini Engine...")
 
+    if usage_tracker:
+        usage_tracker.begin_api_call()
+
+    usage_recorded = False
     try:
         config = types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -351,6 +453,9 @@ def ask_groq(prompt: str, max_tokens: int = 4096) -> str:
             contents=prompt,
             config=config
         )
+        if usage_tracker:
+            usage_tracker.record_response(response)
+            usage_recorded = True
 
         if not response.text:
             raise RuntimeError("Gemini framework returned an empty layout payload.")
@@ -358,6 +463,10 @@ def ask_groq(prompt: str, max_tokens: int = 4096) -> str:
         return response.text.strip()
 
     except Exception as gemini_err:
+        if usage_tracker and not usage_recorded:
+            usage_tracker.record_response(None)
+        if usage_tracker:
+            usage_tracker.record_failure(gemini_err)
         logger.error(f"Gemini generation failure event: {gemini_err}")
         raise RuntimeError(f"Gemini API execution error exception block: {str(gemini_err)}")
 
@@ -418,8 +527,15 @@ def validate_question(question):
 # RESPONSE VALIDATION
 # ============================================================
 
-def validate_response(data):
+def validate_response(data, expected_question_count=None):
     if "questions" not in data or not isinstance(data["questions"], list) or len(data["questions"]) == 0:
+        return False
+    if expected_question_count is not None and len(data["questions"]) != expected_question_count:
+        logger.warning(
+            "AI returned %s question(s), expected %s.",
+            len(data["questions"]),
+            expected_question_count,
+        )
         return False
     return all(validate_question(q) for q in data["questions"])
 
@@ -428,16 +544,21 @@ def validate_response(data):
 # RETRY ENGINE
 # ============================================================
 
-def generate_with_retry(prompt, max_tokens: int = 4096):
+def generate_with_retry(
+    prompt,
+    max_tokens: int = 4096,
+    expected_question_count=None,
+    usage_tracker: GeminiUsageTracker | None = None,
+):
     last_error = None
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             logger.info(f"AI generation attempt {attempt}")
-            raw = ask_groq(prompt, max_tokens=max_tokens)
+            raw = ask_groq(prompt, max_tokens=max_tokens, usage_tracker=usage_tracker)
             parsed = parse_ai_response(raw)
 
-            if validate_response(parsed):
+            if validate_response(parsed, expected_question_count):
                 logger.info("AI generation successful.")
                 return parsed
 
@@ -454,7 +575,14 @@ def generate_with_retry(prompt, max_tokens: int = 4096):
 # AI GENERATION FOR A SINGLE TOPIC
 # ============================================================
 
-def generate_questions_for_topic(subject, topic, ilo, module_text, question_distribution):
+def generate_questions_for_topic(
+    subject,
+    topic,
+    ilo,
+    module_text,
+    question_distribution,
+    usage_tracker: GeminiUsageTracker | None = None,
+):
     question_distribution = cap_distribution_for_dev(question_distribution)
     prompt, total_questions = build_prompt(
         subject=subject,
@@ -465,8 +593,15 @@ def generate_questions_for_topic(subject, topic, ilo, module_text, question_dist
     )
 
     max_tokens = estimate_max_tokens(total_questions)
-    response = generate_with_retry(prompt, max_tokens=max_tokens)
+    response = generate_with_retry(
+        prompt,
+        max_tokens=max_tokens,
+        expected_question_count=total_questions,
+        usage_tracker=usage_tracker,
+    )
     questions = response["questions"]
+    if usage_tracker:
+        usage_tracker.generated_question_count += len(questions)
 
     for question in questions:
         question["topic_name"] = topic
@@ -511,7 +646,7 @@ def generate_parallel_jobs(jobs):
 # TOS -> AI GENERATION
 # ============================================================
 
-def generate_questions_from_tos(subject, module_text, tos_data):
+def generate_questions_from_tos(subject, module_text, tos_data, usage_tracker: GeminiUsageTracker | None = None):
     all_topic_names = [t["topic_name"] for t in tos_data]
     jobs = []
 
@@ -543,7 +678,8 @@ def generate_questions_from_tos(subject, module_text, tos_data):
             job["topic"],
             job["ilo"],
             job["module"],
-            job["distribution"]
+            job["distribution"],
+            usage_tracker=usage_tracker,
         )
         for q in questions:
             q["topic_name"] = topic["topic_name"]
@@ -746,22 +882,37 @@ RAW SYLLABUS TEXT SEGMENT:
 """
 
 
-def _call_syllabus_ai(text_segment: str, max_output_tokens: int):
+def _call_syllabus_ai(
+    text_segment: str,
+    max_output_tokens: int,
+    usage_tracker: GeminiUsageTracker | None = None,
+):
     """
     Executes the syllabus data extraction call using the native Google GenAI SDK.
     """
     prompt = _build_syllabus_prompt(text_segment)
 
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            temperature=0.1,
-            max_output_tokens=max_output_tokens,
-            response_mime_type="application/json",  # Forces pure structured JSON output
-            system_instruction="You are a precise data extraction system. Return valid JSON matching the schema precisely. No markdown block wraps."
+    if usage_tracker:
+        usage_tracker.begin_api_call()
+    try:
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.1,
+                max_output_tokens=max_output_tokens,
+                response_mime_type="application/json",  # Forces pure structured JSON output
+                system_instruction="You are a precise data extraction system. Return valid JSON matching the schema precisely. No markdown block wraps."
+            )
         )
-    )
+    except Exception as error:
+        if usage_tracker:
+            usage_tracker.record_response(None)
+            usage_tracker.record_failure(error)
+        raise
+
+    if usage_tracker:
+        usage_tracker.record_response(response)
 
     if not response or not response.text:
         raise RuntimeError("Gemini returned an empty response block.")
@@ -804,7 +955,10 @@ def _normalize_ai_value(value, default=""):
     return str(value).strip() or default
 
 
-def parse_syllabus_text_with_ai(full_text: str):
+def parse_syllabus_text_with_ai(
+    full_text: str,
+    usage_tracker: GeminiUsageTracker | None = None,
+):
     """
     Parses raw syllabus text (including markdown-rendered tables) with the
     Gemini extractor above, mapping each topic to its own row's ILO label
@@ -814,9 +968,11 @@ def parse_syllabus_text_with_ai(full_text: str):
     text_segment = _clean_markdown_noise(full_text[:SYLLABUS_TEXT_CHAR_LIMIT])
 
     try:
-        data = _call_syllabus_ai(text_segment, SYLLABUS_MAX_OUTPUT_TOKENS)
+        data = _call_syllabus_ai(text_segment, SYLLABUS_MAX_OUTPUT_TOKENS, usage_tracker)
         logger.info("[SYLLABUS DEBUG] AI extracted structural topic/ILO matrix successfully.")
     except Exception as e:
+        if usage_tracker:
+            usage_tracker.record_failure(e)
         logger.error(f"AI syllabus parsing exception: {str(e)}")
         return "Fundamentals of Analytics Modeling", "BAT402", []
 

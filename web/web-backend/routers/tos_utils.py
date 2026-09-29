@@ -39,6 +39,29 @@ SUPPORTED_QUESTION_TYPES = [
 
 
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "tos_template.xlsx"
+STANDARD_TOS_FONT = Font(name="Times New Roman", size=11)
+
+
+def _apply_consistent_tos_font(ws, min_row=1, max_row=None, min_col=1, max_col=None):
+    """Standardize all populated cells in the generated TOS to one font family."""
+    max_row = ws.max_row if max_row is None else max_row
+    max_col = ws.max_column if max_col is None else max_col
+
+    for row in ws.iter_rows(min_row=min_row, max_row=max_row, min_col=min_col, max_col=max_col):
+        for cell in row:
+            if cell.value is None:
+                continue
+            current_font = cell.font
+            cell.font = Font(
+                name="Times New Roman",
+                size=11,
+                bold=bool(current_font.bold),
+                italic=bool(current_font.italic),
+                color=current_font.color,
+                underline=current_font.underline,
+                strike=current_font.strike,
+                vertAlign=current_font.vertAlign,
+            )
 
 
 def check_totals_mismatch(selected_topics_data, whole_total_items):
@@ -221,7 +244,8 @@ def _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_t
         ws.cell(row=current_row, column=hours_col, value=float(topic["hours_a"]))
         if minutes_col:
             ws.cell(row=current_row, column=minutes_col,
-                    value=f"=IFERROR({get_column_letter(hours_col)}{current_row}/{get_column_letter(hours_col)}{total_row_index}*60,0)")
+                    value=float(topic.get("minutes_b", 0.0) or 0.0))
+            ws.cell(row=current_row, column=minutes_col).number_format = '0.0000'
         if weight_col:
             weight_cell = ws.cell(row=current_row, column=weight_col,
                                     value=f"=IFERROR({get_column_letter(total_col)}{current_row}/$S${total_row_index}*100,0)")
@@ -543,6 +567,11 @@ def compute_tos(
             remaining_type_counts=remaining_type_counts or None,
         )
 
+        total_topic_hours = sum(
+            float(hours_dict.get(str(i), 1))
+            for i in selected_topic_indices
+        ) or 1.0
+
         results.append({
 
             "topic_name": topic["name"],
@@ -555,14 +584,10 @@ def compute_tos(
 
             "hours_a": hrs,
 
-            "minutes_b": 2,
+            "minutes_b": round(hrs / total_topic_hours, 4),
 
             "weight": round(
-                hrs /
-                sum(
-                    float(hours_dict.get(str(i), 1))
-                    for i in selected_topic_indices
-                ) * 100,
+                hrs / total_topic_hours * 100,
                 2
             ),
 
@@ -576,16 +601,25 @@ def compute_tos(
         
     return results
 
-def generate_tos_from_institutional_template(selected_topics_data, course_code, course_title, whole_total_items):
+def generate_tos_from_institutional_template(
+    selected_topics_data,
+    course_code,
+    course_title,
+    whole_total_items,
+    instructor_name="",
+    department="",
+    dean_name="",
+    program_chair_name="",
+):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "TOS"
     ws.views.sheetView[0].showGridLines = True
 
     # Institutional Brand Visual Formats
-    font_header_title = Font(name="Calibri", size=11, bold=True)
-    font_main_label = Font(name="Calibri", size=11, bold=True)
-    font_body_data = Font(name="Calibri", size=11)
+    font_header_title = Font(name="Times New Roman", size=11, bold=True)
+    font_main_label = Font(name="Times New Roman", size=11, bold=True)
+    font_body_data = Font(name="Times New Roman", size=11)
     
     thin_border_side = Side(style='thin', color='000000')
     grid_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
@@ -598,7 +632,10 @@ def generate_tos_from_institutional_template(selected_topics_data, course_code, 
     ws['B11'] = "A. Tanco Drive, Marawoy, Lipa City, Batangas , Philippines 4217"
     ws['B12'] = "Tel Nos. : (+63 43) 980-0385; 980-0392 to local 3130"
     ws['B13'] = "E-mail Address: cics.lipa@g.batstate-u.edu.ph | Website Address: http://www.batstate-u.edu.ph"
-    ws['B14'] = "                         College of Informatics and Computing Sciences"
+    if department and str(department).strip():
+        ws['B14'] = f"                         {department}"
+    else:
+        ws['B14'] = ""
     ws['B15'] = "TABLE OF SPECIFICATIONS\nFinal Examination\nFirst Semester, AY 2026 – 2027"
     ws['B15'].alignment = Alignment(wrap_text=True)
 
@@ -715,8 +752,8 @@ def generate_tos_from_institutional_template(selected_topics_data, course_code, 
     
     name_row = sign_row + 2
     ws.cell(row=name_row, column=2, value=instructor_name or "Faculty Instructor").font = font_main_label
-    ws.cell(row=name_row, column=9, value="Mr. DIONECES O. ALIMOREN").font = font_main_label
-    ws.cell(row=name_row, column=15, value="Dr. RYNDEL V. AMORADO").font = font_main_label
+    ws.cell(row=name_row, column=9, value=program_chair_name or "Program Chair").font = font_main_label
+    ws.cell(row=name_row, column=15, value=dean_name or "Dean").font = font_main_label
 
     # Legend footnotes, matching the original template
     legend_row = name_row + 3
@@ -765,15 +802,34 @@ def _write_exam_type_label(ws, exam_type, semester, academic_year=""):
                 return
 
 
-def generate_tos_from_excel_template(selected_topics_data, course_code, course_title, whole_total_items, exam_type="Final Exam", semester="First Semester", academic_year="", instructor_name="", department=""):
+def generate_tos_from_excel_template(
+    selected_topics_data,
+    course_code,
+    course_title,
+    whole_total_items,
+    exam_type="Final Exam",
+    semester="First Semester",
+    academic_year="",
+    instructor_name="",
+    department="",
+    dean_name="",
+    program_chair_name="",
+):
     wb = _load_tos_template_workbook()
     ws = wb.active
     ws.views.sheetView[0].showGridLines = True
 
     _write_course_label(ws, "course code", course_code or "IT 332")
     _write_course_label(ws, "course title", course_title or "Integrative Programming and Technologies")
-    if department:
-        ws.cell(row=20, column=2, value=f"DEPARTMENT: {department}").font = Font(name="Calibri", size=11, bold=True)
+    if department and str(department).strip():
+        ws['B14'] = f"                         {department}"
+        ws['B14'].font = Font(name="Times New Roman", size=11, bold=True)
+        ws.cell(row=20, column=2, value=f"DEPARTMENT: {department}").font = Font(name="Times New Roman", size=11, bold=True)
+    else:
+        ws['B14'] = ""
+        ws['B14'].font = Font(name="Times New Roman", size=11, bold=True)
+        if ws.cell(row=20, column=2).value is not None:
+            ws.cell(row=20, column=2, value="")
     _write_exam_type_label(ws, exam_type, semester, academic_year)
 
     header_row = _find_header_row(ws)
@@ -819,16 +875,27 @@ def generate_tos_from_excel_template(selected_topics_data, course_code, course_t
 
     _write_topics_to_template(ws, start_row, cols, selected_topics_data, whole_total_items, instructor_name)
 
-    signature_row = next(
-        (
-            cell.row
-            for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=8)
-            for cell in row
-            if str(cell.value or "").strip().lower() == "prepared by:"
-        ),
-        start_row + len(selected_topics_data) + 1,
-    )
+    prepared_rows = [
+        cell.row
+        for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=8)
+        for cell in row
+        if str(cell.value or "").strip().lower() == "prepared by:"
+    ]
+    signature_row = max(prepared_rows, default=start_row + len(selected_topics_data) + 1)
+
+    # Clear stale template defaults before writing the actual department
+    # leadership for the generated TOS. Some shipped workbook versions include
+    # placeholder values like 'Dean' / 'Program Chair' / 'Dean CICS' in these
+    # cells, and the first match can inherit that stale text when a later row
+    # (or a cached value) is not explicitly overwritten.
+    ws.cell(row=signature_row + 2, column=2, value="")
+    ws.cell(row=signature_row + 2, column=9, value="")
+    ws.cell(row=signature_row + 2, column=15, value="")
     ws.cell(row=signature_row + 2, column=2, value=instructor_name or "Faculty Instructor")
+    ws.cell(row=signature_row + 2, column=9, value=program_chair_name or "")
+    ws.cell(row=signature_row + 2, column=15, value=dean_name or "")
+    ws.cell(row=signature_row + 3, column=9, value="Program Chair")
+    ws.cell(row=signature_row + 3, column=15, value="Dean")
 
     # The template's column widths are inconsistent -- some %-columns (e.g.
     # Understand, Apply) are a hair too narrow for a formatted value like
@@ -844,4 +911,5 @@ def generate_tos_from_excel_template(selected_topics_data, course_code, course_t
         if col:
             ws.column_dimensions[_gcl(col)].width = max(ws.column_dimensions[_gcl(col)].width or 0, 10)
 
+    _apply_consistent_tos_font(ws)
     return wb

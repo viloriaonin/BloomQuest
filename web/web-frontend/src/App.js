@@ -20,6 +20,7 @@ import TopBar from "./components/TopBar";
 
 // Admin Pages
 import AdminDashboard from "./pages/admin/admindashboard";
+import SuperAdminDashboard from "./pages/admin/SuperAdminDashboard";
 
 // ---------------------------------------------------------
 // 1. User Layout (Standard Sidebar)
@@ -87,16 +88,19 @@ const getUserRole = () => {
 
 const AdminRoute = ({ children }) => {
   const role = getUserRole();
-  const [isAuthorized, setIsAuthorized] = React.useState(role === "admin" ? "checking" : "denied");
+  const [isAuthorized, setIsAuthorized] = React.useState(["admin", "campus_admin"].includes(role) ? "checking" : "denied");
 
   React.useEffect(() => {
-    if (!role) {
+    if (!role || role === "super_admin") {
       setIsAuthorized("denied");
       return;
     }
 
     let cancelled = false;
-    fetch(`${process.env.REACT_APP_API_BASE_URL || "http://localhost:8000/api"}/admin/me`, { cache: "no-store" })
+    fetch(`${process.env.REACT_APP_API_BASE_URL || "http://localhost:8000/api"}/admin/me`, {
+      cache: "no-store",
+      headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+    })
       .then((response) => {
         if (!response.ok) throw new Error("Unauthorized");
         return response.json();
@@ -104,12 +108,17 @@ const AdminRoute = ({ children }) => {
       .then((data) => {
         if (!cancelled) {
           const backendRole = String(data?.role || "").toLowerCase();
-          if (backendRole !== "admin") {
+          if (backendRole === "super_admin") {
+            setIsAuthorized("super-admin");
+            return;
+          }
+          if (backendRole !== "campus_admin") {
             localStorage.removeItem("token");
             localStorage.removeItem("role");
             setIsAuthorized("denied");
             return;
           }
+          localStorage.setItem("role", backendRole);
           setIsAuthorized("allowed");
         }
       })
@@ -125,18 +134,29 @@ const AdminRoute = ({ children }) => {
   }, [role]);
 
   if (!role) return <Navigate to="/" replace />;
+  if (role === "super_admin" || isAuthorized === "super-admin") return <Navigate to="/super-admin/dashboard" replace />;
   if (isAuthorized === "checking") return <div className="flex h-screen items-center justify-center text-sm text-slate-500">Checking admin access…</div>;
   return isAuthorized === "allowed" ? children : <Navigate to="/dashboard" replace />;
+};
+
+const SuperAdminRoute = ({ children }) => {
+  const role = getUserRole();
+  if (!role) return <Navigate to="/" replace />;
+  if (role === "super_admin") return children;
+  return ["campus_admin", "admin"].includes(role)
+    ? <Navigate to="/admin/dashboard" replace />
+    : <Navigate to="/dashboard" replace />;
 };
 
 const UserRoute = ({ children }) => {
   const role = getUserRole();
   if (!role) return <Navigate to="/" replace />;
-  return role === "admin" ? <Navigate to="/admin/dashboard" replace /> : children;
+  if (role === "super_admin") return <Navigate to="/super-admin/dashboard" replace />;
+  return ["campus_admin", "admin"].includes(role) ? <Navigate to="/admin/dashboard" replace /> : children;
 };
 
 const QuestionBankRoute = () => {
-  if (getUserRole() === "admin") {
+  if (["admin", "campus_admin"].includes(getUserRole())) {
     return (
       <AdminRoute>
         <PageContainer>
@@ -254,6 +274,14 @@ function App() {
         {/* ========================================= */}
         {/* ADMIN ROUTES                              */}
         {/* ========================================= */}
+
+        <Route path="/super-admin" element={<Navigate to="/super-admin/dashboard" replace />} />
+        <Route path="/super-admin/academic" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
+        <Route path="/super-admin/academic/campus/:campusId" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
+        <Route path="/super-admin/academic/campus/:campusId/department/:departmentId" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
+        <Route path="/super-admin/academic/campus/:campusId/department/:departmentId/program/:programId" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
+        <Route path="/super-admin/questions" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
+        <Route path="/super-admin/*" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
         
         {/* Redirect base /admin to the admin dashboard */}
         <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />

@@ -31,7 +31,7 @@ BT_CODE_TO_LABEL = {
 }
 
 
-def classify_question(question_text: str, *args, **kwargs) -> str:
+def classify_question(question_text: str, *args, usage_tracker=None, **kwargs) -> str:
     """
     Classifies an evaluation question into a definitive Bloom's Taxonomy level
     using a live, non-mocked dynamic Google Gemini endpoint.
@@ -49,11 +49,17 @@ def classify_question(question_text: str, *args, **kwargs) -> str:
         logger.warning("Skipping Gemini classification because no API key is configured.")
         return "Understand"
 
+    if usage_tracker:
+        usage_tracker.begin_api_call()
+    usage_recorded = False
     try:
         response = client.models.generate_content(
             model=MODEL_NAME,
             contents=prompt
         )
+        if usage_tracker:
+            usage_tracker.record_response(response)
+            usage_recorded = True
 
         if not response or not response.text:
             return "Understand"
@@ -79,6 +85,10 @@ def classify_question(question_text: str, *args, **kwargs) -> str:
         return "Understand"
 
     except Exception as e:
+        if usage_tracker:
+            if not usage_recorded:
+                usage_tracker.record_response(None)
+            usage_tracker.record_failure(e)
         logger.error(f"Classification live link runtime error occurred: {str(e)}")
         return "Understand"
 

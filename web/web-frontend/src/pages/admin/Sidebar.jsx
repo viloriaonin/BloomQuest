@@ -8,10 +8,10 @@ import LogoutBtn from "./Logout";
 import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
 import { FolderArchive, Settings, Sun, Moon } from "lucide-react";
 
-const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle }) => {
+const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed, mobileOpen, onNavigate }) => {
   return (
     <aside
-      className="bq-admin-sidebar sticky left-0 top-0 z-40 flex h-screen w-56 self-start flex-col"
+      className={`bq-admin-sidebar fixed inset-y-0 left-0 z-40 flex h-screen shrink-0 flex-col transition-all duration-300 md:static md:z-auto ${collapsed ? "is-collapsed w-20" : "w-56"} ${mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
       style={{
         backgroundColor: "#FCFCFD",
         borderRight: "1px solid rgba(15, 23, 42, 0.08)",
@@ -36,14 +36,16 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle }) => {
         <span className="px-2.5 text-[10px] font-bold tracking-[0.16em] uppercase text-slate-400">Administration</span>
       </div>
 
-      <nav className="flex-1 px-2.5 space-y-1 overflow-y-auto pb-4">
-        <DashboardBtn activeTab={activeTab} setActiveTab={setActiveTab} />
-        <AcademicMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} />
-        <QuestionBankBtn activeTab={activeTab} setActiveTab={setActiveTab} />
-        <UserMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} />
-        <ReportsBtn activeTab={activeTab} setActiveTab={setActiveTab} />
+      <nav onClick={onNavigate} className="flex-1 px-2.5 space-y-1 overflow-y-auto pb-4">
+        <DashboardBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
+        <AcademicMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
+        <QuestionBankBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
+        <UserMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
+        <ReportsBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
         <button
           type="button"
+          title={collapsed ? "Settings" : undefined}
+          aria-label={collapsed ? "Settings" : undefined}
           onClick={() => setActiveTab("settings")}
           className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150"
           style={activeTab === "settings" ? { background: "var(--bq-accent)", color: "#ffffff" } : { color: "var(--bq-muted)", background: "transparent" }}
@@ -53,6 +55,8 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle }) => {
         </button>
         <button
           type="button"
+          title={collapsed ? "Recycle Bin" : undefined}
+          aria-label={collapsed ? "Recycle Bin" : undefined}
           onClick={() => setActiveTab("recycle")}
           className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150"
           style={activeTab === "recycle" ? { background: "var(--bq-accent)", color: "#ffffff" } : { color: "var(--bq-muted)", background: "transparent" }}
@@ -65,6 +69,7 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle }) => {
       <div className="px-3 py-4" style={{ borderTop: "1px solid rgba(15, 23, 42, 0.08)" }}>
         <button
           type="button"
+          title={collapsed ? "Appearance" : undefined}
           onClick={onThemeToggle}
           className="bq-admin-theme-toggle mb-2 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors"
           aria-label={`Switch to ${adminTheme === "dark" ? "light" : "dark"} mode`}
@@ -81,7 +86,7 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle }) => {
             <span className="bq-admin-theme-switch-thumb" />
           </span>
         </button>
-        <LogoutBtn />
+        <LogoutBtn collapsed={collapsed} />
       </div>
     </aside>
   );

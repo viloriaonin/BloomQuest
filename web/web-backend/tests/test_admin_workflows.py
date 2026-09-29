@@ -103,7 +103,7 @@ async def test_approve_request_creates_faculty_with_department_and_program(monke
         SimpleNamespace(email=request.email),
         SimpleNamespace(add_task=lambda *args, **kwargs: None),
         db,
-        _admin=SimpleNamespace(id=1),
+        _admin=SimpleNamespace(id=1, role="super_admin"),
     )
 
     created = next(item for item in db.added if isinstance(item, models.User))
@@ -115,11 +115,11 @@ async def test_approve_request_creates_faculty_with_department_and_program(monke
 
 
 def test_delete_user_archives_instead_of_permanently_deleting(monkeypatch):
-    user = SimpleNamespace(id=23, email="faculty@example.com", archived=False)
+    user = SimpleNamespace(id=23, email="faculty@example.com", role="faculty", archived=False)
     db = FakeSession(user_results=[user], department=SimpleNamespace(name="Engineering"))
     monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
 
-    result = main.delete_user(user.email, db, admin=SimpleNamespace(id=1))
+    result = main.delete_user(user.email, db, admin=SimpleNamespace(id=1, role="super_admin"))
 
     assert user.archived is True
     assert db.commits == 1
@@ -131,7 +131,7 @@ def test_permanent_delete_user_removes_account_record(monkeypatch):
     db = FakeSession(user_results=[user], department=SimpleNamespace(name="Engineering"))
     monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
 
-    result = main.permanent_delete_user(user.email, db, admin=SimpleNamespace(id=1))
+    result = main.permanent_delete_user(user.email, db, admin=SimpleNamespace(id=1, role="super_admin"))
 
     assert user in db.deleted
     assert db.commits == 1
@@ -153,14 +153,14 @@ def test_create_user_change_request_requires_matching_session_user():
 
 def test_update_department_changes_department_and_clears_program(monkeypatch):
     user = SimpleNamespace(id=23, email="faculty@example.com", department="Old Department", program_id=7)
-    department = SimpleNamespace(name="College of Engineering")
+    department = SimpleNamespace(name="College of Engineering", campus_id=1)
     db = FakeSession(department=department, user_results=[user])
     monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
 
     result = main.update_user_department(
         SimpleNamespace(email=user.email, department=department.name),
         db,
-        admin=SimpleNamespace(id=1),
+        admin=SimpleNamespace(id=1, role="super_admin"),
     )
 
     assert user.department == department.name
@@ -207,7 +207,7 @@ def test_review_program_change_request_updates_user_program(monkeypatch):
         15,
         SimpleNamespace(action="approve"),
         db,
-        admin=SimpleNamespace(id=1),
+        admin=SimpleNamespace(id=1, role="super_admin"),
     )
 
     assert user.program_id == program.id
@@ -215,7 +215,7 @@ def test_review_program_change_request_updates_user_program(monkeypatch):
 
 
 def test_bulk_user_action_logs_actor_and_target_user(monkeypatch):
-    user = SimpleNamespace(id=23, archived=False)
+    user = SimpleNamespace(id=23, role="faculty", archived=False)
     db = FakeSession(user_results=[user])
     calls = []
     monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: calls.append({"args": args, "kwargs": kwargs}))
@@ -223,7 +223,7 @@ def test_bulk_user_action_logs_actor_and_target_user(monkeypatch):
     result = main.bulk_user_action(
         SimpleNamespace(user_ids=[23], action="archive"),
         db,
-        admin=SimpleNamespace(id=1),
+        admin=SimpleNamespace(id=1, role="super_admin"),
     )
 
     assert result["updated"] == [23]

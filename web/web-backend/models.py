@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Float, Integer, String, Text, Boolean, DateTime, ForeignKey, JSON, LargeBinary, UniqueConstraint
+from sqlalchemy import Column, Float, Index, Integer, String, Text, Boolean, DateTime, ForeignKey, JSON, LargeBinary, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -12,25 +12,31 @@ class User(Base):
     archived = Column(Boolean, default=False, nullable=False)
     name = Column(String, nullable=True)         # <-- new
     department = Column(String, nullable=True)   # <-- new, only set for role == "faculty"
+    campus_id = Column(Integer, ForeignKey("campuses.id"), nullable=True, index=True)
     program_id = Column(Integer, ForeignKey("programs.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
 class Department(Base):
     __tablename__ = "departments"
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), unique=True, nullable=False, index=True)
-    code = Column(String(255), unique=True, nullable=True, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    code = Column(String(255), nullable=True, index=True)
     campus_id = Column(Integer, ForeignKey("campuses.id"), nullable=True, index=True)
     dean_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     dean_name = Column(String(255), nullable=True, index=True)
     chair_name = Column(String(255), nullable=True, index=True)
     created_at = Column(DateTime, server_default=func.now())
+    __table_args__ = (
+        UniqueConstraint("campus_id", "name", name="uq_department_campus_name"),
+        UniqueConstraint("campus_id", "code", name="uq_department_campus_code"),
+    )
 
 class Campus(Base):
     __tablename__ = "campuses"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), unique=True, nullable=False, index=True)
     code = Column(String(255), unique=True, nullable=True, index=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
     created_at = Column(DateTime, server_default=func.now())
 
 class Program(Base):
@@ -109,6 +115,7 @@ class AccountRequest(Base):
     id = Column(Integer, primary_key=True, index=True)
     full_name = Column(String(255), nullable=False)
     department = Column(String(255), nullable=False)
+    campus_id = Column(Integer, ForeignKey("campuses.id"), nullable=True, index=True)
     program_id = Column(Integer, ForeignKey("programs.id"), nullable=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     status = Column(String(50), default="pending")
@@ -141,6 +148,30 @@ class ActivityLog(Base):
     file_content = Column(LargeBinary, nullable=True)
     archived = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime, server_default=func.now())
+
+
+class AIUsage(Base):
+    __tablename__ = "ai_usage"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    campus_id = Column(Integer, ForeignKey("campuses.id"), nullable=True, index=True)
+    generated_at = Column(DateTime, nullable=False, server_default=func.now(), index=True)
+    request_type = Column(String(32), nullable=False)
+    requested_question_count = Column(Integer, nullable=False, default=0, server_default="0")
+    generated_question_count = Column(Integer, nullable=False, default=0, server_default="0")
+    gemini_model = Column(String(128), nullable=True)
+    status = Column(String(24), nullable=False, index=True)
+    error_type = Column(String(128), nullable=True)
+    request_duration_ms = Column(Integer, nullable=True)
+    gemini_api_call_count = Column(Integer, nullable=False, default=0, server_default="0")
+    input_tokens = Column(Integer, nullable=True)
+    output_tokens = Column(Integer, nullable=True)
+    total_tokens = Column(Integer, nullable=True)
+    __table_args__ = (
+        Index("ix_ai_generation_usage_campus_date", "campus_id", "generated_at"),
+        Index("ix_ai_generation_usage_user_date", "user_id", "generated_at"),
+    )
+
 
 class QuestionSet(Base):
     __tablename__ = "question_sets"

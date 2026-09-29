@@ -209,6 +209,46 @@
   width: 14rem;
   background: #fcfcfd !important;
   border-right: 1px solid rgba(15, 23, 42, 0.08);
+  transition: width 300ms ease, flex-basis 300ms ease, transform 300ms ease;
+}
+
+.bq-admin-sidebar.is-collapsed {
+  flex-basis: 5rem;
+  width: 5rem;
+}
+
+.bq-admin-sidebar.is-collapsed > div:first-child h1,
+.bq-admin-sidebar.is-collapsed > div:first-child p,
+.bq-admin-sidebar.is-collapsed > div:nth-child(2) {
+  display: none;
+}
+
+.bq-admin-sidebar.is-collapsed nav button {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+  font-size: 0 !important;
+}
+
+.bq-admin-sidebar.is-collapsed nav button > span:not(.absolute),
+.bq-admin-sidebar.is-collapsed > div:last-child button > span {
+  font-size: 0 !important;
+}
+
+.bq-admin-sidebar.is-collapsed nav button svg {
+  flex: 0 0 auto;
+}
+
+.bq-admin-sidebar.is-collapsed > div:last-child button {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+  font-size: 0 !important;
+}
+
+.bq-admin-sidebar.is-collapsed .bq-admin-theme-copy,
+.bq-admin-sidebar.is-collapsed .bq-admin-theme-switch {
+  display: none;
 }
 
 .bq-admin-main > .bq-page {
@@ -377,10 +417,19 @@
   color: #9195a0 !important;
 }
 
-.bq-admin-dark .bq-admin-sidebar nav button:hover,
+.bq-admin-dark .bq-admin-sidebar nav button:hover {
+  background: var(--admin-raised) !important;
+  transform: translateX(3px);
+}
+
+.bq-admin-dark .bq-admin-sidebar nav button[style*="background: var(--bq-accent)"]:hover,
+.bq-admin-dark .bq-admin-sidebar nav button.text-white:hover,
+.bq-admin-dark .bq-admin-sidebar > div:last-child button:hover {
+  transform: none;
+}
+
 .bq-admin-dark .bq-admin-sidebar > div:last-child button:hover {
   background: var(--admin-raised) !important;
-  transform: none;
 }
 
 .bq-admin-dark .bq-admin-sidebar .bq-admin-theme-toggle {
@@ -736,10 +785,61 @@
 .bq-admin-dark .bq-admin-main .bq-secondary-button:hover { background-color: #242833 !important; }
 .bq-admin-dark .bq-admin-main .hover\:bg-gray-50:hover,
 .bq-admin-dark .bq-admin-main .hover\:bg-gray-100:hover { background-color: #20232d !important; }
+.bq-admin-dark .bq-academic-attached {
+  color: var(--admin-text) !important;
+}
+
 .bq-admin-dark .bq-academic-attached .bq-academic-surface {
+  background: linear-gradient(180deg, rgba(23, 27, 34, 0.98), rgba(17, 22, 31, 0.98)) !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18) !important;
+}
+
+.bq-admin-dark .bq-academic-attached .bq-panel,
+.bq-admin-dark .bq-academic-attached .bg-white,
+.bq-admin-dark .bq-academic-attached .bg-slate-50,
+.bq-admin-dark .bq-academic-attached .bg-slate-100,
+.bq-admin-dark .bq-academic-attached .bg-slate-200 {
   background: var(--admin-panel) !important;
   border-color: var(--admin-border) !important;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2) !important;
+}
+
+.bq-admin-dark .bq-academic-attached .text-slate-900,
+.bq-admin-dark .bq-academic-attached .text-slate-800,
+.bq-admin-dark .bq-academic-attached .text-slate-700,
+.bq-admin-dark .bq-academic-attached .text-slate-600,
+.bq-admin-dark .bq-academic-attached .text-slate-500,
+.bq-admin-dark .bq-academic-attached .text-slate-400,
+.bq-admin-dark .bq-academic-attached .text-slate-300,
+.bq-admin-dark .bq-academic-attached h2,
+.bq-admin-dark .bq-academic-attached h3,
+.bq-admin-dark .bq-academic-attached h4,
+.bq-admin-dark .bq-academic-attached p,
+.bq-admin-dark .bq-academic-attached span,
+.bq-admin-dark .bq-academic-attached td,
+.bq-admin-dark .bq-academic-attached th,
+.bq-admin-dark .bq-academic-attached button {
+  color: var(--admin-text) !important;
+}
+
+.bq-admin-dark .bq-academic-attached .text-slate-500,
+.bq-admin-dark .bq-academic-attached .text-slate-400,
+.bq-admin-dark .bq-academic-attached .text-slate-600,
+.bq-admin-dark .bq-academic-attached .text-slate-700 {
+  color: var(--admin-muted) !important;
+}
+
+.bq-admin-dark .bq-academic-attached .border-slate-200,
+.bq-admin-dark .bq-academic-attached .border-slate-100,
+.bq-admin-dark .bq-academic-attached .border-slate-300 {
+  border-color: var(--admin-border) !important;
+}
+
+.bq-admin-dark .bq-academic-attached .bg-emerald-50,
+.bq-admin-dark .bq-academic-attached .bg-emerald-100,
+.bq-admin-dark .bq-academic-attached .bg-red-50,
+.bq-admin-dark .bq-academic-attached .bg-red-100 {
+  background-color: rgba(196, 72, 90, 0.14) !important;
 }
 
 /* Shared admin theme contract: keep legacy tab content aligned with the workspace. */

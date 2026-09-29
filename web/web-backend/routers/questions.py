@@ -3,15 +3,26 @@ import os
 import re
 import json
 import logging
+import time
 import uuid
+from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 import openpyxl
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from database import get_db
+from dotenv import load_dotenv
 import models
+from security import (
+    assert_campus_access,
+    assert_user_subject_campus_access,
+    get_current_user,
+    subject_campus_id,
+    user_campus_id,
+)
 
 from docx import Document
 from reportlab.lib.pagesizes import LETTER
@@ -20,6 +31,8 @@ from reportlab.lib.styles import getSampleStyleSheet
 
 # Import AI utilities and our new layout parsing fallback
 from ai_service import (
+    GeminiUsageTracker,
+    MODEL_NAME,
     generate_questions_from_tos,
     generate_questions_for_topic,
     build_preview,
@@ -42,11 +55,15 @@ from routers.assessment import (
     convert_docx_to_pdf,
 )
 
-router = APIRouter(prefix="/api/questions", tags=["Questions"])
+router = APIRouter(prefix="/api/questions", tags=["Questions"], dependencies=[Depends(get_current_user)])
 logger = logging.getLogger(__name__)
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), "database.env"))
 
 FILE_CACHE = {}
 MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
+MAX_QUESTIONS_PER_GENERATION = max(1, int(os.getenv("MAX_QUESTIONS_PER_GENERATION", "200")))
+MAX_GENERATIONS_PER_USER_PER_DAY = max(1, int(os.getenv("MAX_GENERATIONS_PER_USER_PER_DAY", "20")))
+GENERATION_COOLDOWN_SECONDS = max(1, int(os.getenv("GENERATION_COOLDOWN_SECONDS", "10")))
 ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".docx", ".pptx", ".xlsx", ".xls"}
 DENIED_UPLOAD_EXTENSIONS = {".exe", ".bat", ".cmd", ".scr", ".com", ".jar", ".ps1", ".php", ".jsp", ".html", ".svg", ".js", ".ts", ".py"}
 DISALLOWED_MIME_SIGNATURES = {
@@ -56,6 +73,212 @@ DISALLOWED_MIME_SIGNATURES = {
     "image/gif": b"GIF89a",
     "image/webp": b"RIFF",
 }
+
+
+def _generation_campus_id(db: Session, current_user, upload_id: str | None) -> int | None:
+    campus_id = user_campus_id(db, current_user)
+    if campus_id is not None or not upload_id or not upload_id.isdigit():
+        return campus_id
+
+    upload = db.query(models.UploadedFile).filter(
+        models.UploadedFile.id == int(upload_id)
+    ).first()
+    if not upload or not upload.subject_id:
+        return None
+    subject = db.query(models.Subject).filter(models.Subject.id == upload.subject_id).first()
+    return subject_campus_id(db, subject) if subject else None
+
+
+def _record_rate_limited_usage(
+    db: Session,
+    current_user,
+    campus_id: int | None,
+    requested_question_count: int,
+    request_type: str,
+    error_type: str,
+    request_started_at: float,
+) -> None:
+    db.add(models.AIUsage(
+        user_id=current_user.id,
+        campus_id=campus_id,
+        request_type=request_type,
+        requested_question_count=requested_question_count,
+        generated_question_count=0,
+        status="rate_limited",
+        error_type=error_type,
+        request_duration_ms=max(0, int((time.perf_counter() - request_started_at) * 1000)),
+        gemini_model=None,
+        gemini_api_call_count=0,
+    ))
+    db.commit()
+
+
+def start_ai_usage(
+    db: Session,
+    current_user,
+    request_type: str,
+    requested_question_count: int = 0,
+    upload_id: str | None = None,
+    campus_id: int | None = None,
+) -> int:
+    usage_record = models.AIUsage(
+        user_id=current_user.id,
+        campus_id=campus_id if campus_id is not None else _generation_campus_id(db, current_user, upload_id),
+        generated_at=datetime.utcnow(),
+        request_type=request_type,
+        requested_question_count=requested_question_count,
+        status="in_progress",
+        gemini_model=MODEL_NAME,
+    )
+    db.add(usage_record)
+    db.commit()
+    return usage_record.id
+
+
+def reserve_ai_generation(
+    db: Session,
+    current_user,
+    requested_question_count: int,
+    request_type: str,
+    upload_id: str | None = None,
+    request_started_at: float | None = None,
+) -> int:
+    now = datetime.utcnow()
+    request_started_at = request_started_at or time.perf_counter()
+    campus_id = _generation_campus_id(db, current_user, upload_id)
+    user_id = current_user.id
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        locked_user = db.query(models.User.id).filter(
+            models.User.id == user_id
+        ).with_for_update().first()
+        if not locked_user:
+            db.rollback()
+            raise HTTPException(status_code=401, detail="Authenticated user not found.")
+
+        reservations = db.query(models.ActivityLog).filter(
+            models.ActivityLog.user_id == user_id,
+            models.ActivityLog.action == "AI generation reservation",
+            models.ActivityLog.type == "generate",
+        )
+        daily_count = reservations.filter(models.ActivityLog.created_at >= day_start).count()
+        if daily_count >= MAX_GENERATIONS_PER_USER_PER_DAY:
+            db.rollback()
+            _record_rate_limited_usage(
+                db, current_user, campus_id, requested_question_count, request_type,
+                "daily_generation_limit", request_started_at,
+            )
+            raise HTTPException(
+                status_code=429,
+                detail=f"Daily AI generation limit reached ({MAX_GENERATIONS_PER_USER_PER_DAY}). Try again tomorrow.",
+            )
+
+        cooldown_start = now - timedelta(seconds=GENERATION_COOLDOWN_SECONDS)
+        recent_reservation = reservations.filter(
+            models.ActivityLog.created_at > cooldown_start
+        ).order_by(models.ActivityLog.created_at.desc()).first()
+        if recent_reservation:
+            retry_after = max(
+                1,
+                GENERATION_COOLDOWN_SECONDS - int((now - recent_reservation.created_at).total_seconds()),
+            )
+            db.rollback()
+            _record_rate_limited_usage(
+                db, current_user, campus_id, requested_question_count, request_type,
+                "generation_cooldown", request_started_at,
+            )
+            raise HTTPException(
+                status_code=429,
+                detail=f"Please wait {retry_after} seconds before starting another AI generation.",
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        usage_record = models.AIUsage(
+            user_id=user_id,
+            campus_id=campus_id,
+            request_type=request_type,
+            requested_question_count=requested_question_count,
+            status="in_progress",
+            gemini_model=MODEL_NAME,
+        )
+        db.add(usage_record)
+        db.add(models.ActivityLog(
+            user_id=user_id,
+            action="AI generation reservation",
+            details="Question generation request accepted.",
+            type="generate",
+            status="started",
+            created_at=now,
+        ))
+        db.flush()
+        usage_id = usage_record.id
+        db.commit()
+        return usage_id
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise
+
+
+def finish_ai_usage(
+    db: Session,
+    usage_id: int,
+    usage_tracker: GeminiUsageTracker,
+    status: str,
+    request_started_at: float,
+    error_type: str | None = None,
+) -> None:
+    usage_record = db.query(models.AIUsage).filter(
+        models.AIUsage.id == usage_id
+    ).first()
+    if not usage_record:
+        raise RuntimeError("AI usage record was not found.")
+    if usage_record.status != "in_progress":
+        return
+
+    input_tokens, output_tokens, total_tokens = usage_tracker.token_totals()
+    usage_record.generated_question_count = usage_tracker.generated_question_count
+    usage_record.gemini_api_call_count = usage_tracker.api_call_count
+    usage_record.input_tokens = input_tokens
+    usage_record.output_tokens = output_tokens
+    usage_record.total_tokens = total_tokens
+    usage_record.status = status
+    usage_record.error_type = error_type
+    usage_record.request_duration_ms = max(0, int((time.perf_counter() - request_started_at) * 1000))
+    if usage_tracker.api_call_count == 0:
+        usage_record.gemini_model = None
+    db.commit()
+
+
+def _assert_upload_access(upload_id: str, current_user, db: Session) -> None:
+    role = str(current_user.role).lower()
+    if role == "super_admin":
+        return
+    metadata = FILE_CACHE.get(f"{upload_id}_metadata", {})
+    pending = FILE_CACHE.get(f"{upload_id}_pending", {})
+    owner_id = metadata.get("user_id") or pending.get("user_id")
+    upload = None
+    if upload_id.isdigit():
+        upload = db.query(models.UploadedFile).filter(models.UploadedFile.id == int(upload_id)).first()
+        if upload:
+            owner_id = upload.user_id or owner_id
+            if upload.subject_id and role in {"faculty", "student"}:
+                subject = db.query(models.Subject).filter(models.Subject.id == upload.subject_id).first()
+                if subject:
+                    assert_user_subject_campus_access(db, current_user, subject)
+    if role == "campus_admin" and upload and upload.subject_id:
+        subject = db.query(models.Subject).filter(models.Subject.id == upload.subject_id).first()
+        if subject:
+            department_id = subject.department_id
+            if subject.program_id:
+                department_id = db.query(models.Program.department_id).filter(models.Program.id == subject.program_id).scalar()
+            campus_id = db.query(models.Department.campus_id).filter(models.Department.id == department_id).scalar() if department_id else None
+            if campus_id is not None:
+                assert_campus_access(current_user, campus_id)
+                return
+    if owner_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Upload session not found")
 
 
 def record_activity(db, action, details, activity_type, status="success", user_id=None):
@@ -76,7 +299,7 @@ def record_download(db, action, details, filename, media_type, content, user_id=
 # Pydantic schema for Table of Specifications payload
 class TOSGenerationPayload(BaseModel):
     upload_id: str = Field(..., min_length=1, max_length=128)
-    total_items: int = Field(..., ge=1, le=200)
+    total_items: int = Field(..., ge=1, le=MAX_QUESTIONS_PER_GENERATION)
     whole_total_points: int = Field(..., ge=1, le=1000)
     question_types: list[str] = Field(default_factory=list)
     selected_topic_indices: list[int] = Field(default_factory=list)
@@ -198,7 +421,7 @@ async def read_upload_bytes(file: UploadFile, field_name: str, max_size: int = M
     return contents
 
 
-def parse_syllabus_pdf(contents: bytes):
+def parse_syllabus_pdf(contents: bytes, usage_tracker: GeminiUsageTracker | None = None):
     """
     Layout-aware PDF text extractor using PyMuPDF4LLM, which handles
     table structure (including tables spanning multiple pages) far more
@@ -235,7 +458,7 @@ def parse_syllabus_pdf(contents: bytes):
     logger.info(f"[SYLLABUS DEBUG] extracted full_text length={len(full_text)}")
     logger.info(f"[SYLLABUS DEBUG] extracted text sample:\n{full_text[:3000]}")
 
-    return parse_syllabus_text_with_ai(full_text)
+    return parse_syllabus_text_with_ai(full_text, usage_tracker)
 
 
 def _find_label_value(ws, label, max_row=200):
@@ -573,24 +796,62 @@ def _build_assessment_pdf(questions, course_title, course_code, exam_type="Final
 async def upload_and_analyze_syllabus(
     module_file: UploadFile = File(...),
     syllabus_file: UploadFile = File(...),
+    subject_id: int | None = Form(None),
     user_id: int | None = Form(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
+    user_id = current_user.id
     upload_id = uuid.uuid4().hex
     filename = (syllabus_file.filename or "").lower()
+    request_started_at = time.perf_counter()
+    usage_id = None
+    usage_tracker = GeminiUsageTracker()
+    selected_subject = None
 
     try:
         module_contents = await read_upload_bytes(module_file, "module_file")
         module_text = extract_text(module_contents, module_file.filename)
         contents = await read_upload_bytes(syllabus_file, "syllabus_file")
 
+        role = str(current_user.role).lower()
+        if role == "faculty" and subject_id is None:
+            raise HTTPException(status_code=422, detail="Select a subject code from your program before uploading materials.")
+        if subject_id is not None:
+            subject_query = db.query(models.Subject).filter(
+                models.Subject.id == subject_id,
+                models.Subject.archived.is_(False),
+            )
+            if role == "faculty":
+                program = db.query(models.Program).filter(models.Program.id == current_user.program_id).first() if current_user.program_id else None
+                department = db.query(models.Department).filter(models.Department.id == program.department_id).first() if program else None
+                if not program or not department:
+                    raise HTTPException(status_code=403, detail="Your account must be assigned to a program and department before selecting a subject.")
+                if current_user.department and current_user.department.strip().casefold() != department.name.strip().casefold():
+                    raise HTTPException(status_code=403, detail="Your program is not assigned to your department.")
+                faculty_campus_id = user_campus_id(db, current_user)
+                if faculty_campus_id is not None and department.campus_id != faculty_campus_id:
+                    raise HTTPException(status_code=403, detail="Your program is outside your assigned campus.")
+                subject_query = subject_query.filter(
+                    models.Subject.program_id == program.id,
+                    models.Subject.department_id == department.id,
+                    models.Subject.code.is_not(None),
+                    func.trim(models.Subject.code) != "",
+                )
+            selected_subject = subject_query.first()
+            if not selected_subject:
+                raise HTTPException(status_code=404, detail="The selected subject is not available to this account.")
+            assert_user_subject_campus_access(db, current_user, selected_subject)
+
         if filename.endswith('.pdf'):
-            course_title, course_code, detected_topics = parse_syllabus_pdf(contents)
+            usage_id = start_ai_usage(db, current_user, "syllabus_analysis")
+            course_title, course_code, detected_topics = parse_syllabus_pdf(contents, usage_tracker)
         elif filename.endswith('.xlsx') or filename.endswith('.xls'):
             course_title, course_code, detected_topics = parse_syllabus_excel(contents)
         elif filename.endswith('.docx'):
             syllabus_text = extract_text(contents, syllabus_file.filename)
-            course_title, course_code, detected_topics = parse_syllabus_text_with_ai(syllabus_text)
+            usage_id = start_ai_usage(db, current_user, "syllabus_analysis")
+            course_title, course_code, detected_topics = parse_syllabus_text_with_ai(syllabus_text, usage_tracker)
         else:
             raise HTTPException(
                 status_code=400,
@@ -598,19 +859,23 @@ async def upload_and_analyze_syllabus(
             )
 
         detected_subject = {
-            "name": course_title,
-            "code": course_code,
-            "description": f"Dynamic dashboard tracker layout generated for {course_title}."
+            "name": selected_subject.name if selected_subject else course_title,
+            "code": selected_subject.code if selected_subject else course_code,
+            "description": selected_subject.description if selected_subject else f"Dynamic dashboard tracker layout generated for {course_title}.",
         }
 
     except HTTPException:
+        if usage_id is not None:
+            finish_ai_usage(db, usage_id, usage_tracker, "failed", request_started_at, "HTTPException")
         record_activity(db, "Upload Failed", f"Could not analyze '{module_file.filename}'.", "upload", status="error", user_id=user_id)
         raise
     except Exception as e:
+        if usage_id is not None:
+            finish_ai_usage(db, usage_id, usage_tracker, "failed", request_started_at, type(e).__name__)
         record_activity(db, "Upload Failed", f"Could not analyze '{module_file.filename}'.", "upload", status="error", user_id=user_id)
         raise HTTPException(status_code=400, detail=f"Analysis Engine Error: {str(e)}")
 
-    subject_row = db.query(models.Subject).filter(models.Subject.code == detected_subject["code"]).first()
+    subject_row = selected_subject or db.query(models.Subject).filter(models.Subject.code == detected_subject["code"]).first()
     if not subject_row:
         subject_row = models.Subject(
             name=detected_subject["name"],
@@ -620,6 +885,20 @@ async def upload_and_analyze_syllabus(
         )
         db.add(subject_row)
         db.flush()
+    assert_user_subject_campus_access(db, current_user, subject_row)
+
+    if usage_id is not None:
+        usage_record = db.query(models.AIUsage).filter(models.AIUsage.id == usage_id).first()
+        if usage_record and usage_record.campus_id is None:
+            usage_record.campus_id = subject_campus_id(db, subject_row)
+        finish_ai_usage(
+            db,
+            usage_id,
+            usage_tracker,
+            "failed" if usage_tracker.failure_count else "success",
+            request_started_at,
+            usage_tracker.last_error_type,
+        )
 
     upload_record = models.UploadedFile(
         user_id=user_id,
@@ -634,13 +913,14 @@ async def upload_and_analyze_syllabus(
     db.refresh(upload_record)
     upload_id = str(upload_record.id)
 
-    FILE_CACHE[f"{upload_id}_metadata"] = {"subject": detected_subject, "topics": detected_topics, "module_text": module_text}
+    FILE_CACHE[f"{upload_id}_metadata"] = {"subject": detected_subject, "topics": detected_topics, "module_text": module_text, "user_id": user_id}
     record_activity(db, "Uploaded Learning Materials", f"Analyzed '{module_file.filename}' and '{syllabus_file.filename}'.", "upload", user_id=user_id)
 
     return {
         "upload_id": upload_id,
         "subject": detected_subject,
-        "topics": detected_topics
+        "topics": detected_topics,
+        "max_questions_per_generation": MAX_QUESTIONS_PER_GENERATION,
     }
 
 
@@ -737,6 +1017,7 @@ def _attach_bloom_question_numbers(tos_data, generated_questions):
 async def generate_preview(
     payload: TOSGenerationPayload,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     """Step 1 of 2: run the AI generation and hand back a preview -- nothing
     is written to the database and no TOS file is built yet. The caller
@@ -744,6 +1025,8 @@ async def generate_preview(
     Keeping this a pure preview means a bad AI generation (wrong question
     type, awkward matching pairs, etc.) never has to be manually deleted
     out of the question bank -- just discard and regenerate."""
+    _assert_upload_access(payload.upload_id, current_user, db)
+    payload.user_id = current_user.id
     meta = FILE_CACHE.get(f"{payload.upload_id}_metadata")
     if not meta:
         raise HTTPException(
@@ -759,16 +1042,43 @@ async def generate_preview(
         question_types=payload.question_types,
         question_type_items=payload.question_type_items,
     )
+    requested_count = sum(topic.get("items", 0) for topic in selected_topics_data)
+    if requested_count > MAX_QUESTIONS_PER_GENERATION:
+        raise HTTPException(
+            status_code=422,
+            detail=f"A generation can contain at most {MAX_QUESTIONS_PER_GENERATION} questions.",
+        )
 
+    request_started_at = time.perf_counter()
+    usage_id = None
+    usage_tracker = GeminiUsageTracker()
     try:
+        usage_id = reserve_ai_generation(
+            db,
+            current_user,
+            requested_count,
+            "question_generation",
+            upload_id=payload.upload_id,
+            request_started_at=request_started_at,
+        )
         generated_questions = generate_questions_from_tos(
             subject=meta["subject"],
             module_text=meta["module_text"],
             tos_data=selected_topics_data,
+            usage_tracker=usage_tracker,
         )
+        finish_ai_usage(db, usage_id, usage_tracker, "success", request_started_at)
+    except HTTPException as e:
+        if usage_id is not None:
+            finish_ai_usage(db, usage_id, usage_tracker, "failed", request_started_at, usage_tracker.last_error_type or type(e).__name__)
+        raise
     except GroqDailyQuotaExceeded as e:
+        if usage_id is not None:
+            finish_ai_usage(db, usage_id, usage_tracker, "failed", request_started_at, usage_tracker.last_error_type or type(e).__name__)
         raise HTTPException(status_code=429, detail=str(e))
     except Exception as e:
+        if usage_id is not None:
+            finish_ai_usage(db, usage_id, usage_tracker, "failed", request_started_at, usage_tracker.last_error_type or type(e).__name__)
         record_activity(db, "Question Generation Failed", f"Generation failed for upload {payload.upload_id}.", "generate", status="error", user_id=payload.user_id)
         logger.exception("Question generation failed while contacting the AI service")
         raise HTTPException(
@@ -832,10 +1142,24 @@ async def generate_preview(
 
 
 @router.post("/preview/reclassify")
-async def reclassify_preview_question(payload: PreviewQuestionActionPayload):
+async def reclassify_preview_question(payload: PreviewQuestionActionPayload, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Reclassify one unsaved preview question with the AI classifier."""
+    _assert_upload_access(payload.upload_id, current_user, db)
     pending, question = _pending_question(payload.upload_id, payload.preview_id)
-    question["bloom_level"] = classify_question(question["question"])
+    request_started_at = time.perf_counter()
+    usage_id = start_ai_usage(
+        db, current_user, "bloom_classification", upload_id=payload.upload_id
+    )
+    usage_tracker = GeminiUsageTracker()
+    question["bloom_level"] = classify_question(question["question"], usage_tracker=usage_tracker)
+    finish_ai_usage(
+        db,
+        usage_id,
+        usage_tracker,
+        "failed" if usage_tracker.failure_count else "success",
+        request_started_at,
+        usage_tracker.last_error_type,
+    )
     _refresh_pending_summary(pending)
     return {
         "question": _preview_question_response(question),
@@ -846,12 +1170,23 @@ async def reclassify_preview_question(payload: PreviewQuestionActionPayload):
 
 
 @router.post("/preview/recreate")
-async def recreate_preview_question(payload: PreviewQuestionActionPayload):
+async def recreate_preview_question(payload: PreviewQuestionActionPayload, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Replace one unsaved preview question while preserving its preview id."""
+    _assert_upload_access(payload.upload_id, current_user, db)
     pending, question = _pending_question(payload.upload_id, payload.preview_id)
     metadata = FILE_CACHE.get(f"{payload.upload_id}_metadata")
     if not metadata:
         raise HTTPException(status_code=410, detail="Upload session expired. Generate a new preview first.")
+    request_started_at = time.perf_counter()
+    usage_id = reserve_ai_generation(
+        db,
+        current_user,
+        1,
+        "question_recreation",
+        upload_id=payload.upload_id,
+        request_started_at=request_started_at,
+    )
+    usage_tracker = GeminiUsageTracker()
 
     topic_name = question.get("topic_name") or "General course content"
     target_level = question.get("bloom_level", "Understand")
@@ -876,8 +1211,11 @@ async def recreate_preview_question(payload: PreviewQuestionActionPayload):
             ),
             module_text=topic_module_text,
             question_distribution={target_level: 1},
+            usage_tracker=usage_tracker,
         )[0]
+        finish_ai_usage(db, usage_id, usage_tracker, "success", request_started_at)
     except Exception as exc:
+        finish_ai_usage(db, usage_id, usage_tracker, "failed", request_started_at, usage_tracker.last_error_type or type(exc).__name__)
         logger.exception("Preview question recreation failed")
         raise HTTPException(status_code=502, detail=f"Question recreation failed: {exc}") from exc
 
@@ -898,10 +1236,12 @@ async def recreate_preview_question(payload: PreviewQuestionActionPayload):
 async def confirm_generation(
     payload: ConfirmGenerationPayload,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     """Step 2 of 2: persist the previewed questions to the database and
     build the actual TOS/exam files. Only reachable after /generate-preview
     has populated the pending cache entry for this upload_id."""
+    _assert_upload_access(payload.upload_id, current_user, db)
     pending = FILE_CACHE.get(f"{payload.upload_id}_pending")
     if not pending:
         raise HTTPException(
@@ -916,7 +1256,7 @@ async def confirm_generation(
     exam_type = pending["exam_type"]
     semester = pending["semester"]
     academic_year = pending.get("academic_year", "")
-    user_id = pending.get("user_id")
+    user_id = current_user.id
     subject = pending["subject"]
 
     upload = db.query(models.UploadedFile).filter(
@@ -924,7 +1264,9 @@ async def confirm_generation(
     ).first()
     if not upload:
         raise HTTPException(status_code=404, detail="Upload session record not found. Please upload the instructional materials again.")
-    user_id = upload.user_id or user_id
+    if upload.user_id and upload.user_id != current_user.id and str(current_user.role).lower() != "super_admin":
+        _assert_upload_access(payload.upload_id, current_user, db)
+    user_id = current_user.id
 
     if payload.included_preview_ids is None:
         included_preview_ids = {question.get("preview_id") for question in generated_questions}
@@ -1042,6 +1384,8 @@ async def confirm_generation(
     record_activity(db, "Generated Question Set", f"Generated {len(generated_questions)} questions for {subject_row.name}.", "generate", user_id=user_id)
 
     creator = db.query(models.User).filter(models.User.id == user_id).first() if user_id else None
+    department_name = (creator.department if creator and creator.department else "")
+    leadership = _resolve_department_leadership(db, creator=creator, subject=subject_row, department_name=department_name)
     workbook = generate_tos_from_excel_template(
         selected_topics_data=selected_topics_data,
         course_code=subject_row.code,
@@ -1051,7 +1395,9 @@ async def confirm_generation(
         semester=semester,
         academic_year=academic_year,
         instructor_name=(creator.name or creator.email) if creator else "",
-        department=creator.department if creator else "",
+        department=leadership["department_name"],
+        dean_name=leadership["dean_name"],
+        program_chair_name=leadership["program_chair_name"],
     )
     stream = io.BytesIO()
     workbook.save(stream)
@@ -1071,6 +1417,79 @@ async def confirm_generation(
         "total_questions": len(generated_questions),
         "saved_question_count": saved_question_count,
         "subject_id": subject_row.id,
+    }
+
+
+def _resolve_department_leadership(db, creator=None, subject=None, department_name=""):
+    department = None
+    department_value = (department_name or "").strip()
+    program = None
+
+    def _candidate_department_names(value):
+        if not value:
+            return []
+        cleaned = value.strip()
+        variants = [cleaned, re.sub(r"\s*department\b", "", cleaned, flags=re.IGNORECASE).strip()]
+        seen = set()
+        result = []
+        for item in variants:
+            if item and item.lower() not in seen:
+                seen.add(item.lower())
+                result.append(item)
+        return result
+
+    if creator and getattr(creator, "program_id", None) is not None:
+        program = db.query(models.Program).filter(models.Program.id == creator.program_id).first()
+        if program and program.department_id is not None:
+            department = db.query(models.Department).filter(models.Department.id == program.department_id).first()
+
+    if not department and creator and getattr(creator, "department", None):
+        creator_campus_id = user_campus_id(db, creator)
+        for candidate in _candidate_department_names(creator.department):
+            department_query = db.query(models.Department).filter(func.lower(models.Department.name) == candidate.lower())
+            if creator_campus_id is not None:
+                department_query = department_query.filter(models.Department.campus_id == creator_campus_id)
+            department = department_query.order_by(models.Department.id.asc()).first()
+            if department:
+                break
+
+    if not department:
+        for candidate in _candidate_department_names(department_value):
+            department_query = db.query(models.Department).filter(func.lower(models.Department.name) == candidate.lower())
+            creator_campus_id = user_campus_id(db, creator) if creator else None
+            if creator_campus_id is not None:
+                department_query = department_query.filter(models.Department.campus_id == creator_campus_id)
+            department = department_query.order_by(models.Department.id.asc()).first()
+            if department:
+                break
+
+    if not department and subject:
+        if getattr(subject, "program_id", None) is not None:
+            program = db.query(models.Program).filter(models.Program.id == subject.program_id).first()
+            if program and program.department_id is not None:
+                department = db.query(models.Department).filter(models.Department.id == program.department_id).first()
+        if not department and getattr(subject, "department_id", None) is not None:
+            department = db.query(models.Department).filter(models.Department.id == subject.department_id).first()
+
+    if not program and subject and getattr(subject, "program_id", None) is not None:
+        program = db.query(models.Program).filter(models.Program.id == subject.program_id).first()
+
+    program_chair_name = ""
+    if program:
+        program_chair_name = (program.chair_name or "").strip()
+    if not program_chair_name and department:
+        program_chair_name = (department.chair_name or "").strip()
+
+    dean_name = (department.dean_name or "").strip() if department else ""
+    if not dean_name and department and department.dean_id:
+        dean_user = db.query(models.User).filter(models.User.id == department.dean_id, models.User.archived == False).first()
+        if dean_user:
+            dean_name = dean_user.name or dean_user.email or ""
+
+    return {
+        "department_name": department.name if department else department_value,
+        "dean_name": dean_name,
+        "program_chair_name": program_chair_name,
     }
 
 
@@ -1103,11 +1522,14 @@ async def export_institutional_tos(
     semester: str | None = None,
     academic_year: str | None = None,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     """
     Retrieves the generated openpyxl Excel spreadsheet payload matching
     the active session token directly from the shared memory cache.
     """
+    _assert_upload_access(upload_id, current_user, db)
+    user_id = current_user.id
     meta = FILE_CACHE.get(f"{upload_id}_metadata")
     tos_binary = FILE_CACHE.get(f"{upload_id}_tos")
 
@@ -1121,6 +1543,8 @@ async def export_institutional_tos(
         subject = upload.subject if upload else None
         if upload and tos_record and subject:
             creator = db.query(models.User).filter(models.User.id == upload.user_id).first() if upload.user_id else None
+            department_name = tos_record.department or (creator.department if creator and creator.department else "")
+            leadership = _resolve_department_leadership(db, creator=creator, subject=subject, department_name=department_name)
             workbook = generate_tos_from_excel_template(
                 selected_topics_data=tos_record.tos_data or [],
                 course_code=subject.code,
@@ -1130,7 +1554,9 @@ async def export_institutional_tos(
                 semester=semester or tos_record.semester or (meta or {}).get("semester") or "First Semester",
                 academic_year=academic_year or tos_record.academic_year or (meta or {}).get("academic_year") or "",
                 instructor_name=tos_record.instructor_name or ((creator.name or creator.email) if creator else ""),
-                department=tos_record.department or (creator.department if creator else ""),
+                department=leadership["department_name"],
+                dean_name=leadership["dean_name"],
+                program_chair_name=leadership["program_chair_name"],
             )
             stream = io.BytesIO()
             workbook.save(stream)
@@ -1143,12 +1569,17 @@ async def export_institutional_tos(
         subject = upload.subject if upload else None
         if tos_record and subject:
             creator = db.query(models.User).filter(models.User.id == upload.user_id).first() if upload and upload.user_id else None
+            department_name = tos_record.department or (creator.department if creator and creator.department else "")
+            leadership = _resolve_department_leadership(db, creator=creator, subject=subject, department_name=department_name)
             workbook = generate_tos_from_excel_template(
                 selected_topics_data=tos_record.tos_data or [],
                 course_code=subject.code,
                 course_title=subject.name,
                 whole_total_items=tos_record.total_items or 0,
                 instructor_name=(creator.name or creator.email) if creator else "",
+                department=leadership["department_name"],
+                dean_name=leadership["dean_name"],
+                program_chair_name=leadership["program_chair_name"],
             )
             stream = io.BytesIO()
             workbook.save(stream)
@@ -1184,7 +1615,9 @@ async def export_institutional_tos(
 
 
 @router.get("/export/assessment/docx")
-async def export_assessment_docx(upload_id: str, user_id: int | None = None, db: Session = Depends(get_db)):
+async def export_assessment_docx(upload_id: str, user_id: int | None = None, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    _assert_upload_access(upload_id, current_user, db)
+    user_id = current_user.id
     questions = FILE_CACHE.get(f"{upload_id}_questions")
     meta = FILE_CACHE.get(f"{upload_id}_metadata")
     if (not questions or not meta) and upload_id.isdigit():
@@ -1230,7 +1663,9 @@ async def export_assessment_docx(upload_id: str, user_id: int | None = None, db:
 
 
 @router.get("/export/assessment/pdf")
-async def export_assessment_pdf(upload_id: str, user_id: int | None = None, db: Session = Depends(get_db)):
+async def export_assessment_pdf(upload_id: str, user_id: int | None = None, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    _assert_upload_access(upload_id, current_user, db)
+    user_id = current_user.id
     questions = FILE_CACHE.get(f"{upload_id}_questions")
     meta = FILE_CACHE.get(f"{upload_id}_metadata")
     if (not questions or not meta) and upload_id.isdigit():

@@ -7,7 +7,6 @@ const border = "rgba(15, 23, 42, 0.08)";
 const textPrimary = "#0F172A";
 const textMuted = "#64748B";
 const accent = "#B4454A";
-const accentSoft = "rgba(180, 69, 74, 0.12)";
 
 const pageTitles = {
   "/dashboard": "Dashboard", "/input": "Input Questions", "/question-bank": "Question Bank",

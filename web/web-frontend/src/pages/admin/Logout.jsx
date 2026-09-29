@@ -1,7 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 
-const LogoutBtn = () => {
+const LogoutBtn = ({ collapsed = false }) => {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -9,11 +9,14 @@ const LogoutBtn = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("role");
     localStorage.removeItem("email");
+    localStorage.removeItem("campus_id");
     navigate("/");
   };
 
   return (
     <button
+      title={collapsed ? "Log out" : undefined}
+      aria-label={collapsed ? "Log out" : undefined}
       onClick={handleLogout}
       className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150"
       style={{ color: "rgba(255,255,255,0.5)" }}

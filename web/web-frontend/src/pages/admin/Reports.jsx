@@ -26,7 +26,10 @@ const ACTIVITY_ENDPOINT = `${API_BASE_URL}/activity-logs`;
 async function fetchActivityLog() {
   const res = await fetch(ACTIVITY_ENDPOINT, {
     method: "GET",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+    },
     // credentials: "include", // uncomment if your API relies on cookies/session auth
     // headers: { Authorization: `Bearer ${token}` }, // uncomment if using a bearer token
   });
@@ -317,11 +320,13 @@ const FilterSelect = ({ label, value, onChange, options }) => (
   </div>
 );
 
-const ReportsBtn = ({ activeTab, setActiveTab }) => {
+const ReportsBtn = ({ activeTab, setActiveTab, collapsed }) => {
   const isActive = activeTab === "reports";
 
   return (
     <button
+      title={collapsed ? "Reports" : undefined}
+      aria-label={collapsed ? "Reports" : undefined}
       onClick={() => setActiveTab("reports")}
       className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150 relative"
       style={

@@ -99,10 +99,12 @@ const Login = () => {
       localStorage.setItem("role", data.role);
       localStorage.setItem("email", data.email);
       localStorage.setItem("user_id", String(data.user_id));
+      localStorage.setItem("campus_id", data.campus_id ? String(data.campus_id) : "");
       localStorage.setItem("department", data.department || "");
       window.dispatchEvent(new Event("profile-updated"));
 
-      const destination = data.role?.toLowerCase() === "admin" ? "/admin" : "/dashboard";
+      const role = data.role?.toLowerCase();
+      const destination = role === "super_admin" ? "/super-admin/dashboard" : ["admin", "campus_admin"].includes(role) ? "/admin" : "/dashboard";
       navigate(destination);
     } catch (err) {
       setError("Unable to connect to the server. Make sure your backend is running on port 8000.");
@@ -116,7 +118,7 @@ const Login = () => {
   };
 
   return (
-    <div className="bq-login-page h-screen flex flex-col page-transition relative overflow-hidden" style={{ height: '100vh', backgroundColor: paper }}>
+    <div className="min-h-screen flex flex-col page-transition relative overflow-x-hidden pt-24 sm:pt-28" style={{ minHeight: '100vh', backgroundColor: paper }}>
       <PublicNav />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
@@ -203,6 +205,9 @@ const Login = () => {
           mask-image: linear-gradient(to bottom, black, transparent 72%);
           animation: bq-grid-wave 9s ease-in-out infinite;
         }
+        .bq-login-center {
+          overflow: visible;
+        }
         .bq-login-card {
           box-shadow: 0 24px 60px rgba(20, 20, 15, 0.09), 0 3px 12px rgba(20, 20, 15, 0.04);
           border-radius: 12px;
@@ -284,7 +289,7 @@ const Login = () => {
       <div className="bq-login-backdrop pointer-events-none absolute inset-0 -z-10" />
 
       {/* Centered Login Card */}
-      <div className="bq-login-center min-h-0 flex-1 flex items-center justify-center overflow-y-auto px-4 py-4 sm:py-6">
+      <div className="bq-login-center min-h-0 flex-1 flex items-center justify-center overflow-visible px-4 py-6 sm:py-8">
         <div className="bq-auth-layout">
           <div className="bq-auth-brand flex flex-col items-start gap-4 text-left">
             <img src={bloomquestLogo} alt="BloomQuest" className="bq-brand-mark" />

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { CheckSquare, ChevronRight, Download, FileText, Filter, FlaskConical, Heart, Info, Plus, Search, Shield, Sigma, Trash2, Sparkles, AlertCircle } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { usePopup } from '../../components/PopupProvider';
@@ -16,7 +17,8 @@ const QUESTION_TYPE_OPTIONS = [
   { label: 'Enumeration', value: 'Enumeration' },
   { label: 'Essay', value: 'Essay' },
 ];
-const SEMESTER_OPTIONS = ['First Semester', 'Second Semester', 'Summer'];
+const SEMESTER_OPTIONS = ['First Semester', 'Second Semester', 'Midterm Class'];
+const EXAM_TYPE_OPTIONS = ['Midterm Exam', 'Preliminary Exam', 'Final Exam', 'Quiz', 'Long Quiz'];
 
 const BLOOMS_LEVELS = [
   { name: 'Remember',   dotColor: 'bg-red-400' },
@@ -403,6 +405,7 @@ const QuestionBank = () => {
   const [testModalOpen, setTestModalOpen] = useState(false);
   const [testExportFormat, setTestExportFormat] = useState('pdf');
   const [semester, setSemester] = useState('First Semester');
+  const [examType, setExamType] = useState('Final Exam');
   const [academicYear, setAcademicYear] = useState('');
   const [selectedTopics, setSelectedTopics] = useState([]);
   const [subcolumnAValues, setSubcolumnAValues] = useState({});
@@ -633,7 +636,7 @@ const QuestionBank = () => {
   const selectedSubjectName = subjects.find(s => s.id === parseInt(selectedSubject))?.name || '';
   const selectedSubjectCode = subjects.find(s => s.id === parseInt(selectedSubject))?.code || selectedSubjectName || 'assessment';
   const fileSubjectCode = selectedSubjectCode.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
-  const fileExamType = 'Final-Exam';
+  const fileExamType = examType.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'exam';
   const questionScope = selectedSubject || showAllQuestions;
   const highOrderCount = questions.filter((question) => ['Analyze', 'Evaluate', 'Create'].includes(question.bloom_level)).length;
   const highOrderCoverage = questions.length ? Math.round((highOrderCount / questions.length) * 100) : 0;
@@ -667,10 +670,16 @@ const QuestionBank = () => {
   };
 
   const handleSidebarDownload = async (mode) => {
-    if (!selectedSubject || selectedQuestions.length === 0) return;
+    if (!selectedSubject || selectedQuestions.length === 0) {
+      setError('Please select at least one question before downloading.');
+      return;
+    }
+
+    setError('');
+    setTosModalOpen(false);
+    setTestModalOpen(false);
 
     if (mode === 'tos') {
-      // Open TOS modal instead of direct download
       setTosModalOpen(true);
       return;
     }
@@ -690,6 +699,7 @@ const QuestionBank = () => {
       formData.append('question_ids', selectedQuestions.join(','));
       formData.append('export_format', format);
       formData.append('semester', semester);
+      formData.append('exam_type', examType);
       formData.append('academic_year', academicYear.trim());
       formData.append('answer_mode', 'with_key');
       formData.append('include_answer_key', 'true');
@@ -746,9 +756,22 @@ const QuestionBank = () => {
 
     try {
       const formData = new FormData();
+      const topicHours = {};
+      selectedTopics.forEach((topic) => {
+        const rawValue = subcolumnAValues[topic];
+        const hours = Number.parseFloat(rawValue);
+        if (!Number.isNaN(hours) && hours > 0) {
+          topicHours[topic] = hours;
+        }
+      });
+
       formData.append('subject_id', selectedSubject);
       formData.append('question_ids', selectedQuestions.join(','));
       formData.append('semester', semester);
+      formData.append('exam_type', examType);
+      formData.append('academic_year', academicYear.trim());
+      formData.append('selected_topics', JSON.stringify(selectedTopics));
+      formData.append('subcolumn_a_hours', JSON.stringify(topicHours));
       const userId = localStorage.getItem('user_id');
       if (userId) formData.append('user_id', userId);
 
@@ -1088,7 +1111,7 @@ const QuestionBank = () => {
                     { key: 'docx', label: 'Download test (.docx)' },
                     { key: 'pdf', label: 'Download test (.pdf)' },
                   ].map(({ key, label }) => (
-                    <button key={key} type="button" onClick={() => handleSidebarDownload(key)} disabled={!selectedQuestions.length || exporting} className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
+                    <button key={key} type="button" onClick={() => handleSidebarDownload(key)} disabled={!selectedQuestions.length} className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
                       <FileText className="h-4 w-4" style={{ color: PRIMARY }} />{label}
                     </button>
                   ))}
@@ -1198,9 +1221,77 @@ const QuestionBank = () => {
       {previewOpen && (
         <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewOpen(false); }}>
           <section role="dialog" aria-modal="true" aria-labelledby="assessment-preview-title" className="bq-modal-panel flex max-h-[calc(100vh-2rem)] w-full max-w-3xl min-h-0 flex-col overflow-hidden">
-            <div className="flex shrink-0 items-center justify-between border-b bg-[#fffdfc] p-5"><div><h2 id="assessment-preview-title" className="text-lg font-bold text-slate-900">Assessment preview</h2><p className="mt-1 text-sm text-slate-500">{selectedQuestions.length} selected question{selectedQuestions.length === 1 ? '' : 's'} for {selectedSubjectName}.</p></div><button type="button" onClick={() => setPreviewOpen(false)} className="text-sm font-semibold text-[#B4454A]">Close</button></div>
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#f8fafc] p-5">{selectedQuestions.map((questionId, index) => { const question = questions.find((item) => item.id === questionId); if (!question) return null; const matchingChoices = getMatchingChoices(question); return <article key={question.id} className="rounded-lg border border-slate-200 bg-white p-4"><div className="flex items-start gap-3"><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-slate-900">{index + 1}. {question.question}</p><div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500"><span>{question.bloom_level}</span><span>{question.question_type}</span></div>{Array.isArray(question.options) && question.options.map((option, optionIndex) => <p key={optionIndex} className="mt-1 text-xs text-slate-600">{String.fromCharCode(65 + optionIndex)}. {option}</p>)}{question.question_type === 'Matching Type' && (matchingChoices.leftItems.length || matchingChoices.rightItems.length) > 0 && <div className="mt-2 grid grid-cols-2 gap-3 text-xs"><div><p className="font-bold text-slate-600">Column A</p>{matchingChoices.leftItems.map((item, itemIndex) => <p key={itemIndex}>{itemIndex + 1}. {item}</p>)}</div><div><p className="font-bold text-slate-600">Column B</p>{matchingChoices.rightItems.map((item, itemIndex) => <p key={itemIndex}>{String.fromCharCode(65 + itemIndex)}. {item}</p>)}</div></div>}</div><div className="flex shrink-0 flex-col items-end gap-1"><button type="button" onClick={() => { setPreviewOpen(false); handleEditOpen(question); }} className="text-xs font-semibold text-[#B4454A] hover:text-[#8f1c2b]">Edit question</button><div className="flex gap-1"><button type="button" onClick={() => moveSelectedQuestion(index, -1)} disabled={index === 0} aria-label="Move question up" className="rounded border px-2 py-1 text-xs disabled:text-slate-300">↑</button><button type="button" onClick={() => moveSelectedQuestion(index, 1)} disabled={index === selectedQuestions.length - 1} aria-label="Move question down" className="rounded border px-2 py-1 text-xs disabled:text-slate-300">↓</button></div></div></div></article>; })}</div>
-            <div className="flex shrink-0 justify-end gap-2 border-t bg-[#fffdfc] p-4"><button type="button" onClick={() => setPreviewOpen(false)} className="bq-secondary-button">Close</button></div>
+            <div className="flex shrink-0 items-center justify-between border-b bg-[#fffdfc] p-5">
+              <div>
+                <h2 id="assessment-preview-title" className="text-lg font-bold text-slate-900">Assessment preview</h2>
+                <p className="mt-1 text-sm text-slate-500">{selectedQuestions.length} selected question{selectedQuestions.length === 1 ? '' : 's'} for {selectedSubjectName}.</p>
+              </div>
+              <button type="button" onClick={() => setPreviewOpen(false)} className="text-sm font-semibold text-[#B4454A]">Close</button>
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#f8fafc] p-5">
+              {selectedQuestions.map((questionId, index) => {
+                const question = questions.find((item) => item.id === questionId);
+                if (!question) return null;
+
+                const matchingChoices = getMatchingChoices(question);
+
+                return (
+                  <article key={question.id} className="rounded-lg border border-slate-200 bg-white p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-slate-900">{index + 1}. {question.question}</p>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                          <span>{question.bloom_level}</span>
+                          <span>{question.question_type}</span>
+                        </div>
+
+                        {Array.isArray(question.options) && question.options.map((option, optionIndex) => (
+                          <p key={optionIndex} className="mt-1 text-xs text-slate-600">
+                            {String.fromCharCode(65 + optionIndex)}. {option}
+                          </p>
+                        ))}
+
+                        {question.question_type === 'Matching Type' && (matchingChoices.leftItems.length || matchingChoices.rightItems.length) > 0 && (
+                          <div className="mt-2 grid grid-cols-2 gap-3 text-xs">
+                            <div>
+                              <p className="font-bold text-slate-600">Column A</p>
+                              {matchingChoices.leftItems.map((item, itemIndex) => (
+                                <p key={itemIndex}>{itemIndex + 1}. {item}</p>
+                              ))}
+                            </div>
+                            <div>
+                              <p className="font-bold text-slate-600">Column B</p>
+                              {matchingChoices.rightItems.map((item, itemIndex) => (
+                                <p key={itemIndex}>{String.fromCharCode(65 + itemIndex)}. {item}</p>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <button type="button" onClick={() => { setPreviewOpen(false); handleEditOpen(question); }} className="text-xs font-semibold text-[#B4454A] hover:text-[#8f1c2b]">
+                          Edit question
+                        </button>
+                        <div className="flex gap-1">
+                          <button type="button" onClick={() => moveSelectedQuestion(index, -1)} disabled={index === 0} aria-label="Move question up" className="rounded border px-2 py-1 text-xs disabled:text-slate-300">
+                            ↑
+                          </button>
+                          <button type="button" onClick={() => moveSelectedQuestion(index, 1)} disabled={index === selectedQuestions.length - 1} aria-label="Move question down" className="rounded border px-2 py-1 text-xs disabled:text-slate-300">
+                            ↓
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+
+            <div className="flex shrink-0 justify-end gap-2 border-t bg-[#fffdfc] p-4">
+              <button type="button" onClick={() => setPreviewOpen(false)} className="bq-secondary-button">Close</button>
+            </div>
           </section>
         </div>
       )}
@@ -1227,9 +1318,9 @@ const QuestionBank = () => {
         </div>
       )}
 
-      {testModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f172a]/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !exporting) setTestModalOpen(false); }}>
-          <div className="bq-panel w-full max-w-lg border-[#ead8d5] bg-[#fffdfc] p-7 shadow-[0_20px_50px_rgba(15,23,42,0.18)] rounded-2xl">
+      {testModalOpen && createPortal((
+        <div className="bq-modal-overlay fixed inset-0 z-[9999] flex items-center justify-center p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !exporting) setTestModalOpen(false); }}>
+          <div className="bq-modal-panel relative z-10 w-full max-w-lg p-7">
             <div className="flex items-start gap-3 mb-6">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white" style={{ backgroundColor: PRIMARY }}>
                 <Download className="h-5 w-5" />
@@ -1244,6 +1335,12 @@ const QuestionBank = () => {
             {error && <div className="mb-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
             <div className="space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Kind of Exam</label>
+                <select value={examType} onChange={(e) => setExamType(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#B4454A] focus:ring-2 focus:ring-[#B4454A]/15">
+                  {EXAM_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                </select>
+              </div>
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Semester</label>
                 <select value={semester} onChange={(e) => setSemester(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#B4454A] focus:ring-2 focus:ring-[#B4454A]/15">
@@ -1265,11 +1362,11 @@ const QuestionBank = () => {
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
 
-      {tosModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f172a]/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setTosModalOpen(false); }}>
-          <div className="bq-panel w-full max-w-2xl border-[#ead8d5] bg-[#fffdfc] p-7 shadow-[0_20px_50px_rgba(15,23,42,0.18)] rounded-2xl">
+      {tosModalOpen && createPortal((
+        <div className="bq-modal-overlay fixed inset-0 z-[9999] flex items-center justify-center p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setTosModalOpen(false); }}>
+          <div className="bq-modal-panel relative z-10 w-full max-w-2xl p-7">
             <div className="flex items-start gap-3 mb-6">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white" style={{ backgroundColor: PRIMARY }}>
                 <Sparkles className="h-5 w-5" />
@@ -1290,12 +1387,26 @@ const QuestionBank = () => {
 
             <div className="space-y-5 max-h-[calc(100vh-400px)] overflow-y-auto">
               <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Kind of Exam</label>
+                <select value={examType} onChange={(e) => setExamType(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#B4454A] focus:ring-2 focus:ring-[#B4454A]/15">
+                  {EXAM_TYPE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Semester</label>
                 <select value={semester} onChange={(e) => setSemester(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#B4454A] focus:ring-2 focus:ring-[#B4454A]/15">
                   {SEMESTER_OPTIONS.map((sem) => (
                     <option key={sem} value={sem}>{sem}</option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Academic Year <span className="font-normal text-slate-400">(optional)</span></label>
+                <input value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} placeholder="e.g. 2025-2026" className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#B4454A] focus:ring-2 focus:ring-[#B4454A]/15" />
               </div>
 
               <div>
@@ -1370,7 +1481,6 @@ const QuestionBank = () => {
                     </>
                   )}
                 </button>
-                {/* Progress bar under button */}
                 {generatingTos && (
                   <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
                     <div
@@ -1386,7 +1496,7 @@ const QuestionBank = () => {
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
       </div>
     </div>
   );
