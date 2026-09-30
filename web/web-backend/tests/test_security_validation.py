@@ -16,6 +16,7 @@ from sqlalchemy.pool import StaticPool
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from main import app, normalize_email, read_upload_bytes
+from routers import assessment as assessment_router
 from routers.assessment import group_questions_by_type
 from routers.questions import (
     MAX_QUESTIONS_PER_GENERATION,
@@ -40,6 +41,24 @@ def test_normalize_email_trims_and_lowercases():
 def test_normalize_email_handles_common_domain_typos():
     assert normalize_email("user@example,com") == "user@example.com"
     assert normalize_email("user@example;com") == "user@example.com"
+
+
+def test_convert_docx_to_pdf_uses_libreoffice_on_linux(tmp_path, monkeypatch):
+    docx_path = tmp_path / "assessment.docx"
+    pdf_path = tmp_path / "assessment.pdf"
+    docx_path.write_bytes(b"docx")
+    monkeypatch.setattr(assessment_router.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(assessment_router.shutil, "which", lambda name: "/usr/bin/libreoffice")
+
+    def fake_run(command, **kwargs):
+        pdf_path.write_bytes(b"%PDF-test")
+        return type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(assessment_router.subprocess, "run", fake_run)
+
+    assessment_router.convert_docx_to_pdf(str(docx_path), str(pdf_path))
+
+    assert pdf_path.read_bytes() == b"%PDF-test"
 
 
 @pytest.mark.asyncio
@@ -516,16 +535,16 @@ def test_generate_tos_uses_department_leadership_names():
         department="Computer Science",
         dean_name="Dr. Alice Reyes",
         program_chair_name="Dr. Ben Cruz",
+        department_code="CICS",
+        program_code="BSIT",
     )
 
     values = {str(cell.value).strip() for row in workbook.active.iter_rows() for cell in row if cell.value is not None}
     assert "Prof. Maria Santos" in values
     assert "Dr. Ben Cruz" in values
     assert "Dr. Alice Reyes" in values
-    assert "Program Chair" in values
-    assert "Dean" in values
-    assert "Program Chair, BSIT" not in values
-    assert "Dean, CICS" not in values
+    assert "Program Chair, BSIT" in values
+    assert "Dean, CICS" in values
     assert any("2026-2027" in value for value in values)
     assert any("DEPARTMENT: Computer Science".lower() in value.lower() for value in values)
     assert "College of Informatics and Computing Sciences" not in str(workbook.active["B14"].value or "")

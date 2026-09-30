@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 
 import main
 import models
@@ -36,6 +36,8 @@ class FakeQuery:
             if self.session.user_results:
                 return self.session.user_results.pop(0)
             return None
+        if self.model is models.Campus:
+            return self.session.campus
         return None
 
     def update(self, *args, **kwargs):
@@ -51,12 +53,13 @@ class FakeQuery:
 
 
 class FakeSession:
-    def __init__(self, account_request=None, department=None, user_results=None, program=None, user_change_requests=None):
+    def __init__(self, account_request=None, department=None, user_results=None, program=None, user_change_requests=None, campus=None):
         self.account_request = account_request
         self.department = department
         self.program = program
         self.user_change_requests = list(user_change_requests or [])
         self.user_results = list(user_results or [])
+        self.campus = campus
         self.added = []
         self.deleted = []
         self.commits = 0
@@ -136,6 +139,91 @@ def test_permanent_delete_user_removes_account_record(monkeypatch):
     assert user in db.deleted
     assert db.commits == 1
     assert result["message"] == "User permanently deleted successfully."
+
+
+def test_delete_campus_admin_rejects_active_account():
+    user = SimpleNamespace(id=23, email="admin@example.com", role="campus_admin", archived=False, campus_id=4)
+    db = FakeSession(user_results=[user], campus=SimpleNamespace(id=4, is_active=True))
+
+    with pytest.raises(HTTPException, match="Deactivate the Campus Admin") as error:
+        main.delete_campus_admin(user.id, db, admin=SimpleNamespace(id=1, role="super_admin"))
+
+    assert error.value.status_code == 400
+    assert db.deleted == []
+    assert db.commits == 0
+
+
+def test_delete_campus_admin_removes_inactive_account(monkeypatch):
+    user = SimpleNamespace(id=23, email="admin@example.com", role="campus_admin", archived=False, campus_id=4)
+    db = FakeSession(user_results=[user], campus=SimpleNamespace(id=4, is_active=False))
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+
+    result = main.delete_campus_admin(user.id, db, admin=SimpleNamespace(id=1, role="super_admin"))
+
+    assert user in db.deleted
+    assert db.commits == 1
+    assert result["status"] == "deleted"
+
+
+def test_create_campus_admin_queues_credentials_email(monkeypatch):
+    campus = SimpleNamespace(id=4, name="North Campus", is_active=True)
+    db = FakeSession(campus=campus, user_results=[None])
+    background_tasks = BackgroundTasks()
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+    payload = main.CampusAdminCreateRequest(
+        name="Avery Admin",
+        email="avery@example.com",
+        password="InitialPass1!",
+        campus_id=campus.id,
+    )
+
+    result = main.create_campus_admin(
+        payload,
+        background_tasks,
+        db,
+        admin=SimpleNamespace(id=1, role="super_admin"),
+    )
+
+    assert result["email"] == payload.email
+    assert len(background_tasks.tasks) == 1
+    assert background_tasks.tasks[0].func is main.send_campus_admin_credentials_email
+    assert background_tasks.tasks[0].args == (payload.email, payload.name, payload.password, campus.name)
+
+
+def test_campus_admin_credentials_email_has_greeting_credentials_and_reminder(monkeypatch):
+    captured = {}
+
+    class FakeSMTP:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def starttls(self):
+            return None
+
+        def login(self, sender, password):
+            return None
+
+        def send_message(self, message):
+            captured["message"] = message
+
+    monkeypatch.setattr(main, "SENDER_EMAIL", "noreply@example.com")
+    monkeypatch.setattr(main, "SENDER_PASSWORD", "smtp-secret")
+    monkeypatch.setattr(main.smtplib, "SMTP", lambda *args, **kwargs: FakeSMTP())
+
+    assert main.send_campus_admin_credentials_email(
+        "avery@example.com", "Avery Admin", "InitialPass1!", "North Campus"
+    )
+
+    message = captured["message"]
+    body = "\n".join(part.get_payload(decode=True).decode() for part in message.get_payload())
+    assert message["To"] == "avery@example.com"
+    assert "Hello Avery Admin" in body
+    assert "avery@example.com" in body
+    assert "InitialPass1!" in body
+    assert "change your password immediately after your first login" in body
 
 
 def test_create_user_change_request_requires_matching_session_user():

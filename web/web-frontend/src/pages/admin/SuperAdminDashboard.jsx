@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Bar, Doughnut } from "react-chartjs-2";
-import { Activity, BookOpen, Building2, GraduationCap, LayoutDashboard, Menu, Moon, Search, ShieldCheck, Sparkles, Sun, Users } from "lucide-react";
+import { Activity, BookOpen, Building2, Eye, EyeOff, GraduationCap, LayoutDashboard, Menu, Moon, Search, ShieldCheck, Sparkles, Sun, Users } from "lucide-react";
 import { ArcElement, BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip } from "chart.js";
 import LogoutBtn from "./Logout";
 import { AcademicMgmtContent } from "./AcademicMgmt";
@@ -50,6 +50,8 @@ const SuperAdminDashboard = () => {
   const [editingCampus, setEditingCampus] = useState(null);
   const [admins, setAdmins] = useState([]);
   const [editingAdmin, setEditingAdmin] = useState(null);
+  const [deletingAdminId, setDeletingAdminId] = useState(null);
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [adminForm, setAdminForm] = useState({ name: "", email: "", password: "", campus_id: "" });
   const [users, setUsers] = useState([]);
   const [userFilters, setUserFilters] = useState({ campus_id: "", role: "", status_filter: "active", search: "" });
@@ -193,6 +195,7 @@ const SuperAdminDashboard = () => {
       }
       const wasEditing = Boolean(editingAdmin);
       setEditingAdmin(null);
+      setShowAdminPassword(false);
       setAdminForm({ name: "", email: "", password: "", campus_id: "" });
       setNotice(wasEditing ? "Campus Admin updated." : "Campus Admin account created.");
       setAdmins(await requestJson("/super-admin/admins"));
@@ -216,6 +219,24 @@ const SuperAdminDashboard = () => {
       await loadOverview();
     } catch (reason) {
       setError(reason.message);
+    }
+  };
+
+  const deleteCampusAdmin = async (admin) => {
+    const confirmed = window.confirm(`Permanently delete ${admin.name} (${admin.email})? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setDeletingAdminId(admin.id);
+    setError("");
+    try {
+      await requestJson(`/super-admin/admins/${admin.id}`, { method: "DELETE" });
+      setNotice(`Campus Admin ${admin.email} permanently deleted.`);
+      setAdmins(await requestJson("/super-admin/admins"));
+      await loadOverview();
+    } catch (reason) {
+      setError(reason.message);
+    } finally {
+      setDeletingAdminId(null);
     }
   };
 
@@ -319,12 +340,12 @@ const SuperAdminDashboard = () => {
       <form onSubmit={createCampusAdmin} className="bq-admin-panel grid gap-3 md:grid-cols-2 xl:grid-cols-5 xl:items-end">
         <label className="text-sm">Name<input required value={adminForm.name} onChange={(event) => setAdminForm({ ...adminForm, name: event.target.value })} className="bq-field mt-1 w-full" /></label>
         <label className="text-sm">Email<input required type="email" value={adminForm.email} onChange={(event) => setAdminForm({ ...adminForm, email: event.target.value })} className="bq-field mt-1 w-full" /></label>
-        {!editingAdmin && <label className="text-sm">Initial password<input required minLength={8} type="password" value={adminForm.password} onChange={(event) => setAdminForm({ ...adminForm, password: event.target.value })} className="bq-field mt-1 w-full" /></label>}
+        {!editingAdmin && <label className="text-sm">Initial password<div className="relative mt-1"><input required minLength={8} type={showAdminPassword ? "text" : "password"} value={adminForm.password} onChange={(event) => setAdminForm({ ...adminForm, password: event.target.value })} className="bq-field w-full pr-10" /><button type="button" aria-label={showAdminPassword ? "Hide initial password" : "Show initial password"} title={showAdminPassword ? "Hide initial password" : "Show initial password"} onClick={() => setShowAdminPassword((visible) => !visible)} className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 hover:text-slate-200">{showAdminPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>}
         <label className="text-sm">Campus<select required value={adminForm.campus_id} onChange={(event) => setAdminForm({ ...adminForm, campus_id: event.target.value })} className="bq-field mt-1 w-full"><option value="">Select campus</option>{campuses.filter((campus) => campus.is_active).map((campus) => <option key={campus.id} value={campus.id}>{campus.name}</option>)}</select></label>
         <div className="flex gap-2"><button disabled={saving} className="bq-admin-action">{editingAdmin ? "Save Changes" : "Create Campus Admin"}</button>{editingAdmin && <button type="button" className="bq-admin-action" onClick={() => { setEditingAdmin(null); setAdminForm({ name: "", email: "", password: "", campus_id: "" }); }}>Cancel</button>}</div>
       </form>
-      <section className="bq-admin-panel overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead><tr className="border-b border-slate-700"><th className="py-2 pr-3">Administrator</th><th className="py-2 pr-3">Email</th><th className="py-2 pr-3">Campus</th><th className="py-2 pr-3">Status</th><th className="py-2">Action</th></tr></thead><tbody>
-        {admins.map((admin) => <tr key={admin.id} className="border-b border-slate-800"><td className="py-3 pr-3">{admin.name}</td><td className="py-3 pr-3">{admin.email}</td><td className="py-3 pr-3"><select aria-label={`Campus for ${admin.name}`} value={admin.campus_id || ""} onChange={(event) => updateCampusAdmin(admin, { campus_id: event.target.value })} className="bq-field"><option value="">Select campus</option>{campuses.map((campus) => <option key={campus.id} value={campus.id}>{campus.name}</option>)}</select></td><td className="py-3 pr-3">{admin.is_active ? "Active" : "Inactive"}</td><td className="py-3"><div className="flex gap-2"><button type="button" className="bq-admin-action" onClick={() => { setEditingAdmin(admin); setAdminForm({ name: admin.name, email: admin.email, password: "", campus_id: String(admin.campus_id || "") }); }}>Edit</button><button type="button" className="bq-admin-action" onClick={() => updateCampusAdmin(admin, { is_active: !admin.is_active })}>{admin.is_active ? "Deactivate" : "Activate"}</button></div></td></tr>)}
+      <section className="bq-admin-panel overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead><tr className="border-b border-slate-700"><th className="py-2 pr-3">Administrator</th><th className="py-2 pr-3">Email</th><th className="py-2 pr-3">Campus</th><th className="py-2 pr-3">Status</th><th className="py-2">Action</th></tr></thead><tbody>
+        {admins.map((admin) => <tr key={admin.id} className="border-b border-slate-800"><td className="py-3 pr-3">{admin.name}</td><td className="py-3 pr-3">{admin.email}</td><td className="py-3 pr-3"><select aria-label={`Campus for ${admin.name}`} value={admin.campus_id || ""} onChange={(event) => updateCampusAdmin(admin, { campus_id: event.target.value })} className="bq-field"><option value="">Select campus</option>{campuses.map((campus) => <option key={campus.id} value={campus.id}>{campus.name}</option>)}</select></td><td className="py-3 pr-3">{admin.is_active ? "Active" : "Inactive"}</td><td className="py-3"><div className="flex gap-2"><button type="button" className="bq-admin-action" onClick={() => { setEditingAdmin(admin); setShowAdminPassword(false); setAdminForm({ name: admin.name, email: admin.email, password: "", campus_id: String(admin.campus_id || "") }); }}>Edit</button><button type="button" className="bq-admin-action" onClick={() => updateCampusAdmin(admin, { is_active: !admin.is_active })}>{admin.is_active ? "Deactivate" : "Activate"}</button>{!admin.is_active && <button type="button" className="bq-admin-action" disabled={deletingAdminId === admin.id} onClick={() => deleteCampusAdmin(admin)}>{deletingAdminId === admin.id ? "Deleting..." : "Delete"}</button>}</div></td></tr>)}
       </tbody></table>{!admins.length && <p className="bq-admin-muted py-5">No Campus Admin accounts found.</p>}</section>
     </div>
   );
@@ -435,7 +456,7 @@ const SuperAdminDashboard = () => {
     if (activeTab === "academic") return <AcademicMgmtContent basePath="/super-admin/academic" />;
     if (activeTab === "questions") return <QuestionBankContent basePath="/super-admin/dashboard" />;
     if (activeTab === "ai_usage") return renderAIUsage();
-    if (activeTab === "activity") return <ReportsContent />;
+    if (activeTab === "activity") return <ReportsContent showCampusFilter />;
     return renderDashboard();
   };
 

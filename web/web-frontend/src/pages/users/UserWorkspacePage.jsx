@@ -53,16 +53,59 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
       return {
         fullName: localStorage.getItem("name") || "Dr. Reyes",
         department: localStorage.getItem("department") || "Faculty",
+        programId: localStorage.getItem("program_id") || "",
         role: localStorage.getItem("role") || "Faculty",
       };
     } catch {
-      return { fullName: "Dr. Reyes", department: "Faculty", role: "Faculty" };
+      return { fullName: "Dr. Reyes", department: "Faculty", programId: "", role: "Faculty" };
     }
   });
+  const [profilePrograms, setProfilePrograms] = useState([]);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState("");
+
+  useEffect(() => {
+    if (section !== "settings") return undefined;
+    let active = true;
+    setProfileLoading(true);
+    setProfileError("");
+    fetch("/api/user/profile")
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "Could not load your profile.");
+        return data;
+      })
+      .then((data) => {
+        if (!active) return;
+        setSettings((current) => ({
+          ...current,
+          fullName: data.full_name || "",
+          department: data.department || "",
+          programId: data.program_id ? String(data.program_id) : "",
+        }));
+        const programs = Array.isArray(data.programs) ? data.programs : [];
+        const selectedProgram = programs.find((program) => String(program.id) === String(data.program_id));
+        setProfilePrograms(programs);
+        localStorage.setItem("name", data.full_name || "");
+        localStorage.setItem("department", data.department || "");
+        localStorage.setItem("program_id", data.program_id ? String(data.program_id) : "");
+        localStorage.setItem("program_name", selectedProgram?.name || "");
+        window.dispatchEvent(new CustomEvent("profile-updated"));
+      })
+      .catch((error) => {
+        if (active) setProfileError(error.message || "Could not load your profile.");
+      })
+      .finally(() => {
+        if (active) setProfileLoading(false);
+      });
+    return () => { active = false; };
+  }, [section]);
 
   const updateField = (key, value) => {
     setSettings((current) => ({ ...current, [key]: value }));
     setSaved(false);
+    setProfileError("");
   };
 
   const handleSaveClick = () => {
@@ -98,21 +141,60 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
     setChangeRequestMessage(response.ok ? `Request submitted for administrator review (${payload.request_type}).` : (data.detail || "Could not submit the request."));
   };
 
-  const confirmSaveSettings = () => {
+  const confirmSaveSettings = async () => {
     if (!settings.fullName.trim()) {
       setSaveResult({ type: "error", message: "Please enter your full name before saving." });
       setConfirmSaveOpen(false);
       return;
     }
+    if (!settings.programId) {
+      setSaveResult({ type: "error", message: "Please select a program before saving." });
+      setConfirmSaveOpen(false);
+      return;
+    }
 
-    localStorage.setItem("bloomquest-settings", JSON.stringify(settings));
-    localStorage.setItem("name", settings.fullName);
-    localStorage.setItem("department", settings.department);
-    window.dispatchEvent(new CustomEvent("profile-updated"));
-    setSaved(true);
-    setSaveMessage("Changes saved successfully.");
-    setSaveResult({ type: "success", message: "Your profile changes were saved successfully." });
-    setConfirmSaveOpen(false);
+    setProfileSaving(true);
+    setProfileError("");
+    try {
+      const response = await fetch("/api/user/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          full_name: settings.fullName.trim(),
+          program_id: Number(settings.programId),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Could not save your profile.");
+
+      const programs = Array.isArray(data.programs) ? data.programs : [];
+      const selectedProgram = programs.find((program) => String(program.id) === String(data.program_id));
+      const nextSettings = {
+        ...settings,
+        fullName: data.full_name,
+        department: data.department,
+        programId: String(data.program_id),
+      };
+      setSettings(nextSettings);
+      setProfilePrograms(programs);
+      localStorage.setItem("bloomquest-settings", JSON.stringify(nextSettings));
+      localStorage.setItem("name", nextSettings.fullName);
+      localStorage.setItem("department", nextSettings.department);
+      localStorage.setItem("program_id", nextSettings.programId);
+      localStorage.setItem("program_name", selectedProgram?.name || "");
+      window.dispatchEvent(new CustomEvent("profile-updated"));
+      setSaved(true);
+      setSaveMessage("Changes saved successfully.");
+      setSaveResult({ type: "success", message: "Your profile changes were saved successfully." });
+      setConfirmSaveOpen(false);
+    } catch (error) {
+      const message = error.message || "Could not save your profile.";
+      setProfileError(message);
+      setSaveResult({ type: "error", message });
+      setConfirmSaveOpen(false);
+    } finally {
+      setProfileSaving(false);
+    }
   };
 
   const getPasswordStrength = (value) => {
@@ -321,7 +403,7 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
               </div>
 
               <div className="mt-5 space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   <label className="text-sm font-semibold" style={{ color: "#0F172A" }}>
                     Full name
                     <input
@@ -341,10 +423,33 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
                       style={{ borderColor: "rgba(15,23,42,0.12)" }}
                     />
                   </label>
+
+                  <label className="text-sm font-semibold" style={{ color: "#0F172A" }}>
+                    Program
+                    <select
+                      value={settings.programId}
+                      onChange={(event) => updateField("programId", event.target.value)}
+                      disabled={profileLoading || profileSaving || profilePrograms.length === 0}
+                      required
+                      className="mt-2 w-full rounded-lg border bg-white px-3 py-2 text-sm font-normal outline-none transition focus:border-[#B4454A] disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
+                      style={{ borderColor: "rgba(15,23,42,0.12)", color: "#0F172A" }}
+                    >
+                      <option value="" disabled hidden>
+                        {profileLoading ? "Loading programs..." : profilePrograms.length ? "Select a program" : "No programs available"}
+                      </option>
+                      {profilePrograms.map((program) => (
+                        <option key={program.id} value={program.id}>
+                          {program.name}{program.code ? ` (${program.code})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
 
+                {profileError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{profileError}</div>}
+
                 <div className="flex justify-end pt-1">
-                  <button type="button" onClick={handleSaveClick} className="bq-primary-button"><Save size={15} /> {saved ? "Saved" : "Save changes"}</button>
+                  <button type="button" onClick={handleSaveClick} disabled={profileLoading || profileSaving || profilePrograms.length === 0} className="bq-primary-button disabled:cursor-not-allowed disabled:opacity-60"><Save size={15} /> {profileSaving ? "Saving..." : saved ? "Saved" : "Save changes"}</button>
                 </div>
 
                 {saveMessage && (
@@ -436,10 +541,11 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
               <button
                 type="button"
                 onClick={confirmSaveSettings}
-                className="flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-95"
+                disabled={profileSaving}
+                className="flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
                 style={{ backgroundColor: "#B4454A" }}
               >
-                Confirm
+                {profileSaving ? "Saving..." : "Confirm"}
               </button>
             </div>
           </div>

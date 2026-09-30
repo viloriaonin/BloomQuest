@@ -1,4 +1,5 @@
 from typing import Optional
+from contextlib import asynccontextmanager
 import io
 import json
 import base64
@@ -19,6 +20,7 @@ from classifier import classify_question
 import models
 from datetime import date, datetime, timedelta, timezone
 import logging
+from html import escape as escape_html
 
 
 def utc_now():
@@ -39,7 +41,6 @@ from routers import activity
 from security import get_current_user, get_optional_current_user, require_admin, require_campus_admin, require_super_admin, assert_campus_access, visible_campus_id, user_campus_id, subject_campus_id, assert_user_subject_campus_access
 import smtplib
 import string
-import pythoncom
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -66,6 +67,8 @@ RATE_LIMIT_MAX_REQUESTS = 5
 RATE_LIMIT_BUCKETS = defaultdict(list)
 
 models.Base.metadata.create_all(bind=engine)
+
+
 with engine.begin() as connection:
     connection.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"))
     connection.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS user_id INTEGER"))
@@ -323,7 +326,27 @@ with SessionLocal() as db:
                 db.add(models.Subject(name=subject_name, code=subject_code, description="BatStateU academic subject sample.", department_id=sample_department.id, program_id=program.id))
     db.commit()
 
-app = FastAPI()
+def migrate_subject_name_scope():
+    if engine.dialect.name != "postgresql":
+        return
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE subjects DROP CONSTRAINT IF EXISTS subjects_name_key"))
+        connection.execute(text("DROP INDEX IF EXISTS ix_subjects_name"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_subjects_name ON subjects (name)"))
+        connection.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_subjects_active_scope_name "
+            "ON subjects (COALESCE(program_id, -department_id, 0), LOWER(name)) "
+            "WHERE archived IS FALSE"
+        ))
+
+
+@asynccontextmanager
+async def app_lifespan(_app: FastAPI):
+    migrate_subject_name_scope()
+    yield
+
+
+app = FastAPI(lifespan=app_lifespan)
 
 
 @app.post("/api/logout")
@@ -802,15 +825,8 @@ class UserChangeReviewPayload(BaseModel):
 
 
 class UserDepartmentUpdateRequest(AccountActionRequest):
-    department: str = Field(..., min_length=1, max_length=255)
-
-    @field_validator("department")
-    @classmethod
-    def validate_department_name(cls, value: str) -> str:
-        cleaned = value.strip()
-        if not cleaned:
-            raise ValueError("Please select a department.")
-        return cleaned
+    department: str | None = Field(default=None, min_length=1, max_length=255)
+    department_id: int | None = Field(default=None, ge=1)
 
 
 class AdminVerifyRequest(BaseModel):
@@ -1009,6 +1025,57 @@ def enforce_rate_limit(scope: str, key: str) -> None:
 def generate_temporary_password(length: int = 12) -> str:
     alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
     return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+def send_campus_admin_credentials_email(recipient_email: str, full_name: str, password: str, campus_name: str) -> bool:
+        if not SENDER_EMAIL or not SENDER_PASSWORD:
+                logger.warning("[Email] SMTP credentials are not configured; skipping Campus Admin credentials email for %s", recipient_email)
+                return False
+
+        greeting_name = full_name or recipient_email.split("@")[0]
+        text_body = (
+                f"Hello {greeting_name},\n\n"
+                "Your BloomQuest Campus Admin account has been created.\n\n"
+                f"Email: {recipient_email}\n"
+                f"Initial password: {password}\n"
+                f"Campus: {campus_name}\n\n"
+                "For your security, change your password immediately after your first login.\n\n"
+                "Best regards,\nBloomQuest Administration"
+        )
+        html_body = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; color: #111; line-height: 1.6;">
+                <div style="max-width: 600px; margin: 0 auto; padding: 24px;">
+                    <h2 style="color: #7B1113;">Welcome to BloomQuest</h2>
+                    <p>Hello {escape_html(greeting_name)},</p>
+                    <p>Your Campus Admin account has been created. Use these credentials to sign in:</p>
+                    <p><strong>Email:</strong> {escape_html(recipient_email)}<br />
+                    <strong>Initial password:</strong> <code>{escape_html(password)}</code><br />
+                    <strong>Campus:</strong> {escape_html(campus_name)}</p>
+                    <p>For your security, change your password immediately after your first login.</p>
+                    <p>Best regards,<br /><strong>BloomQuest Administration</strong></p>
+                </div>
+            </body>
+        </html>
+        """
+
+        message = MIMEMultipart("alternative")
+        message["From"] = SENDER_EMAIL
+        message["To"] = recipient_email
+        message["Subject"] = "Your BloomQuest Campus Admin Login Credentials"
+        message.attach(MIMEText(text_body, "plain"))
+        message.attach(MIMEText(html_body, "html"))
+
+        try:
+                with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+                        server.starttls()
+                        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+                        server.send_message(message)
+                logger.info("[Email] Campus Admin credentials email sent to %s", recipient_email)
+                return True
+        except Exception as exc:
+                logger.error("[Email] Campus Admin credentials email failed for %s: %s", recipient_email, exc, exc_info=True)
+                return False
 
 
 def send_approval_email(recipient_email: str, temporary_password: str, full_name: str = None, department: str = None):
@@ -1609,11 +1676,25 @@ def get_admin_user_overview(user_id: int, db: Session = Depends(get_db), _admin:
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    assert_admin_can_access_user(db, admin, user)
+    assert_admin_can_access_user(db, _admin, user)
 
-    subjects = db.query(models.Subject).filter(models.Subject.user_id == user_id).order_by(models.Subject.created_at.desc()).all()
-    subject_names = {subject.id: subject.name for subject in db.query(models.Subject).all()}
-    questions = db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.user_id == user_id).order_by(models.GeneratedQuestion.created_at.desc()).all()
+    upload_owner_tos_ids = db.query(models.TableOfSpecification.id).join(
+        models.UploadedFile,
+        models.UploadedFile.id == models.TableOfSpecification.upload_id,
+    ).filter(models.UploadedFile.user_id == user_id)
+    question_query = db.query(models.GeneratedQuestion).filter(or_(
+        models.GeneratedQuestion.user_id == user_id,
+        models.GeneratedQuestion.tos_id.in_(upload_owner_tos_ids),
+    ))
+    question_count = question_query.count()
+    subject_ids = question_query.with_entities(models.GeneratedQuestion.subject_id).filter(
+        models.GeneratedQuestion.subject_id.is_not(None)
+    ).distinct()
+    subjects = db.query(models.Subject).filter(
+        models.Subject.id.in_(subject_ids),
+        models.Subject.archived.is_(False),
+        models.Subject.department_id.is_not(None),
+    ).order_by(models.Subject.created_at.desc()).all()
     activities = db.query(models.ActivityLog).filter(models.ActivityLog.user_id == user_id).order_by(models.ActivityLog.created_at.desc()).all()
 
     return {
@@ -1634,18 +1715,7 @@ def get_admin_user_overview(user_id: int, db: Session = Depends(get_db), _admin:
             "created_at": subject.created_at.isoformat() if subject.created_at else None,
             "archived": subject.archived,
         } for subject in subjects],
-        "questions": [{
-            "id": question.id,
-            "subject_id": question.subject_id,
-            "question": question.question,
-            "subject": subject_names.get(question.subject_id, "Unassigned"),
-            "topic": question.topic_name or "General",
-            "type": question.question_type,
-            "bloom_level": question.bloom_level,
-            "difficulty": question.difficulty,
-            "lifecycle_status": "archived" if question.archived else (question.lifecycle_status or "draft"),
-            "created_at": question.created_at.isoformat() if question.created_at else None,
-        } for question in questions],
+        "question_count": question_count,
         "activities": [{
             "id": activity.id,
             "action": activity.action,
@@ -1787,9 +1857,20 @@ def update_user_department(payload: UserDepartmentUpdateRequest, db: Session = D
         raise HTTPException(status_code=404, detail="User not found.")
     assert_admin_can_access_user(db, admin, user)
 
-    department = db.query(models.Department).filter(
-        func.lower(models.Department.name) == payload.department.lower()
-    ).first()
+    if payload.department_id is not None:
+        department = db.query(models.Department).filter(models.Department.id == payload.department_id).first()
+    elif payload.department and payload.department.strip():
+        department_query = db.query(models.Department).filter(
+            func.lower(models.Department.name) == payload.department.strip().lower()
+        )
+        if str(admin.role).lower() == "campus_admin":
+            department_query = department_query.filter(models.Department.campus_id == admin.campus_id)
+        matches = department_query.order_by(models.Department.id.asc()).limit(2).all()
+        if len(matches) > 1:
+            raise HTTPException(status_code=400, detail="Select a specific department.")
+        department = matches[0] if matches else None
+    else:
+        raise HTTPException(status_code=400, detail="Please select a department.")
     if not department:
         raise HTTPException(status_code=400, detail="Please select a valid department.")
     assert_campus_access(admin, department.campus_id)
@@ -2363,6 +2444,18 @@ class ProgramRequest(BaseModel):
 class FacultyAssignmentRequest(BaseModel):
     program_id: int | None = None
 
+class UserProfileUpdateRequest(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=100)
+    program_id: int = Field(..., gt=0)
+
+    @field_validator("full_name")
+    @classmethod
+    def validate_full_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not SAFE_NAME_REGEX.fullmatch(cleaned):
+            raise ValueError("Please provide a valid full name.")
+        return cleaned
+
 class LeadershipAssignmentRequest(BaseModel):
     faculty_id: int | None = None
     name: str | None = None
@@ -2926,7 +3019,7 @@ def list_campus_admins(db: Session = Depends(get_db), _admin: models.User = Depe
 
 
 @app.post("/api/super-admin/admins", status_code=201)
-def create_campus_admin(payload: CampusAdminCreateRequest, db: Session = Depends(get_db), admin: models.User = Depends(require_super_admin)):
+def create_campus_admin(payload: CampusAdminCreateRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db), admin: models.User = Depends(require_super_admin)):
     normalized_email = normalize_email(payload.email)
     campus = db.query(models.Campus).filter(models.Campus.id == payload.campus_id, models.Campus.is_active.is_(True)).first()
     if not campus:
@@ -2945,6 +3038,7 @@ def create_campus_admin(payload: CampusAdminCreateRequest, db: Session = Depends
     db.commit()
     db.refresh(user)
     log_activity(db, "Campus Admin Created", f"Super Admin {admin.id} created a Campus Admin for campus {campus.id}.", "security", user_id=admin.id)
+    background_tasks.add_task(send_campus_admin_credentials_email, normalized_email, user.name, payload.password, campus.name)
     return {"id": user.id, "name": user.name, "email": user.email, "campus_id": campus.id, "campus": campus.name, "is_active": True}
 
 
@@ -2981,6 +3075,55 @@ def update_campus_admin(user_id: int, payload: CampusAdminUpdateRequest, db: Ses
     db.commit()
     log_activity(db, "Campus Admin Updated", f"Super Admin {admin.id} updated Campus Admin {user.id} assignment/status.", "security", user_id=admin.id)
     return {"id": user.id, "name": user.name or user.email, "email": user.email, "campus_id": campus.id, "campus": campus.name, "is_active": not user.archived}
+
+
+@app.delete("/api/super-admin/admins/{user_id}")
+def delete_campus_admin(user_id: int, db: Session = Depends(get_db), admin: models.User = Depends(require_super_admin)):
+    user = db.query(models.User).filter(models.User.id == user_id, models.User.role.in_(("campus_admin", "admin"))).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Campus Admin not found.")
+
+    campus = db.query(models.Campus).filter(models.Campus.id == user.campus_id).first() if user.campus_id else None
+    if not user.archived and campus and campus.is_active:
+        raise HTTPException(status_code=400, detail="Deactivate the Campus Admin before deleting the account.")
+
+    db.query(models.ActivityLog).filter(models.ActivityLog.user_id == user.id).update(
+        {models.ActivityLog.user_id: None}, synchronize_session=False
+    )
+    db.query(models.ActivityLog).filter(models.ActivityLog.actor_id == user.id).update(
+        {models.ActivityLog.actor_id: None}, synchronize_session=False
+    )
+    db.query(models.ActivityLog).filter(models.ActivityLog.target_user_id == user.id).update(
+        {models.ActivityLog.target_user_id: None}, synchronize_session=False
+    )
+    db.query(models.Department).filter(models.Department.dean_id == user.id).update(
+        {models.Department.dean_id: None}, synchronize_session=False
+    )
+    db.query(models.Program).filter(models.Program.chair_id == user.id).update(
+        {models.Program.chair_id: None}, synchronize_session=False
+    )
+    db.query(models.UserChangeRequest).filter(models.UserChangeRequest.user_id == user.id).delete(synchronize_session=False)
+    db.query(models.UserChangeRequest).filter(models.UserChangeRequest.reviewed_by == user.id).update(
+        {models.UserChangeRequest.reviewed_by: None}, synchronize_session=False
+    )
+    db.query(models.AIUsage).filter(models.AIUsage.user_id == user.id).delete(synchronize_session=False)
+    db.query(models.UserHiddenSubject).filter(models.UserHiddenSubject.user_id == user.id).delete(synchronize_session=False)
+    db.query(models.Subject).filter(models.Subject.user_id == user.id).update(
+        {models.Subject.user_id: None}, synchronize_session=False
+    )
+    db.query(models.UploadedFile).filter(models.UploadedFile.user_id == user.id).update(
+        {models.UploadedFile.user_id: None}, synchronize_session=False
+    )
+    db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.user_id == user.id).update(
+        {models.GeneratedQuestion.user_id: None}, synchronize_session=False
+    )
+    db.query(models.UserSession).filter(models.UserSession.user_id == user.id).delete(synchronize_session=False)
+
+    email = user.email
+    db.delete(user)
+    db.commit()
+    log_activity(db, "Campus Admin Deleted", f"Super Admin {admin.id} permanently deleted Campus Admin {email}.", "security", actor_id=admin.id)
+    return {"message": "Campus Admin permanently deleted.", "status": "deleted"}
 
 
 @app.get("/api/super-admin/users")
@@ -3095,6 +3238,78 @@ def assign_faculty_program(faculty_id: int, payload: FacultyAssignmentRequest, d
     db.commit()
     log_activity(db, "Faculty Program Assignment Updated", f"Admin {admin.id} updated faculty {faculty.id} program assignment.", "academic", user_id=admin.id)
     return {"id": faculty.id, "program_id": faculty.program_id}
+
+def get_user_program_department(db: Session, user: models.User):
+    department_name = (user.department or "").strip()
+    campus_id = user_campus_id(db, user)
+
+    if user.program_id:
+        program = db.query(models.Program).filter(models.Program.id == user.program_id).first()
+        department = db.query(models.Department).filter(
+            models.Department.id == program.department_id,
+        ).first() if program else None
+        if department and (campus_id is None or department.campus_id == campus_id):
+            return department
+
+    if department_name:
+        department_query = db.query(models.Department).filter(
+            func.lower(models.Department.name) == department_name.lower(),
+        )
+        if campus_id is not None:
+            department_query = department_query.filter(models.Department.campus_id == campus_id)
+        department = department_query.first()
+        if department:
+            return department
+
+    return None
+
+
+def serialize_user_profile(db: Session, user: models.User):
+    department = get_user_program_department(db, user)
+    programs = db.query(models.Program).filter(
+        models.Program.department_id == department.id,
+    ).order_by(models.Program.name.asc()).all() if department else []
+    program_ids = {program.id for program in programs}
+    return {
+        "full_name": user.name or "",
+        "department": department.name if department else user.department or "",
+        "program_id": user.program_id if user.program_id in program_ids else None,
+        "programs": [
+            {"id": program.id, "name": program.name, "code": program.code}
+            for program in programs
+        ],
+    }
+
+
+@app.get("/api/user/profile")
+def get_user_profile(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    if str(current_user.role).lower() not in {"faculty", "student"}:
+        raise HTTPException(status_code=403, detail="Profile program settings are not available for this role.")
+    return serialize_user_profile(db, current_user)
+
+
+@app.put("/api/user/profile")
+def update_user_profile(payload: UserProfileUpdateRequest, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    if str(current_user.role).lower() not in {"faculty", "student"}:
+        raise HTTPException(status_code=403, detail="Profile program settings are not available for this role.")
+    department = get_user_program_department(db, current_user)
+    if not department:
+        raise HTTPException(status_code=422, detail="Your account must have a department assigned before selecting a program.")
+
+    program = db.query(models.Program).filter(
+        models.Program.id == payload.program_id,
+        models.Program.department_id == department.id,
+    ).first()
+    if not program:
+        raise HTTPException(status_code=422, detail="Select a program from your department.")
+
+    current_user.name = payload.full_name
+    current_user.department = department.name
+    current_user.program_id = program.id
+    db.commit()
+    db.refresh(current_user)
+    log_activity(db, "User Profile Updated", f"User {current_user.id} updated their profile and program assignment.", "account", user_id=current_user.id)
+    return serialize_user_profile(db, current_user)
 
 @app.put("/api/departments/{department_id}/dean")
 def assign_department_dean(department_id: int, payload: LeadershipAssignmentRequest, db: Session = Depends(get_db), admin: models.User = Depends(require_admin)):
@@ -3312,15 +3527,30 @@ def delete_department(department_id: int, db: Session = Depends(get_db), admin: 
 
 
 # --- NEW ROUTE: MANUAL SUBJECT CREATION ---
+def _subject_name_conflict(db, name: str, department_id: int | None, program_id: int | None, exclude_id: int | None = None):
+    query = db.query(models.Subject).filter(
+        func.lower(models.Subject.name) == name.strip().lower(),
+        models.Subject.archived.is_(False),
+    )
+    if program_id is not None:
+        query = query.filter(models.Subject.program_id == program_id)
+    elif department_id is not None:
+        query = query.filter(
+            models.Subject.program_id.is_(None),
+            models.Subject.department_id == department_id,
+        )
+    else:
+        query = query.filter(
+            models.Subject.program_id.is_(None),
+            models.Subject.department_id.is_(None),
+        )
+    if exclude_id is not None:
+        query = query.filter(models.Subject.id != exclude_id)
+    return query.first()
+
+
 @app.post("/api/subjects", status_code=201)
 def create_subject_manually(payload: SubjectCreateRequest, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    existing_subject = db.query(models.Subject).filter(
-        func.lower(models.Subject.name) == payload.name.strip().lower()
-    ).first()
-    
-    if existing_subject:
-        raise HTTPException(status_code=400, detail="A subject with this name already exists.")
-
     if payload.department_id is not None:
         department = db.query(models.Department).filter(models.Department.id == payload.department_id).first()
         if not department:
@@ -3336,6 +3566,9 @@ def create_subject_manually(payload: SubjectCreateRequest, db: Session = Depends
         if department_id is not None and program.department_id != department_id:
             raise HTTPException(status_code=400, detail="Program does not belong to the selected department.")
         department_id = program.department_id
+
+    if _subject_name_conflict(db, payload.name, department_id, payload.program_id):
+        raise HTTPException(status_code=400, detail="A subject with this name already exists in the selected program or department.")
 
     role = str(current_user.role).lower()
     if role in {"faculty", "student"}:
@@ -3394,13 +3627,6 @@ def update_subject(subject_id: int, payload: SubjectCreateRequest, db: Session =
     normalized_name = payload.name.strip()
     normalized_code = payload.code.strip() if payload.code else None
 
-    duplicate = db.query(models.Subject).filter(
-        func.lower(models.Subject.name) == normalized_name.lower(),
-        models.Subject.id != subject_id,
-    ).first()
-    if duplicate:
-        raise HTTPException(status_code=400, detail="A subject with this name already exists.")
-
     if payload.department_id is not None:
         dept = db.query(models.Department).filter(models.Department.id == payload.department_id).first()
         if not dept:
@@ -3434,6 +3660,15 @@ def update_subject(subject_id: int, payload: SubjectCreateRequest, db: Session =
             if not target_department or user_campus_id(db, current_user) != target_department.campus_id:
                 raise HTTPException(status_code=403, detail="You can only assign subjects within your assigned campus.")
 
+    if _subject_name_conflict(
+        db,
+        normalized_name,
+        subject.department_id,
+        subject.program_id,
+        exclude_id=subject_id,
+    ):
+        raise HTTPException(status_code=400, detail="A subject with this name already exists in the selected program or department.")
+
     subject.name = normalized_name
     subject.code = normalized_code
     db.commit()
@@ -3456,8 +3691,16 @@ def delete_subject(subject_id: int, user_id: int = None, db: Session = Depends(g
         raise HTTPException(status_code=404, detail="Subject not found.")
     role = str(current_user.role).lower()
     if role in {"faculty", "student"}:
-        if subject.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="You can only delete your own subjects.")
+        assert_subject_access(db, current_user, subject)
+        hidden_subject = db.query(models.UserHiddenSubject).filter(
+            models.UserHiddenSubject.user_id == current_user.id,
+            models.UserHiddenSubject.subject_id == subject.id,
+        ).first()
+        if not hidden_subject:
+            db.add(models.UserHiddenSubject(user_id=current_user.id, subject_id=subject.id))
+        db.commit()
+        log_activity(db, "Subject Removed", f"User {current_user.id} removed subject '{subject.name}' from their Question Bank.", "academic", user_id=current_user.id)
+        return {"message": "Subject removed from your Question Bank."}
     elif role in {"campus_admin", "super_admin"}:
         department = db.query(models.Department).filter(models.Department.id == subject.department_id).first()
         assert_campus_access(current_user, department.campus_id if department else None)
@@ -3502,6 +3745,9 @@ def permanently_delete_subject(subject_id: int, user_id: int = None, db: Session
         db.query(models.TableOfSpecification).filter(models.TableOfSpecification.upload_id.in_(upload_ids)).delete(synchronize_session=False)
         db.query(models.UploadedFile).filter(models.UploadedFile.id.in_(upload_ids)).delete(synchronize_session=False)
 
+    db.query(models.UserHiddenSubject).filter(
+        models.UserHiddenSubject.subject_id == subject_id,
+    ).delete(synchronize_session=False)
     db.delete(subject)
     db.commit()
     log_activity(db, "Subject Permanently Deleted", f"Permanently deleted subject '{subject_name}'.", "delete", user_id=current_user.id)
@@ -3556,13 +3802,24 @@ def get_recycle_bin(user_id: int = None, db: Session = Depends(get_db), current_
 
 @app.post("/api/recycle-bin/subjects/{subject_id}/restore")
 def restore_subject(subject_id: int, user_id: int = None, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    query = db.query(models.Subject).filter(
-        models.Subject.id == subject_id,
-        models.Subject.archived.is_(True),
-    )
-    subject = query.first()
+    subject = db.query(models.Subject).filter(models.Subject.id == subject_id).first()
     if not subject:
         raise HTTPException(status_code=404, detail="Subject not found.")
+    role = str(current_user.role).lower()
+    if role in {"faculty", "student"}:
+        hidden_subject = db.query(models.UserHiddenSubject).filter(
+            models.UserHiddenSubject.user_id == current_user.id,
+            models.UserHiddenSubject.subject_id == subject.id,
+        ).first()
+        if subject.archived or not hidden_subject:
+            raise HTTPException(status_code=404, detail="Removed subject not found.")
+        db.delete(hidden_subject)
+        db.commit()
+        db.refresh(subject)
+        log_activity(db, "Subject Restored", f"User {current_user.id} restored subject '{subject.name}' to their Question Bank.", "academic", user_id=current_user.id)
+        return subject
+    if not subject.archived:
+        raise HTTPException(status_code=404, detail="Archived subject not found.")
     assert_subject_access(db, current_user, subject)
     subject.archived = False
     db.commit()
@@ -3735,6 +3992,11 @@ def get_subjects(
     scoped_user_id = None
     scoped_subject_ids = None
     scoped_program_faculty_ids = None
+    if role in {"faculty", "student"}:
+        hidden_subject_ids = db.query(models.UserHiddenSubject.subject_id).filter(
+            models.UserHiddenSubject.user_id == current_user.id,
+        )
+        query = query.filter(~models.Subject.id.in_(hidden_subject_ids))
     if role == "campus_admin":
         campus_id = visible_campus_id(current_user)
         department_ids = [row[0] for row in db.query(models.Department.id).filter(models.Department.campus_id == campus_id).all()]
@@ -3743,7 +4005,10 @@ def get_subjects(
             target_program = db.query(models.Program).filter(models.Program.id == program_id).first()
             if target_program and target_program.department_id in department_ids:
                 scoped_program_faculty_ids, program_subject_ids = program_subject_scope(db, program_id)
-                query = query.filter(models.Subject.id.in_(program_subject_ids))
+                query = query.filter(
+                    models.Subject.id.in_(program_subject_ids),
+                    models.Subject.program_id == program_id,
+                )
             else:
                 raise HTTPException(status_code=404, detail="Program not found in this campus.")
         else:
@@ -3753,7 +4018,10 @@ def get_subjects(
         if not db.query(models.Program.id).filter(models.Program.id == program_id).first():
             raise HTTPException(status_code=404, detail="Program not found.")
         scoped_program_faculty_ids, program_subject_ids = program_subject_scope(db, program_id)
-        query = query.filter(models.Subject.id.in_(program_subject_ids))
+        query = query.filter(
+            models.Subject.id.in_(program_subject_ids),
+            models.Subject.program_id == program_id,
+        )
         scoped_subject_ids = [row[0] for row in query.with_entities(models.Subject.id).all()]
     elif role not in {"super_admin"} and (role not in {"faculty", "student"} or user_id is not None):
         scoped_user_id = current_user.id
@@ -3881,6 +4149,14 @@ def get_questions(
         ),
     )
     role = str(current_user.role).lower()
+    if role in {"faculty", "student"}:
+        hidden_subject_ids = db.query(models.UserHiddenSubject.subject_id).filter(
+            models.UserHiddenSubject.user_id == current_user.id,
+        )
+        query = query.filter(or_(
+            models.GeneratedQuestion.subject_id.is_(None),
+            ~models.GeneratedQuestion.subject_id.in_(hidden_subject_ids),
+        ))
     if role in {"campus_admin", "super_admin"} and program_id is not None:
         target_program = db.query(models.Program).filter(models.Program.id == program_id).first()
         if not target_program:
@@ -4616,6 +4892,8 @@ def export_question_bank_tos(
         department=leadership["department_name"],
         dean_name=leadership["dean_name"],
         program_chair_name=leadership["program_chair_name"],
+        department_code=leadership["department_code"],
+        program_code=leadership["program_code"],
     )
     stream = io.BytesIO()
     workbook.save(stream)
@@ -4653,7 +4931,6 @@ def export_question_set(
     for question in questions:
         assert_question_access(db, current_user, question)
     user_id = current_user.id
-    pythoncom.CoInitialize()
     try:
         normalized_questions = [type("QuestionLike", (), {
             "question": question.question or "",
@@ -4686,8 +4963,6 @@ def export_question_set(
     except Exception as exc:
         log_activity(db, "Question Set Export Failed", str(exc), "export", status="error", user_id=user_id)
         raise HTTPException(status_code=500, detail=str(exc))
-    finally:
-        pythoncom.CoUninitialize()
 
 @app.post("/api/questions/export")
 def export_assessment(
@@ -4704,7 +4979,6 @@ def export_assessment(
     current_user: models.User = Depends(get_current_user),
 ):
     user_id = current_user.id
-    pythoncom.CoInitialize()
     try:
         selected_ids = []
         for item in (question_ids or "").split(","):
@@ -4766,8 +5040,6 @@ def export_assessment(
     except Exception as e:
         log_activity(db, "Assessment Export Failed", str(e), "export", status="error", user_id=user_id)
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        pythoncom.CoUninitialize()
 
 app.include_router(questions.router)
 app.include_router(assessment.router)

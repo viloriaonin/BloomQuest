@@ -478,11 +478,18 @@ const QuestionBank = () => {
 
   const handleDeleteSubject = async (event, subject) => {
     event.stopPropagation();
-    if (!(await showConfirm(`Delete the subject "${subject.name}"?`, 'Delete Subject'))) return;
+    if (!(await showConfirm(`Remove "${subject.name}" from your Question Bank? Your generated questions and uploaded files will be kept.`, 'Remove Subject'))) return;
     try {
       const res = await fetch(`${API_URL}/api/subjects/${subject.id}?user_id=${encodeURIComponent(localStorage.getItem('user_id') || '')}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Could not delete subject');
+      if (!res.ok) {
+        const responseError = await res.json().catch(() => ({}));
+        throw new Error(responseError.detail || 'Could not delete subject');
+      }
       setSubjects((current) => current.filter((item) => item.id !== subject.id));
+      if (String(selectedSubject) === String(subject.id)) {
+        setSelectedSubject('');
+        localStorage.removeItem('bloomquest-question-bank-subject');
+      }
       if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
       setDeletedSubject(subject);
       undoTimerRef.current = setTimeout(() => setDeletedSubject(null), 5000);
@@ -881,7 +888,7 @@ const QuestionBank = () => {
                     <Icon className="h-8 w-8" style={{ color: theme.iconColor }} />
                     <button
                       type="button"
-                      aria-label={`Delete ${subject.name}`}
+                      aria-label={`Remove ${subject.name} from your Question Bank`}
                       onClick={(event) => handleDeleteSubject(event, subject)}
                       className="absolute right-2 top-2 rounded-md p-1.5 text-slate-500 opacity-0 transition-colors group-hover:opacity-100 hover:!bg-white/70 hover:!text-red-700"
                     >
@@ -926,7 +933,7 @@ const QuestionBank = () => {
 
       {addSubjectOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f172a]/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setAddSubjectOpen(false); }}><form onSubmit={handleAddSubject} className="bq-panel w-full max-w-md border-[#ead8d5] bg-[#fffdfc] p-6 shadow-[0_20px_50px_rgba(15,23,42,0.18)]"><h2 className="text-lg font-bold text-slate-900">Add Subject</h2><label className="mt-5 block text-sm font-semibold text-slate-700">Subject name<input autoFocus value={newSubjectName} onChange={(event) => setNewSubjectName(event.target.value)} placeholder="e.g. Software Engineering" className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 font-normal outline-none focus:border-[#B4454A] focus:ring-2 focus:ring-[#B4454A]/15" /></label><label className="mt-4 block text-sm font-semibold text-slate-700">Subject code <span className="font-normal text-slate-400">(optional)</span><input value={newSubjectCode} onChange={(event) => setNewSubjectCode(event.target.value)} placeholder="e.g. IT 332" className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 font-normal outline-none focus:border-[#B4454A] focus:ring-2 focus:ring-[#B4454A]/15" /></label><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setAddSubjectOpen(false)} className="bq-secondary-button">Cancel</button><button type="submit" disabled={!newSubjectName.trim() || addingSubject} className="bq-primary-button disabled:cursor-not-allowed disabled:bg-slate-300">{addingSubject ? 'Adding...' : 'Add Subject'}</button></div></form></div>}
 
-      {deletedSubject && <div className="fixed bottom-5 right-5 z-40 flex items-center gap-4 rounded-lg bg-slate-900 px-4 py-3 text-sm text-white shadow-xl"><span>Subject deleted</span><button type="button" onClick={undoDeleteSubject} className="font-bold text-emerald-300 hover:text-emerald-200">Undo</button></div>}
+      {deletedSubject && <div className="fixed bottom-5 right-5 z-40 flex items-center gap-4 rounded-lg bg-slate-900 px-4 py-3 text-sm text-white shadow-xl"><span>Subject removed from your Question Bank</span><button type="button" onClick={undoDeleteSubject} className="font-bold text-emerald-300 hover:text-emerald-200">Undo</button></div>}
 
       {subjectId && <button type="button" onClick={() => navigate('/question-bank')} className="mb-4 text-sm font-semibold text-[#B4454A] hover:text-[#8f3439]">&larr; Back to subjects</button>}
 

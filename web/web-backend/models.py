@@ -53,7 +53,7 @@ class Program(Base):
 class Subject(Base):
     __tablename__ = "subjects"
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True)
+    name = Column(String, index=True)
     code = Column(String, nullable=True)
     description = Column(Text, nullable=True)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
@@ -63,6 +63,22 @@ class Subject(Base):
     archived = Column(Boolean, nullable=False, default=False, server_default="false")
     department = relationship("Department")
     program = relationship("Program")
+    __table_args__ = (
+        Index(
+            "uq_subjects_active_scope_name",
+            func.coalesce(program_id, -department_id, 0),
+            func.lower(name),
+            unique=True,
+            postgresql_where=archived.is_(False),
+            sqlite_where=archived.is_(False),
+        ),
+    )
+
+class UserHiddenSubject(Base):
+    __tablename__ = "user_hidden_subjects"
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    subject_id = Column(Integer, ForeignKey("subjects.id"), primary_key=True)
+    created_at = Column(DateTime, server_default=func.now())
 
 class UploadedFile(Base):
     __tablename__ = "uploaded_files"

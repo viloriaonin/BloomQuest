@@ -85,6 +85,10 @@ const UserToolsPage = ({ section }) => {
   };
 
   const archivedKey = (item) => `${item.itemType}:${item.id}`;
+  const allArchivedItemsSelected = archivedItems.length > 0 && archivedItems.every((item) => selectedArchivedIds.includes(archivedKey(item)));
+  const toggleAllArchivedItems = () => setSelectedArchivedIds(
+    allArchivedItemsSelected ? [] : archivedItems.map(archivedKey),
+  );
 
   const permanentlyDeleteSelected = async () => {
     const selectedItems = archivedItems.filter((item) => selectedArchivedIds.includes(archivedKey(item)));
@@ -226,7 +230,30 @@ const UserToolsPage = ({ section }) => {
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">{subjects.filter((subject) => `${subject.name} ${subject.code || ""}`.toLowerCase().includes(query.toLowerCase())).map((subject) => <div key={subject.id} className="bq-panel p-5"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#B4454A]/10 text-[#B4454A]"><BookOpen size={18} /></div><h2 className="mt-4 font-semibold text-slate-900">{subject.name}</h2><p className="mt-1 text-sm text-slate-500">{subject.code || "No course code"}</p><button type="button" onClick={() => navigate("/question-bank")} className="mt-4 text-sm font-semibold text-[#B4454A]">Open question bank <ArrowRight className="ml-1 inline" size={14} /></button></div>)}</div>
         ) : section === "notifications" ? <NotificationView notifications={notifications} />
           : section === "status" ? <StatusView status={status} />
-          : section === "recycle" ? (archivedItems.length ? <div className="space-y-6">{selectedArchivedIds.length > 0 && <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3"><span className="text-sm font-semibold text-red-800">{selectedArchivedIds.length} item{selectedArchivedIds.length === 1 ? "" : "s"} selected</span><button type="button" onClick={permanentlyDeleteSelected} className="inline-flex items-center gap-2 rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800"><Trash2 size={15} /> Delete selected permanently</button></div>}{Object.entries(archivedGroups).map(([subjectName, group]) => <section key={subjectName}><div className="mb-3 flex items-center gap-2"><BookOpen size={17} className="text-[#B4454A]" /><h2 className="text-sm font-bold uppercase tracking-[0.14em] text-slate-700">{subjectName}</h2></div><div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">{group.subject && <RecycleCard item={group.subject} onRestore={restoreSubject} checked={selectedArchivedIds.includes(archivedKey(group.subject))} onCheckedChange={(checked) => setSelectedArchivedIds((current) => checked ? [...current, archivedKey(group.subject)] : current.filter((id) => id !== archivedKey(group.subject)))} />}{group.questions.map((item) => <RecycleCard key={item.id} item={item} onRestore={restoreQuestion} checked={selectedArchivedIds.includes(archivedKey(item))} onCheckedChange={(checked) => setSelectedArchivedIds((current) => checked ? [...current, archivedKey(item)] : current.filter((id) => id !== archivedKey(item)))} />)}</div></section>)}</div> : <EmptyState title="Recycle Bin is empty" detail="Deleted subjects and questions will appear here for recovery." action="Open Question Bank" onClick={() => navigate("/question-bank")} />)
+          : section === "recycle" ? (
+            archivedItems.length ? (
+              <div className="space-y-6">
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                  <span className="text-sm font-semibold text-red-800">
+                    {selectedArchivedIds.length > 0
+                      ? `${selectedArchivedIds.length} item${selectedArchivedIds.length === 1 ? "" : "s"} selected`
+                      : `${archivedItems.length} archived item${archivedItems.length === 1 ? "" : "s"}`}
+                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button type="button" onClick={toggleAllArchivedItems} aria-pressed={allArchivedItemsSelected} className="inline-flex items-center rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-red-100">
+                      {allArchivedItemsSelected ? "Clear selection" : "Select all"}
+                    </button>
+                    {selectedArchivedIds.length > 0 && (
+                      <button type="button" onClick={permanentlyDeleteSelected} className="inline-flex items-center gap-2 rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800">
+                        <Trash2 size={15} /> Delete selected permanently
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {Object.entries(archivedGroups).map(([subjectName, group]) => <section key={subjectName}><div className="mb-3 flex items-center gap-2"><BookOpen size={17} className="text-[#B4454A]" /><h2 className="text-sm font-bold uppercase tracking-[0.14em] text-slate-700">{subjectName}</h2></div><div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">{group.subject && <RecycleCard item={group.subject} onRestore={restoreSubject} checked={selectedArchivedIds.includes(archivedKey(group.subject))} onCheckedChange={(checked) => setSelectedArchivedIds((current) => checked ? [...current, archivedKey(group.subject)] : current.filter((id) => id !== archivedKey(group.subject)))} />}{group.questions.map((item) => <RecycleCard key={item.id} item={item} onRestore={restoreQuestion} checked={selectedArchivedIds.includes(archivedKey(item))} onCheckedChange={(checked) => setSelectedArchivedIds((current) => checked ? [...current, archivedKey(item)] : current.filter((id) => id !== archivedKey(item)))} />)}</div></section>)}
+              </div>
+            ) : <EmptyState title="Recycle Bin is empty" detail="Deleted items will appear here for recovery." action="Open Question Bank" onClick={() => navigate("/question-bank")} />
+          )
           : <div className="grid gap-4 md:grid-cols-3">{(cards[section] || cards.assessments).map(([title, detail, path, action]) => <div key={title} className="bq-panel p-5"><h2 className="font-semibold text-slate-900">{title}</h2><p className="mt-2 min-h-12 text-sm leading-6 text-slate-500">{detail}</p><button type="button" onClick={() => navigate(path)} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[#B4454A]">{action} <ArrowRight size={14} /></button></div>)}</div>}
       </div>
     </div>
@@ -242,19 +269,34 @@ const DownloadsView = ({ downloads, downloadTab, setDownloadTab, groupedDownload
         <h1 className="bq-page-title">Downloads</h1>
         <p className="bq-page-description">Find every test and Table of Specifications you have downloaded.</p>
       </div>
-      {downloads.length > 0 && selectedDownloadIds.length > 0 && (
-        <div className="mb-4 flex justify-end">
-          <button type="button" onClick={deleteSelectedDownloads} className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700">
-            <Trash2 size={15} /> Delete selected
-          </button>
-        </div>
-      )}
       {downloads.length ? (
         <div>
           {downloadError && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{downloadError}</div>}
-          <div className="mb-5 flex overflow-x-auto border-b border-slate-200" role="tablist" aria-label="Downloaded files">
-            <button type="button" role="tab" aria-selected={downloadTab === "tests"} onClick={() => setDownloadTab("tests")} className={`flex min-w-max items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${downloadTab === "tests" ? "border-[#B4454A] text-[#B4454A]" : "border-transparent text-slate-500"}`}><FileQuestion size={16} />Tests <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{groupedDownloads.tests.length}</span></button>
-            <button type="button" role="tab" aria-selected={downloadTab === "tos"} onClick={() => setDownloadTab("tos")} className={`flex min-w-max items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${downloadTab === "tos" ? "border-[#B4454A] text-[#B4454A]" : "border-transparent text-slate-500"}`}><FileSpreadsheet size={16} />Tables of Specification <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{groupedDownloads.tos.length}</span></button>
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200">
+            <div className="flex min-w-0 overflow-x-auto" role="tablist" aria-label="Downloaded files">
+              <button type="button" role="tab" aria-selected={downloadTab === "tests"} onClick={() => setDownloadTab("tests")} className={`flex min-w-max items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${downloadTab === "tests" ? "border-[#B4454A] text-[#B4454A]" : "border-transparent text-slate-500"}`}><FileQuestion size={16} />Tests <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{groupedDownloads.tests.length}</span></button>
+              <button type="button" role="tab" aria-selected={downloadTab === "tos"} onClick={() => setDownloadTab("tos")} className={`flex min-w-max items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${downloadTab === "tos" ? "border-[#B4454A] text-[#B4454A]" : "border-transparent text-slate-500"}`}><FileSpreadsheet size={16} />Tables of Specification <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{groupedDownloads.tos.length}</span></button>
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-2 pb-1">
+              {selectedDownloadIds.length > 0 && <span className="text-xs font-semibold text-slate-500">{selectedDownloadIds.length} selected</span>}
+              <button
+                type="button"
+                aria-pressed={downloads.every((item) => selectedDownloadIds.includes(item.id))}
+                onClick={() => setSelectedDownloadIds(
+                  downloads.every((item) => selectedDownloadIds.includes(item.id))
+                    ? []
+                    : downloads.map((item) => item.id),
+                )}
+                className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                {downloads.every((item) => selectedDownloadIds.includes(item.id)) ? "Clear selection" : "Select all"}
+              </button>
+              {selectedDownloadIds.length > 0 && (
+                <button type="button" onClick={deleteSelectedDownloads} className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700">
+                  <Trash2 size={15} /> Delete selected
+                </button>
+              )}
+            </div>
           </div>
           {groupedDownloads[downloadTab].length ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

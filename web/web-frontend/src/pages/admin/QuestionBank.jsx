@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { usePopup } from "../../components/PopupProvider";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, BookOpen, CalendarDays, ChevronRight, FileText, FlaskConical, Search, Shield, Sigma, UserRound } from "lucide-react";
+import { ArrowLeft, BookOpen, Building2, CalendarDays, ChevronRight, FileText, FlaskConical, Search, Shield, Sigma, UserRound } from "lucide-react";
 
 const API_URL = "http://localhost:8000";
 
@@ -1009,6 +1009,7 @@ void LegacyQuestionBankContent;
 
 const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
   const navigate = useNavigate();
+  const isSuperAdmin = (localStorage.getItem("role") || "").toLowerCase() === "super_admin";
   const [hierarchy, setHierarchy] = useState({ campuses: [] });
   const [allSubjects, setAllSubjects] = useState([]);
   const [subjects, setSubjects] = useState([]);
@@ -1142,13 +1143,51 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
         <div className="flex flex-col justify-between gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-end">
           <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#B4454A]">Faculty collections</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{selectedSubject ? selectedSubject.name : selectedProgram ? selectedProgram.name : selectedDepartment ? selectedDepartment.name : selectedCampus ? selectedCampus.name : "Question Bank"}</h2><p className="mt-1 text-sm text-slate-500">Browse questions through the academic structure.</p></div>
         </div>
-        <button type="button" onClick={goBack} className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-[#B4454A] px-4 py-2 text-sm font-semibold text-[#B4454A] transition hover:bg-[#B4454A] hover:text-white"><ArrowLeft size={15} /> Back</button>
+        {(!isSuperAdmin || selection.campusId) && <button type="button" onClick={goBack} className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-[#B4454A] px-4 py-2 text-sm font-semibold text-[#B4454A] transition hover:bg-[#B4454A] hover:text-white"><ArrowLeft size={15} /> Back</button>}
       </section>
 
       {selectedSubject && <div className="flex justify-end"><label className="text-xs font-semibold text-slate-600">Bloom level <select value={bloomLevel} onChange={(event) => setBloomLevel(event.target.value)} className="bq-field ml-2 py-2 text-sm"><option>All levels</option>{BLOOMS_LEVELS.map((level) => <option key={level.name}>{level.name}</option>)}</select></label></div>}
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">Loading academic structure...</div> : !selectedCampus ? (
-        <section><div className="mb-3 flex items-end justify-between"><div><h3 className="text-lg font-semibold text-slate-900">Choose a campus</h3></div><span className="text-xs text-slate-500">{hierarchy.campuses.length} campus{hierarchy.campuses.length === 1 ? "" : "es"}</span></div><div className="space-y-3">{hierarchy.campuses.map((campus) => <ListItem key={campus.id} icon={Shield} title={campus.name} code={campus.code} detail={`${campus.departments.length} department${campus.departments.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: campus.id, departmentId: null, programId: null, subjectId: null })} />)}</div></section>
+        <section>
+          <div className="mb-3 flex items-end justify-between">
+            <h3 className="text-lg font-semibold text-slate-900">Choose a campus</h3>
+            <span className="text-xs text-slate-500">{hierarchy.campuses.length} campus{hierarchy.campuses.length === 1 ? "" : "es"}</span>
+          </div>
+          {isSuperAdmin ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {hierarchy.campuses.map((campus) => (
+                <button
+                  key={campus.id}
+                  type="button"
+                  onClick={() => choose({ campusId: campus.id, departmentId: null, programId: null, subjectId: null })}
+                  className="bq-panel group rounded-xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                  style={{ background: "var(--admin-panel, #14161c)", borderColor: "var(--admin-border, #262a34)", color: "var(--admin-text, #ecedef)" }}
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--bq-accent-soft)", color: "var(--bq-accent)" }}>
+                      <Building2 size={20} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-start justify-between gap-2">
+                        <span className="font-semibold text-slate-900">{campus.name}</span>
+                        <ChevronRight size={17} className="mt-1 shrink-0 text-slate-300 transition group-hover:text-[#B4454A]" />
+                      </span>
+                      {campus.code && <span className="mt-1 inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">{campus.code}</span>}
+                      <span className="mt-2 block text-xs text-slate-500">{campus.departments.length} department{campus.departments.length === 1 ? "" : "s"}</span>
+                    </span>
+                  </div>
+                  <span className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
+                    <span>Campus academic structure</span>
+                    <span className="font-semibold text-[#B4454A]">View campus</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-3">{hierarchy.campuses.map((campus) => <ListItem key={campus.id} icon={Shield} title={campus.name} code={campus.code} detail={`${campus.departments.length} department${campus.departments.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: campus.id, departmentId: null, programId: null, subjectId: null })} />)}</div>
+          )}
+        </section>
       ) : !selectedDepartment ? (
         <section><div className="mb-3"><h3 className="text-lg font-semibold text-slate-900">Choose a department</h3></div><div className="space-y-3">{selectedCampus.departments.map((department) => <ListItem key={department.id} icon={FlaskConical} title={department.name} code={department.code} detail={`${department.programs.length} program${department.programs.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: selectedCampus.id, departmentId: department.id, programId: null, subjectId: null })} />)}</div></section>
       ) : !selectedProgram ? (

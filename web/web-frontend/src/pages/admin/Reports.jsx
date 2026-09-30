@@ -46,7 +46,7 @@ async function fetchActivityLog() {
   return Array.isArray(json) ? json : json.data ?? [];
 }
 
-const DEPARTMENTS = ["All Departments", "CICS", "COE", "CAS", "CBA"];
+const ALL_DEPARTMENTS = "All Departments";
 
 const PERIODS = [
   { label: "Last 7 Days", days: 7 },
@@ -86,9 +86,11 @@ function withinPeriod(dateStr, days) {
   return diff <= days;
 }
 
-export const ReportsContent = () => {
+export const ReportsContent = ({ showCampusFilter = false }) => {
   const [period, setPeriod] = useState(PERIODS[1].label); // Last 30 Days
-  const [department, setDepartment] = useState("All Departments");
+  const [department, setDepartment] = useState(ALL_DEPARTMENTS);
+  const [campus, setCampus] = useState("");
+  const [campuses, setCampuses] = useState([]);
   const [activeTab, setActiveTab] = useState("logins");
   const [searchTerm, setSearchTerm] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
@@ -101,6 +103,21 @@ export const ReportsContent = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reloadToken, setReloadToken] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE_URL}/academic-hierarchy`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+    }).then(async (response) => {
+      if (!response.ok) throw new Error("Could not load campus departments.");
+      return response.json();
+    }).then((hierarchy) => {
+      if (!cancelled) setCampuses(Array.isArray(hierarchy?.campuses) ? hierarchy.campuses : []);
+    }).catch((err) => {
+      if (!cancelled) setError(err.message || "Could not load campus departments.");
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -124,13 +141,21 @@ export const ReportsContent = () => {
     };
   }, [reloadToken]);
 
+  const departmentOptions = useMemo(() => {
+    const visibleCampuses = campuses.filter((item) => !campus || String(item.id) === campus);
+    const departmentNames = [...new Set(visibleCampuses.flatMap((item) => item.departments || []).map((item) => item.name).filter(Boolean))]
+      .sort((first, second) => first.localeCompare(second));
+    return [ALL_DEPARTMENTS, ...departmentNames];
+  }, [campuses, campus]);
+
   const filteredLog = useMemo(() => {
     const selectedPeriod = PERIODS.find((p) => p.label === period);
     return activityLog.filter((row) => {
       const isAdminRow = String(row.role ?? "").toLowerCase() === "admin" ||
         String(row.name ?? "").toLowerCase() === "system";
       const matchesPeriod = withinPeriod(row.date, selectedPeriod.days);
-      const matchesDept = department === "All Departments" || row.dept === department;
+      const matchesDept = department === ALL_DEPARTMENTS || row.dept === department;
+      const matchesCampus = !showCampusFilter || !campus || String(row.campus_id || "") === campus;
       const categories = {
         logins: ["login"],
         generated: ["generate", "question", "question_set", "classify"],
@@ -140,9 +165,9 @@ export const ReportsContent = () => {
       const deleted = String(row.type || "").toLowerCase() === "delete" || /\bdeleted?\b|permanently removed/i.test(`${row.action || ""} ${row.detail || ""}`);
       const matchesTab = activeTab === "deleted" ? deleted : categories[activeTab]?.includes(rowType);
       const text = `${row.name || ""} ${row.action || ""} ${row.detail || ""}`.toLowerCase();
-      return !isAdminRow && matchesPeriod && matchesDept && matchesTab && text.includes(searchTerm.toLowerCase());
+      return !isAdminRow && matchesPeriod && matchesDept && matchesCampus && matchesTab && text.includes(searchTerm.toLowerCase());
     }).sort((a, b) => new Date(`${b.date} ${b.time}`) - new Date(`${a.date} ${a.time}`));
-  }, [activityLog, period, department, activeTab, searchTerm]);
+  }, [activityLog, period, department, campus, showCampusFilter, activeTab, searchTerm]);
 
   const currentPage = pageByTab[activeTab] || 1;
   const pageCount = Math.max(1, Math.ceil(filteredLog.length / pageSize));
@@ -150,7 +175,7 @@ export const ReportsContent = () => {
 
   useEffect(() => {
     setPageByTab((current) => ({ ...current, [activeTab]: 1 }));
-  }, [activeTab, period, department, searchTerm]);
+  }, [activeTab, period, department, campus, searchTerm]);
 
   useEffect(() => {
     if (currentPage > pageCount) {
@@ -170,7 +195,13 @@ export const ReportsContent = () => {
     return tab.types.includes(String(row.type || "").toLowerCase());
   };
 
-  const countForTab = (tab) => activityLog.filter((row) => matchesReportTab(row, tab)).length;
+  const countForTab = (tab) => activityLog.filter((row) => {
+    const matchesCampus = !showCampusFilter || !campus || String(row.campus_id || "") === campus;
+    const matchesDept = department === ALL_DEPARTMENTS || row.dept === department;
+    const selectedPeriod = PERIODS.find((item) => item.label === period);
+    const text = `${row.name || ""} ${row.action || ""} ${row.detail || ""}`.toLowerCase();
+    return matchesCampus && matchesDept && withinPeriod(row.date, selectedPeriod.days) && text.includes(searchTerm.toLowerCase()) && matchesReportTab(row, tab);
+  }).length;
 
   const rowsForExport = () => {
     const selected = reportTabs.filter((tab) => exportTabs.includes(tab.id));
@@ -224,7 +255,7 @@ export const ReportsContent = () => {
     <div className="space-y-6">
       <div className="rounded-3xl bg-white border border-gray-200 p-6 shadow-sm flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Reports</h2>
+          <h2 className="text-xl font-bold text-gray-900">{showCampusFilter ? "Activity Logs" : "Reports"}</h2>
           <p className="mt-2 text-sm text-gray-600">Filter and export faculty activity, question contributions, and assessment trends.</p>
         </div>
         <button
@@ -242,6 +273,14 @@ export const ReportsContent = () => {
       {/* Filters */}
       <div className="rounded-3xl bg-white border border-gray-200 p-6 shadow-sm">
         <div className="grid gap-4 md:grid-cols-3">
+          {showCampusFilter && (
+            <FilterSelect
+              label="Campus"
+              value={campus}
+              onChange={(value) => { setCampus(value); setDepartment(ALL_DEPARTMENTS); }}
+              options={[{ value: "", label: "All Campuses" }, ...campuses.map((item) => ({ value: String(item.id), label: item.name }))]}
+            />
+          )}
           <FilterSelect
             label="Period"
             value={period}
@@ -252,7 +291,7 @@ export const ReportsContent = () => {
             label="Department"
             value={department}
             onChange={setDepartment}
-            options={DEPARTMENTS}
+            options={departmentOptions}
           />
         </div>
       </div>
@@ -306,16 +345,19 @@ export const ReportsContent = () => {
 
 // Small reusable filter dropdown, styled to match the existing pill filter look.
 const FilterSelect = ({ label, value, onChange, options }) => (
-  <div className="rounded-3xl border border-gray-200 bg-gray-50 px-4 py-3 flex items-center justify-between gap-3 text-sm text-gray-600">
-    <span>{label}</span>
+  <div className="flex min-w-0 items-center justify-between gap-3 rounded-3xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+    <span className="shrink-0">{label}</span>
     <select
+      aria-label={label}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-gray-700 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-red-200 cursor-pointer"
+      className="min-w-0 max-w-full flex-1 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-200 cursor-pointer"
     >
-      {options.map((opt) => (
-        <option key={opt} value={opt}>{opt}</option>
-      ))}
+      {options.map((option) => {
+        const optionValue = typeof option === "string" ? option : option.value;
+        const optionLabel = typeof option === "string" ? option : option.label;
+        return <option key={optionValue} value={optionValue}>{optionLabel}</option>;
+      })}
     </select>
   </div>
 );

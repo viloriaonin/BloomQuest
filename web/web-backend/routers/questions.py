@@ -1398,6 +1398,8 @@ async def confirm_generation(
         department=leadership["department_name"],
         dean_name=leadership["dean_name"],
         program_chair_name=leadership["program_chair_name"],
+        department_code=leadership["department_code"],
+        program_code=leadership["program_code"],
     )
     stream = io.BytesIO()
     workbook.save(stream)
@@ -1488,7 +1490,9 @@ def _resolve_department_leadership(db, creator=None, subject=None, department_na
 
     return {
         "department_name": department.name if department else department_value,
+        "department_code": department.code if department else "",
         "dean_name": dean_name,
+        "program_code": program.code if program else "",
         "program_chair_name": program_chair_name,
     }
 
@@ -1557,6 +1561,8 @@ async def export_institutional_tos(
                 department=leadership["department_name"],
                 dean_name=leadership["dean_name"],
                 program_chair_name=leadership["program_chair_name"],
+                department_code=leadership["department_code"],
+                program_code=leadership["program_code"],
             )
             stream = io.BytesIO()
             workbook.save(stream)
@@ -1580,6 +1586,8 @@ async def export_institutional_tos(
                 department=leadership["department_name"],
                 dean_name=leadership["dean_name"],
                 program_chair_name=leadership["program_chair_name"],
+                department_code=leadership["department_code"],
+                program_code=leadership["program_code"],
             )
             stream = io.BytesIO()
             workbook.save(stream)

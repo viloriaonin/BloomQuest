@@ -814,6 +814,8 @@ def generate_tos_from_excel_template(
     department="",
     dean_name="",
     program_chair_name="",
+    department_code="",
+    program_code="",
 ):
     wb = _load_tos_template_workbook()
     ws = wb.active
@@ -894,8 +896,8 @@ def generate_tos_from_excel_template(
     ws.cell(row=signature_row + 2, column=2, value=instructor_name or "Faculty Instructor")
     ws.cell(row=signature_row + 2, column=9, value=program_chair_name or "")
     ws.cell(row=signature_row + 2, column=15, value=dean_name or "")
-    ws.cell(row=signature_row + 3, column=9, value="Program Chair")
-    ws.cell(row=signature_row + 3, column=15, value="Dean")
+    ws.cell(row=signature_row + 3, column=9, value=f"Program Chair, {program_code}" if program_code else "Program Chair")
+    ws.cell(row=signature_row + 3, column=15, value=f"Dean, {department_code}" if department_code else "Dean")
 
     # The template's column widths are inconsistent -- some %-columns (e.g.
     # Understand, Apply) are a hair too narrow for a formatted value like

@@ -18,8 +18,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 import models
 from database import Base
 from database import get_db
-from main import app, assert_question_access, validate_account_request_scope, create_department, DepartmentCreateRequest, get_subjects, get_faculty_program_subjects, get_questions, get_super_admin_overview, get_super_admin_ai_usage, get_question_sets, export_question_bank_tos, upload_files
+from main import app, assert_question_access, validate_account_request_scope, create_department, create_subject_manually, update_user_department, get_admin_user_overview, DepartmentCreateRequest, UserDepartmentUpdateRequest, SubjectCreateRequest, get_subjects, get_faculty_program_subjects, get_questions, get_super_admin_overview, get_super_admin_ai_usage, get_question_sets, export_question_bank_tos, upload_files
 from routers.questions import _assert_upload_access, _resolve_department_leadership, upload_and_analyze_syllabus
+from routers.activity import get_activity_logs
 from security import assert_campus_access, assert_user_subject_campus_access, get_current_user, require_admin, require_campus_admin, require_super_admin, visible_campus_id
 
 
@@ -84,6 +85,103 @@ def test_faculty_cannot_use_admin_campus_scope():
     assert admin_error.value.status_code == 403
     assert campus_error.value.status_code == 403
     assert campus_role_error.value.status_code == 403
+
+
+def test_faculty_removal_hides_shared_subject_only_for_that_user(db_session):
+    from main import delete_subject, restore_subject
+
+    creator = models.User(email="subject-creator@example.com", password="test", role="faculty")
+    remover = models.User(email="subject-remover@example.com", password="test", role="faculty")
+    other_faculty = models.User(email="subject-other@example.com", password="test", role="faculty")
+    db_session.add_all([creator, remover, other_faculty])
+    db_session.flush()
+
+    subject = models.Subject(name="Shared Subject Removal Test", user_id=creator.id)
+    db_session.add(subject)
+    db_session.flush()
+    for faculty in (remover, other_faculty):
+        db_session.add(models.UploadedFile(
+            user_id=faculty.id,
+            subject_id=subject.id,
+            module_filename="module.pdf",
+            syllabus_filename="cis.pdf",
+            module_text="module text",
+            syllabus_text="CIS text",
+        ))
+        db_session.add(models.GeneratedQuestion(
+            subject_id=subject.id,
+            user_id=faculty.id,
+            question=f"Question for {faculty.email}",
+        ))
+    db_session.commit()
+
+    result = delete_subject(subject.id, user_id=remover.id, db=db_session, current_user=remover)
+
+    assert result["message"] == "Subject removed from your Question Bank."
+    assert db_session.query(models.Subject).filter(models.Subject.id == subject.id).one().archived is False
+    assert subject.id not in [item["id"] for item in get_subjects(user_id=remover.id, db=db_session, current_user=remover)]
+    assert subject.id in [item["id"] for item in get_subjects(user_id=other_faculty.id, db=db_session, current_user=other_faculty)]
+    assert get_questions(subject_id=subject.id, user_id=remover.id, db=db_session, current_user=remover) == []
+    assert len(get_questions(subject_id=subject.id, user_id=other_faculty.id, db=db_session, current_user=other_faculty)) == 1
+
+    restore_subject(subject.id, user_id=remover.id, db=db_session, current_user=remover)
+
+    assert subject.id in [item["id"] for item in get_subjects(user_id=remover.id, db=db_session, current_user=remover)]
+    assert db_session.query(models.Subject).filter(models.Subject.id == subject.id).one().archived is False
+
+
+def test_user_profile_program_options_and_updates_stay_in_department(db_session):
+    from main import UserProfileUpdateRequest, get_user_profile, update_user_profile
+
+    campus = models.Campus(name="Profile Settings Campus", code="PROFILE-SETTINGS")
+    db_session.add(campus)
+    db_session.flush()
+    department = models.Department(name="Profile Computing", campus_id=campus.id)
+    other_department = models.Department(name="Profile Engineering", campus_id=campus.id)
+    db_session.add_all([department, other_department])
+    db_session.flush()
+
+    current_program = models.Program(name="Current Program", department_id=department.id)
+    next_program = models.Program(name="Next Program", department_id=department.id)
+    other_program = models.Program(name="Other Department Program", department_id=other_department.id)
+    db_session.add_all([current_program, next_program, other_program])
+    db_session.flush()
+
+    faculty = models.User(
+        email="profile-faculty@example.com",
+        password="test",
+        role="faculty",
+        name="Current Faculty",
+        department="Stale Department Label",
+        campus_id=campus.id,
+        program_id=current_program.id,
+    )
+    db_session.add(faculty)
+    db_session.commit()
+
+    profile = get_user_profile(db=db_session, current_user=faculty)
+
+    assert profile["department"] == department.name
+    assert profile["program_id"] == current_program.id
+    assert {program["id"] for program in profile["programs"]} == {current_program.id, next_program.id}
+
+    updated = update_user_profile(
+        UserProfileUpdateRequest(full_name="Updated Faculty", program_id=next_program.id),
+        db=db_session,
+        current_user=faculty,
+    )
+
+    assert updated["full_name"] == "Updated Faculty"
+    assert updated["program_id"] == next_program.id
+    assert faculty.department == department.name
+    with pytest.raises(HTTPException) as error:
+        update_user_profile(
+            UserProfileUpdateRequest(full_name="Updated Faculty", program_id=other_program.id),
+            db=db_session,
+            current_user=faculty,
+        )
+    assert error.value.status_code == 422
+    assert faculty.program_id == next_program.id
 
 
 def test_question_access_resolves_campus_through_academic_hierarchy(db_session):
@@ -224,16 +322,19 @@ def test_campus_admin_can_list_subjects_by_program_membership(db_session):
     mismatched_campus_faculty = models.User(email="faculty4@example.com", password="secret", role="faculty", campus_id=other_campus.id, program_id=program.id)
     db_session.add_all([faculty, second_faculty, other_faculty, mismatched_campus_faculty])
     db_session.flush()
-    subject = models.Subject(name="Educational Assessment", department_id=department.id)
+    subject = models.Subject(name="Educational Assessment", department_id=department.id, program_id=program.id)
     unrelated_subject = models.Subject(name="Elementary Curriculum", department_id=department.id, user_id=other_faculty.id)
-    db_session.add_all([subject, unrelated_subject])
+    department_only_subject = models.Subject(name="Department-wide Subject", department_id=department.id)
+    db_session.add_all([subject, unrelated_subject, department_only_subject])
+    db_session.flush()
     db_session.flush()
     first_question = models.GeneratedQuestion(subject_id=subject.id, user_id=faculty.id, question="First faculty question")
     second_question = models.GeneratedQuestion(subject_id=subject.id, user_id=second_faculty.id, question="Second faculty question")
     additional_question = models.GeneratedQuestion(subject_id=subject.id, user_id=other_faculty.id, question="Additional question in the same subject")
     mismatched_campus_question = models.GeneratedQuestion(subject_id=subject.id, user_id=mismatched_campus_faculty.id, question="Question from another campus")
     unrelated_question = models.GeneratedQuestion(subject_id=unrelated_subject.id, user_id=other_faculty.id, question="Other program question")
-    db_session.add_all([first_question, second_question, additional_question, mismatched_campus_question, unrelated_question])
+    department_only_question = models.GeneratedQuestion(subject_id=department_only_subject.id, user_id=faculty.id, question="Department-only question")
+    db_session.add_all([first_question, second_question, additional_question, mismatched_campus_question, unrelated_question, department_only_question])
     db_session.commit()
 
     admin = models.User(email="admin@example.com", password="secret", role="campus_admin", campus_id=campus.id)
@@ -250,9 +351,151 @@ def test_campus_admin_can_list_subjects_by_program_membership(db_session):
     assert any(item["name"] == "Educational Assessment" for item in subjects)
     assert next(item for item in subjects if item["id"] == subject.id)["question_count"] == 2
     assert all(item["id"] != unrelated_subject.id for item in subjects)
+    assert all(item["id"] != department_only_subject.id for item in subjects)
+    assert all(item["id"] != department_only_subject.id for item in super_admin_subjects)
     assert {item["id"] for item in questions} == {first_question.id, second_question.id}
     assert {item["id"] for item in super_admin_subjects} == {item["id"] for item in subjects}
     assert {item["id"] for item in super_admin_questions} == {first_question.id, second_question.id}
+
+
+def test_campus_admin_can_load_user_profile_within_campus(db_session):
+    campus = models.Campus(name="Profile Campus", code="PROFILE")
+    db_session.add(campus)
+    db_session.flush()
+    department = models.Department(name="Profile Department", campus_id=campus.id)
+    db_session.add(department)
+    db_session.flush()
+    admin = models.User(email="profile-admin@example.com", password="secret", role="campus_admin", campus_id=campus.id)
+    user = models.User(email="profile-user@example.com", password="secret", role="faculty", campus_id=campus.id)
+    db_session.add_all([admin, user])
+    db_session.commit()
+    subject_with_questions = models.Subject(name="Profile Subject", department_id=department.id)
+    subject_without_questions = models.Subject(name="Empty Profile Subject", department_id=department.id)
+    archived_subject = models.Subject(name="Archived Profile Subject", department_id=department.id, archived=True)
+    unassigned_subject = models.Subject(name="Unassigned Profile Subject")
+    db_session.add_all([subject_with_questions, subject_without_questions, archived_subject, unassigned_subject])
+    db_session.flush()
+    db_session.add(models.GeneratedQuestion(
+        user_id=user.id,
+        subject_id=subject_with_questions.id,
+        question="Question text is not part of the profile response",
+    ))
+    upload = models.UploadedFile(
+        user_id=user.id,
+        subject_id=subject_with_questions.id,
+        module_filename="module.pdf",
+        syllabus_filename="syllabus.pdf",
+        module_text="",
+        syllabus_text="",
+    )
+    db_session.add(upload)
+    db_session.flush()
+    tos = models.TableOfSpecification(upload_id=upload.id, tos_data={}, total_items=1)
+    db_session.add(tos)
+    db_session.flush()
+    db_session.add(models.GeneratedQuestion(
+        tos_id=tos.id,
+        subject_id=subject_with_questions.id,
+        question="Legacy question with ownership recorded by its upload",
+    ))
+    db_session.add_all([
+        models.GeneratedQuestion(user_id=user.id, subject_id=archived_subject.id, question="Archived subject question"),
+        models.GeneratedQuestion(user_id=user.id, subject_id=unassigned_subject.id, question="Unassigned subject question"),
+    ])
+    db_session.commit()
+
+    result = get_admin_user_overview(user.id, db_session, _admin=admin)
+
+    assert result["user"]["id"] == user.id
+    assert result["user"]["email"] == user.email
+    assert [subject["id"] for subject in result["subjects"]] == [subject_with_questions.id]
+    assert result["question_count"] == 4
+    assert "questions" not in result
+
+
+def test_activity_logs_include_campus_from_target_user(db_session):
+    campus = models.Campus(name="Activity Campus", code="ACTIVITY")
+    db_session.add(campus)
+    db_session.flush()
+    department = models.Department(name="Activity Department", campus_id=campus.id)
+    db_session.add(department)
+    db_session.flush()
+    faculty = models.User(email="activity-faculty@example.com", password="secret", role="faculty", campus_id=campus.id, department=department.name)
+    admin = models.User(email="activity-admin@example.com", password="secret", role="super_admin")
+    db_session.add_all([faculty, admin])
+    db_session.flush()
+    db_session.add(models.ActivityLog(
+        user_id=None,
+        actor_id=admin.id,
+        target_user_id=faculty.id,
+        action="Department updated",
+        details="Updated faculty assignment",
+        type="user",
+    ))
+    db_session.commit()
+
+    result = get_activity_logs(db_session, admin)
+
+    assert result[0]["campus_id"] == campus.id
+    assert result[0]["campus"] == campus.name
+
+
+def test_campus_admin_updates_department_by_id_when_names_match_across_campuses(db_session):
+    other_campus = models.Campus(name="Other Department Campus", code="OTHER-DEPT")
+    admin_campus = models.Campus(name="Admin Department Campus", code="ADMIN-DEPT")
+    db_session.add_all([other_campus, admin_campus])
+    db_session.flush()
+    other_department = models.Department(name="Computer Science", campus_id=other_campus.id)
+    admin_department = models.Department(name="Computer Science", campus_id=admin_campus.id)
+    db_session.add_all([other_department, admin_department])
+    db_session.flush()
+    admin = models.User(email="department-admin@example.com", password="secret", role="campus_admin", campus_id=admin_campus.id)
+    user = models.User(email="department-user@example.com", password="secret", role="faculty", campus_id=admin_campus.id)
+    db_session.add_all([admin, user])
+    db_session.commit()
+
+    result = update_user_department(
+        UserDepartmentUpdateRequest(email=user.email, department_id=admin_department.id),
+        db_session,
+        admin=admin,
+    )
+
+    assert result["department"] == admin_department.name
+    assert user.campus_id == admin_campus.id
+
+
+def test_campus_admin_can_add_subject_name_used_by_another_program(db_session):
+    campus = models.Campus(name="Shared Subjects Campus", code="SHARED-SUBJECTS")
+    db_session.add(campus)
+    db_session.flush()
+    department = models.Department(name="Shared Subjects Department", campus_id=campus.id)
+    db_session.add(department)
+    db_session.flush()
+    first_program = models.Program(name="First Program", department_id=department.id)
+    second_program = models.Program(name="Second Program", department_id=department.id)
+    db_session.add_all([first_program, second_program])
+    db_session.flush()
+    db_session.add_all([
+        models.Subject(name="Research Methods", department_id=department.id, program_id=first_program.id),
+        models.Subject(name="Research Methods", department_id=department.id, program_id=second_program.id, archived=True),
+    ])
+    db_session.commit()
+    admin = models.User(email="shared-subjects-admin@example.com", password="secret", role="campus_admin", campus_id=campus.id)
+    db_session.add(admin)
+    db_session.commit()
+
+    result = create_subject_manually(
+        SubjectCreateRequest(
+            name="Research Methods",
+            department_id=department.id,
+            program_id=second_program.id,
+        ),
+        db_session,
+        current_user=admin,
+    )
+
+    assert result["name"] == "Research Methods"
+    assert result["program_id"] == second_program.id
 
 
 def test_faculty_subject_code_search_is_scoped_to_program_and_department():
@@ -657,12 +900,12 @@ def test_tos_leadership_uses_faculty_program_department_before_subject_departmen
     subject_campus = models.Campus(name="Subject Campus", code="SUBJECT-CAMPUS")
     db_session.add_all([faculty_campus, subject_campus])
     db_session.flush()
-    faculty_department = models.Department(name="Education Department", campus_id=faculty_campus.id, dean_name="Faculty Campus Dean")
-    subject_department = models.Department(name="Education Department", campus_id=subject_campus.id, dean_name="Subject Campus Dean")
+    faculty_department = models.Department(name="Education Department", code="EDU", campus_id=faculty_campus.id, dean_name="Faculty Campus Dean")
+    subject_department = models.Department(name="Education Department", code="OTHER-EDU", campus_id=subject_campus.id, dean_name="Subject Campus Dean")
     db_session.add_all([faculty_department, subject_department])
     db_session.flush()
-    faculty_program = models.Program(name="Education Program", department_id=faculty_department.id)
-    subject_program = models.Program(name="Other Education Program", department_id=subject_department.id)
+    faculty_program = models.Program(name="Education Program", code="EDU-BS", department_id=faculty_department.id)
+    subject_program = models.Program(name="Other Education Program", code="OTHER-BS", department_id=subject_department.id)
     db_session.add_all([faculty_program, subject_program])
     db_session.flush()
     faculty = models.User(email="faculty_tos@example.com", password="secret", role="faculty", campus_id=faculty_campus.id, program_id=faculty_program.id, department=faculty_department.name)
@@ -673,7 +916,9 @@ def test_tos_leadership_uses_faculty_program_department_before_subject_departmen
     leadership = _resolve_department_leadership(db_session, creator=faculty, subject=subject)
 
     assert leadership["department_name"] == faculty_department.name
+    assert leadership["department_code"] == "EDU"
     assert leadership["dean_name"] == "Faculty Campus Dean"
+    assert leadership["program_code"] == "EDU-BS"
 
 
 def test_question_bank_tos_export_uses_authenticated_faculty_department_dean(db_session):

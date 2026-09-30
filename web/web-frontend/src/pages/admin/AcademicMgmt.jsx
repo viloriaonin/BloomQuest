@@ -433,6 +433,38 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic" }) => {
           <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
             Loading academic structure...
           </div>
+        ) : !campusId && isSuperAdmin ? (
+          <div>
+            <div className="mb-4 flex items-end justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--bq-accent)" }}>Academic units</p>
+                <h3 className="mt-1 text-lg font-semibold text-slate-900">Campuses</h3>
+              </div>
+              <span className="text-xs text-slate-500">{pluralize(visibleCampuses.length, "Campus")}</span>
+            </div>
+            {visibleCampuses.length ? (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {visibleCampuses.map((campus) => (
+                  <AcademicCard
+                    key={campus.id}
+                    icon={Building2}
+                    title={campus.name}
+                    code={campus.code}
+                    description="Campus academic structure"
+                    meta={pluralize(campus.departments?.length || 0, "Department")}
+                    onSelect={() => navigate(`${basePath}/campus/${campus.id}`)}
+                    actionLabel="View Departments"
+                    readOnlyActions
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+                <Building2 size={28} className="mx-auto text-slate-300" />
+                <p className="mt-3 text-sm font-semibold text-slate-700">No campuses have been added.</p>
+              </div>
+            )}
+          </div>
         ) : !campusId ? (
           <div>
             <div className="mb-4 flex items-end justify-between">

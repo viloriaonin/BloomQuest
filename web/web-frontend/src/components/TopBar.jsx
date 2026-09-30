@@ -32,6 +32,7 @@ const TopBar = ({ onToggleSidebar }) => {
     email: localStorage.getItem("email") || "faculty@bloomquest.edu",
     role: localStorage.getItem("role") || "Faculty",
     displayName: localStorage.getItem("name") || "Dr. Reyes",
+    program: localStorage.getItem("program_name") || "Program not assigned",
     department: localStorage.getItem("department") || "Department not assigned",
   }));
 
@@ -45,10 +46,30 @@ const TopBar = ({ onToggleSidebar }) => {
         email: localStorage.getItem("email") || "faculty@bloomquest.edu",
         role: localStorage.getItem("role") || "Faculty",
         displayName: localStorage.getItem("name") || "Dr. Reyes",
+        program: localStorage.getItem("program_name") || "Program not assigned",
         department: localStorage.getItem("department") || "Department not assigned",
       });
     };
 
+    const loadProgram = async () => {
+      const role = (localStorage.getItem("role") || "").toLowerCase();
+      if (!['faculty', 'student'].includes(role)) return;
+      try {
+        const response = await fetch("/api/user/profile");
+        if (!response.ok) return;
+        const data = await response.json();
+        const program = (data.programs || []).find((item) => String(item.id) === String(data.program_id));
+        const programName = program?.name || "Program not assigned";
+        localStorage.setItem("program_name", program?.name || "");
+        if (data.department) localStorage.setItem("department", data.department);
+        setProfile((current) => ({ ...current, program: programName, department: data.department || current.department }));
+      } catch {
+        // Keep the locally cached profile visible when profile refresh is unavailable.
+      }
+    };
+
+    syncProfile();
+    loadProgram();
     window.addEventListener("profile-updated", syncProfile);
     window.addEventListener("storage", syncProfile);
 
@@ -69,7 +90,7 @@ const TopBar = ({ onToggleSidebar }) => {
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="text-right max-sm:hidden"><p className="text-sm font-medium" style={{ color: textPrimary }}>{profile.displayName}</p><p className="text-[10px] uppercase tracking-wider" style={{ color: textMuted }}>{profile.email}</p><p className="text-[10px]" style={{ color: textMuted }}>{profile.department}</p></div>
+        <div className="text-right max-sm:hidden"><p className="text-sm font-medium" style={{ color: textPrimary }}>{profile.displayName}</p><p className="text-[10px] uppercase tracking-wider" style={{ color: textMuted }}>{profile.email}</p><p className="text-[10px]" style={{ color: textMuted }}>{profile.program}</p><p className="text-[10px]" style={{ color: textMuted }}>{profile.department}</p></div>
         <div className="relative flex h-10 w-10 items-center justify-center rounded-full border text-sm font-bold" style={{ backgroundColor: "#fff", borderColor: accent, color: accent }}>{initials}<span className="absolute -bottom-1 -right-1 flex h-[18px] w-[18px] items-center justify-center rounded-full border-2" style={{ backgroundColor: bg, borderColor: bg, color: accent }}><ShieldCheck size={11} /></span></div>
       </div>
     </div>

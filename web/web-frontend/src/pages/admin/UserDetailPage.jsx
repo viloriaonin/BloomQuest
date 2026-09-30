@@ -9,9 +9,16 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import { usePopup } from "../../components/PopupProvider";
 import LoadingSpinner from "../../components/LoadingSpinner";
-import { filterActivitiesByCategory, formatActivityLabel, getActivityCategories } from "./activityUtils";
 
-const API_BASE_URL = "http://localhost:8000/api";
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:8000/api";
+
+const apiFetch = (path, options = {}) => fetch(`${API_BASE_URL}${path}`, {
+  ...options,
+  headers: {
+    Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+    ...options.headers,
+  },
+});
 
 const formatDate = (value) => {
   if (!value) return "No record";
@@ -26,26 +33,16 @@ const UserDetailPage = () => {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [passwordResetOpen, setPasswordResetOpen] = useState(false);
-  const [adminPassword, setAdminPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [passwordVerified, setPasswordVerified] = useState(false);
-  const [passwordBusy, setPasswordBusy] = useState(false);
   const [departmentManageOpen, setDepartmentManageOpen] = useState(false);
   const [departments, setDepartments] = useState([]);
   const [selectedDepartment, setSelectedDepartment] = useState("");
   const [departmentBusy, setDepartmentBusy] = useState(false);
-  const [activityPanelOpen, setActivityPanelOpen] = useState(false);
-  const [activityTab, setActivityTab] = useState("all");
 
   const loadDetail = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/admin/users/${userId}/overview`,
-      );
+      const response = await apiFetch(`/admin/users/${userId}/overview`);
       if (!response.ok) throw new Error("Could not load this user profile.");
       setDetail(await response.json());
     } catch (err) {
@@ -60,14 +57,14 @@ const UserDetailPage = () => {
   }, [loadDetail]);
 
   useEffect(() => {
-    fetch(`${API_BASE_URL}/departments`)
+    apiFetch("/departments")
       .then((response) => response.ok ? response.json() : Promise.reject(new Error("Could not load departments.")))
       .then((data) => setDepartments(Array.isArray(data) ? data : []))
       .catch(() => setDepartments([]));
   }, []);
 
   const accountAction = async (endpoint, message) => {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const response = await apiFetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: detail.user.email }),
@@ -94,31 +91,15 @@ const UserDetailPage = () => {
     }
   };
 
-  const handleRevokeSessions = async () => {
-    const confirmed = await showConfirm("Sign this user out of all active sessions?", "Revoke sessions");
-    if (!confirmed) return;
-    try {
-      const response = await fetch(`${API_BASE_URL}/admin/users/bulk`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_ids: [Number(userId)], action: "revoke_sessions" }),
-      });
-      if (!response.ok) throw new Error("Could not revoke sessions.");
-      await showAlert("All active sessions were revoked.", "Security");
-    } catch (err) {
-      await showAlert(err.message, "Security");
-    }
-  };
-
   const handleUpdateDepartment = async (event) => {
     event.preventDefault();
     if (!selectedDepartment) return;
     setDepartmentBusy(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/users/update-department`, {
+      const response = await apiFetch("/users/update-department", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: detail.user.email, department: selectedDepartment }),
+        body: JSON.stringify({ email: detail.user.email, department_id: Number(selectedDepartment) }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || "Could not update the user's department.");
@@ -136,56 +117,13 @@ const UserDetailPage = () => {
     const confirmed = await showConfirm("This is a permanent recycle-bin style delete. The account will be removed and cannot be restored. Confirm permanent deletion?", "Permanent delete");
     if (!confirmed) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/users/${encodeURIComponent(detail.user.email)}/permanent`, { method: "DELETE" });
+      const response = await apiFetch(`/users/${encodeURIComponent(detail.user.email)}/permanent`, { method: "DELETE" });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || "Could not permanently delete this user.");
       await showAlert("User permanently deleted.", "User Management");
       navigate("/admin/users");
     } catch (err) {
       await showAlert(err.message, "User Management");
-    }
-  };
-
-  const handlePasswordReset = async (event) => {
-    event.preventDefault();
-    setPasswordBusy(true);
-    try {
-      if (!passwordVerified) {
-        const verifyResponse = await fetch(`${API_BASE_URL}/users/verify-admin-password`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            admin_email: localStorage.getItem("email"),
-            admin_password: adminPassword,
-            target_email: user.email,
-          }),
-        });
-        if (!verifyResponse.ok) {
-          const data = await verifyResponse.json().catch(() => ({}));
-          throw new Error(data.detail || "Administrator verification failed.");
-        }
-        setPasswordVerified(true);
-        setAdminPassword("");
-        return;
-      }
-
-      if (newPassword.length < 8) {
-        throw new Error("The new password must contain at least 8 characters.");
-      }
-      const resetResponse = await fetch(`${API_BASE_URL}/users/update-password`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: user.email, new_password: newPassword }),
-      });
-      if (!resetResponse.ok) throw new Error("Could not reset this user's password.");
-      setNewPassword("");
-      setPasswordVerified(false);
-      setPasswordResetOpen(false);
-      await showAlert("The user's password was changed successfully.", "Security");
-    } catch (err) {
-      await showAlert(err.message, "Security");
-    } finally {
-      setPasswordBusy(false);
     }
   };
 
@@ -205,15 +143,9 @@ const UserDetailPage = () => {
       </div>
     );
 
-  const { user, subjects = [], questions = [], activities = [] } = detail;
+  const { user, subjects = [], activities = [] } = detail;
+  const questionCount = detail.question_count ?? detail.questions?.length ?? 0;
   const statusLabel = user.archived ? "Archived" : "Active";
-  const questionsBySubject = subjects.map((subject) => ({
-    subject,
-    questions: questions.filter((question) => question.subject_id === subject.id),
-  }));
-  const unassignedQuestions = questions.filter((question) => !subjects.some((subject) => subject.id === question.subject_id));
-  const activityCategories = getActivityCategories(activities);
-  const visibleActivities = filterActivitiesByCategory(activities, activityTab);
 
   return (
     <div className="space-y-5 page-transition">
@@ -283,7 +215,7 @@ const UserDetailPage = () => {
         <div className="rounded-2xl border border-gray-200 bg-white p-5">
           <FileQuestion className="text-[#B4454A]" size={20} />
           <p className="mt-4 text-3xl font-bold text-gray-900">
-            {questions.length}
+            {questionCount}
           </p>
           <p className="text-sm text-gray-500">Questions created</p>
         </div>
@@ -294,9 +226,6 @@ const UserDetailPage = () => {
               <p className="text-3xl font-bold text-gray-900">{activities.length}</p>
               <p className="text-sm text-gray-500">Activity records</p>
             </div>
-            <button type="button" onClick={() => { setActivityTab("all"); setActivityPanelOpen(true); }} className="bq-secondary-button px-3 py-2 text-xs">
-              View all activity
-            </button>
           </div>
         </div>
       </div>
@@ -316,15 +245,8 @@ const UserDetailPage = () => {
           </button>
           <button
             type="button"
-            onClick={handleRevokeSessions}
-            className="bq-secondary-button"
-          >
-            Revoke all sessions
-          </button>
-          <button
-            type="button"
             onClick={() => {
-              setSelectedDepartment(departments.find((item) => item.name === user.department)?.name || "");
+              setSelectedDepartment(String(departments.find((item) => item.name === user.department)?.id || ""));
               setDepartmentManageOpen((open) => !open);
             }}
             className="bq-secondary-button"
@@ -337,18 +259,6 @@ const UserDetailPage = () => {
             className="rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800"
           >
             Delete account
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setPasswordResetOpen((open) => !open);
-              setPasswordVerified(false);
-              setAdminPassword("");
-              setNewPassword("");
-            }}
-            className="bq-primary-button"
-          >
-            Reset password
           </button>
         </div>
         {departmentManageOpen && (
@@ -363,7 +273,7 @@ const UserDetailPage = () => {
                 required
               >
                 <option value="">Select a department</option>
-                {departments.map((department) => <option key={department.id} value={department.name}>{department.name}</option>)}
+                {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
               </select>
               <button type="submit" disabled={departmentBusy || !selectedDepartment} className="bq-primary-button disabled:cursor-not-allowed disabled:opacity-50">
                 {departmentBusy ? "Saving..." : "Save department"}
@@ -371,102 +281,26 @@ const UserDetailPage = () => {
             </div>
           </form>
         )}
-        {passwordResetOpen && (
-          <form onSubmit={handlePasswordReset} className="mt-5 border-t border-gray-100 pt-5">
-            <h3 className="text-sm font-bold text-gray-900">Secure password reset</h3>
-            <p className="mt-1 text-xs text-gray-500">
-              Verify your administrator password first. The current user password cannot be displayed because it is stored as a one-way hash.
-            </p>
-            {!passwordVerified ? (
-              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                <input
-                  type="password"
-                  value={adminPassword}
-                  onChange={(event) => setAdminPassword(event.target.value)}
-                  placeholder="Your administrator password"
-                  className="bq-field flex-1 px-3 py-2 text-sm"
-                  required
-                />
-                <button type="submit" disabled={passwordBusy} className="bq-primary-button">
-                  {passwordBusy ? "Verifying..." : "Verify administrator"}
-                </button>
-              </div>
-            ) : (
-              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                <div className="relative flex-1">
-                  <input
-                    type={showNewPassword ? "text" : "password"}
-                    value={newPassword}
-                    onChange={(event) => setNewPassword(event.target.value)}
-                    placeholder="New password (minimum 8 characters)"
-                    minLength="8"
-                    className="bq-field w-full px-3 py-2 pr-16 text-sm"
-                    required
-                  />
-                  <button type="button" onClick={() => setShowNewPassword((visible) => !visible)} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#B4454A]">
-                    {showNewPassword ? "Hide" : "Show"}
-                  </button>
-                </div>
-                <button type="submit" disabled={passwordBusy} className="bq-primary-button">
-                  {passwordBusy ? "Changing..." : "Change password"}
-                </button>
-              </div>
-            )}
-          </form>
-        )}
       </section>
-
-      {activityPanelOpen && (
-        <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setActivityPanelOpen(false); }}>
-          <section className="bq-modal-panel flex max-h-[min(760px,90vh)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border p-5 shadow-2xl">
-            <div className="flex items-start justify-between gap-4 border-b border-gray-200 pb-4">
-              <div><p className="bq-eyebrow">Faculty activity</p><h2 className="mt-1 text-xl font-bold text-gray-900">All activity for {user.name}</h2><p className="mt-1 text-sm text-gray-500">Every recorded login, generation, upload, export, and account action.</p></div>
-              <button type="button" onClick={() => setActivityPanelOpen(false)} className="bq-secondary-button px-3 py-2 text-xs">Close</button>
-            </div>
-            <div className="mt-4 flex gap-1 overflow-x-auto border-b border-gray-200 pb-1" role="tablist" aria-label="Activity categories">
-              {["all", ...activityCategories].map((category) => (
-                <button key={category} type="button" role="tab" aria-selected={activityTab === category} onClick={() => setActivityTab(category)} className={`whitespace-nowrap rounded-t-lg px-3 py-2 text-xs font-semibold transition ${activityTab === category ? "border-b-2 border-[#B4454A] text-[#B4454A]" : "text-gray-500 hover:bg-gray-50 hover:text-gray-800"}`}>
-                  {category === "all" ? "All activity" : formatActivityLabel(category)} <span className="ml-1 opacity-60">({filterActivitiesByCategory(activities, category).length})</span>
-                </button>
-              ))}
-            </div>
-            <div className="mt-4 flex-1 space-y-2 overflow-y-auto pr-1">
-              {visibleActivities.length ? visibleActivities.map((activity) => (
-                <article key={activity.id} className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-gray-900">{activity.action || "Activity"}</p><span className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">{formatActivityLabel(activity.type)}</span><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${activity.status === "error" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>{activity.status || "success"}</span></div><p className="mt-2 text-sm text-gray-600">{activity.detail || "No additional details"}</p>{activity.filename && <p className="mt-2 text-xs text-gray-400">File: {activity.filename}</p>}</div>
-                  <time className="shrink-0 text-xs text-gray-500 sm:text-right">{formatDate(activity.created_at)}</time>
-                </article>
-              )) : <p className="py-10 text-center text-sm text-gray-500">No activity in this category.</p>}
-            </div>
-          </section>
-        </div>
-      )}
 
       <section className="rounded-2xl border border-gray-200 bg-white p-5">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <h2 className="font-bold text-gray-900">Subjects</h2>
-            <p className="mt-1 text-xs text-gray-500">Question banks created under each subject.</p>
+            <p className="mt-1 text-xs text-gray-500">Subjects where this user has created questions.</p>
           </div>
           <span className="text-xs font-semibold text-gray-500">{subjects.length} subject{subjects.length === 1 ? "" : "s"}</span>
         </div>
-        {questionsBySubject.length || unassignedQuestions.length ? (
-          <div className="grid gap-4 lg:grid-cols-2">
-            {questionsBySubject.map(({ subject, questions: subjectQuestions }) => (
+        {subjects.length ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {subjects.map((subject) => (
               <article key={subject.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <div className="flex items-start justify-between gap-3 border-b border-gray-200 pb-3">
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{subject.name}</h3>
-                    <p className="mt-1 text-xs text-gray-500">{subject.code || "No course code"} · {subject.department}</p>
-                  </div>
-                  <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-gray-600">{subjectQuestions.length} question{subjectQuestions.length === 1 ? "" : "s"}</span>
-                </div>
-                {subjectQuestions.length ? <div className="mt-3 space-y-2">{subjectQuestions.map((question) => <div key={question.id} className="rounded-lg border border-gray-200 bg-white p-3"><p className="text-sm font-medium text-gray-800">{question.question}</p><p className="mt-1 text-xs text-gray-500">{question.type} · {question.bloom_level || "Unclassified"} · {formatDate(question.created_at)}</p></div>)}</div> : <p className="mt-3 text-sm text-gray-500">No questions in this subject yet.</p>}
+                <h3 className="font-semibold text-gray-900">{subject.name}</h3>
+                <p className="mt-1 text-xs text-gray-500">{subject.code || "No course code"} · {subject.department}</p>
               </article>
             ))}
-            {unassignedQuestions.length > 0 && <article className="rounded-xl border border-amber-200 bg-amber-50 p-4"><h3 className="font-semibold text-gray-900">Other questions</h3><p className="mt-1 text-xs text-gray-500">Questions without a matching subject.</p><div className="mt-3 space-y-2">{unassignedQuestions.map((question) => <div key={question.id} className="rounded-lg border border-amber-100 bg-white p-3"><p className="text-sm font-medium text-gray-800">{question.question}</p><p className="mt-1 text-xs text-gray-500">{question.subject} · {question.type}</p></div>)}</div></article>}
           </div>
-        ) : <p className="text-sm text-gray-500">No subjects or questions created.</p>}
+        ) : <p className="text-sm text-gray-500">No subjects with questions yet.</p>}
       </section>
 
       <section className="rounded-2xl border border-gray-200 bg-white p-5">

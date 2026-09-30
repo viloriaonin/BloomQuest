@@ -48,6 +48,7 @@ const RecycleBin = () => {
     return result;
   }, {}), [items]);
   const activeItems = itemsByType[activeType] || [];
+  const allActiveItemsSelected = activeItems.length > 0 && activeItems.every((item) => selectedIds.includes(itemKey(item)));
 
   const restore = async (item) => {
     const confirmed = await showConfirm(`Restore this ${item.itemType} to active content?`, "Restore Item");
@@ -86,9 +87,17 @@ const RecycleBin = () => {
             {RECYCLE_TABS.map(({ id, label, icon: Icon }) => <button key={id} type="button" role="tab" aria-selected={activeType === id} onClick={() => { setActiveType(id); setSelectedIds([]); }} className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold transition ${activeType === id ? "bg-[#C4485A] text-white" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}><Icon size={15} /> {label}<span className="opacity-75">({itemsByType[id].length})</span></button>)}
           </div>
         </div>
-        {selectedIds.length > 0 && <div className="flex items-center justify-between gap-3 rounded-md border border-red-900/50 bg-red-950/30 px-4 py-3"><span className="text-sm font-semibold text-red-200">{selectedIds.length} item{selectedIds.length === 1 ? "" : "s"} selected</span><button type="button" onClick={permanentlyDeleteSelected} className="bq-admin-action border-red-700 text-red-200 hover:bg-red-950"><Trash2 size={14} /> Delete permanently</button></div>}
         <section className="bq-admin-panel">
-          <div className="mb-4 flex items-center justify-between gap-3"><div><h2>{RECYCLE_TABS.find((tab) => tab.id === activeType)?.label}</h2><p className="bq-admin-muted mt-1">Archived {activeType} items available for recovery.</p></div>{activeItems.length > 0 && <button type="button" onClick={() => setSelectedIds(activeItems.map(itemKey))} className="bq-admin-action">Select all</button>}</div>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div><h2>{RECYCLE_TABS.find((tab) => tab.id === activeType)?.label}</h2><p className="bq-admin-muted mt-1">Archived {activeType} items available for recovery.</p></div>
+            {activeItems.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                {selectedIds.length > 0 && <span className="text-xs font-semibold text-slate-400">{selectedIds.length} selected</span>}
+                <button type="button" onClick={() => setSelectedIds(allActiveItemsSelected ? [] : activeItems.map(itemKey))} aria-pressed={allActiveItemsSelected} className="bq-admin-action">{allActiveItemsSelected ? "Clear selection" : "Select all"}</button>
+                {selectedIds.length > 0 && <button type="button" onClick={permanentlyDeleteSelected} className="bq-admin-action border-red-700 text-red-200 hover:bg-red-950"><Trash2 size={14} /> Delete permanently</button>}
+              </div>
+            )}
+          </div>
           {activeItems.length === 0 ? <div className="rounded-md border border-dashed border-slate-700 py-8 text-center text-sm text-slate-400">No archived {activeType}s.</div> : <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{activeItems.map((item) => <RecycleCard key={itemKey(item)} item={item} checked={selectedIds.includes(itemKey(item))} onToggle={toggle} onRestore={restore} />)}</div>}
         </section>
       </>}

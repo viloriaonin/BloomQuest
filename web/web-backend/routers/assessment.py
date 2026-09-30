@@ -9,10 +9,11 @@ from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 import io, os, uuid, tempfile, json, re, random
+import platform
+import shutil
+import subprocess
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-import pythoncom
-from docx2pdf import convert
 from database import get_db
 import models
 from security import assert_campus_access, get_current_user
@@ -518,28 +519,49 @@ def group_questions_by_type(questions: list):
 
 
 def convert_docx_to_pdf(docx_path: str, pdf_path: str):
-    import win32com.client
+    if platform.system() == "Windows":
+        import pythoncom
+        import win32com.client
 
-    pythoncom.CoInitialize()
-    word = None
-    document = None
-    try:
-        word = win32com.client.DispatchEx("Word.Application")
-        word.Visible = False
-        word.DisplayAlerts = 0
-        document = word.Documents.Open(
-            os.path.abspath(docx_path),
-            ReadOnly=True,
-            AddToRecentFiles=False,
-            ConfirmConversions=False,
-        )
-        document.SaveAs2(os.path.abspath(pdf_path), FileFormat=17)
-    finally:
-        if document is not None:
-            document.Close(False)
-        if word is not None:
-            word.Quit(False)
-        pythoncom.CoUninitialize()
+        pythoncom.CoInitialize()
+        word = None
+        document = None
+        try:
+            word = win32com.client.DispatchEx("Word.Application")
+            word.Visible = False
+            word.DisplayAlerts = 0
+            document = word.Documents.Open(
+                os.path.abspath(docx_path),
+                ReadOnly=True,
+                AddToRecentFiles=False,
+                ConfirmConversions=False,
+            )
+            document.SaveAs2(os.path.abspath(pdf_path), FileFormat=17)
+        finally:
+            if document is not None:
+                document.Close(False)
+            if word is not None:
+                word.Quit(False)
+            pythoncom.CoUninitialize()
+        return
+
+    libreoffice = shutil.which("libreoffice") or shutil.which("soffice")
+    if not libreoffice:
+        raise RuntimeError("PDF export on Linux requires LibreOffice. Install libreoffice and retry.")
+
+    output_dir = os.path.dirname(os.path.abspath(pdf_path))
+    result = subprocess.run(
+        [libreoffice, "--headless", "--convert-to", "pdf", "--outdir", output_dir, os.path.abspath(docx_path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    generated_pdf = os.path.join(output_dir, f"{os.path.splitext(os.path.basename(docx_path))[0]}.pdf")
+    if result.returncode != 0 or not os.path.exists(generated_pdf):
+        error = (result.stderr or result.stdout or "No PDF was produced.").strip()
+        raise RuntimeError(f"LibreOffice PDF conversion failed: {error}")
+    if os.path.abspath(generated_pdf) != os.path.abspath(pdf_path):
+        os.replace(generated_pdf, pdf_path)
 
 
 def _tos_header_data():
