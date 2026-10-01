@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { ArrowRight, CheckCircle2, Download, Eye, EyeOff, FileText, KeyRound, LockKeyhole, Play, Save, UserRound, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
+import { API_BASE_URL } from "../../api";
+
 const WORKSPACES = {
   reports: {
     eyebrow: "Quality intelligence",
@@ -298,7 +300,7 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
     setPasswordLoading(true);
 
     try {
-      const response = await fetch("http://localhost:8000/api/user/change-password/update", {
+      const response = await fetch(`${API_BASE_URL}/user/change-password/update`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { ArchiveRestore, RotateCcw, ShieldCheck } from "lucide-react";
 import { usePopup } from "../../components/PopupProvider";
-
-const API_URL = "http://localhost:8000";
+import { API_URL } from "../../api";
+// const API_URL = "http://localhost:8000";
 
 const Governance = () => {
   const { showAlert, showConfirm } = usePopup();

@@ -3,7 +3,8 @@ import { usePopup } from "../../components/PopupProvider";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, BookOpen, Building2, CalendarDays, ChevronRight, FileText, FlaskConical, Search, Shield, Sigma, UserRound } from "lucide-react";
 
-const API_URL = "http://localhost:8000";
+// const API_URL = "http://localhost:8000";
+import { API_URL } from "../../api";
 
 const BLOOMS_LEVELS = [
   { name: "Remember", dotColor: "bg-red-400" },

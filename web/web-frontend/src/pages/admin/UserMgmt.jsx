@@ -3,8 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { usePopup } from "../../components/PopupProvider";
 import LoadingSpinner from "../../components/LoadingSpinner";
 import { Activity, FileText, Filter, History, X, Users } from "lucide-react";
+import { API_BASE_URL } from "../../api";
 
-const API_BASE_URL = "http://localhost:8000/api";
+// const API_BASE_URL = "http://localhost:8000/api";
+
 
 export const UserMgmtContent = () => {
   const { showAlert, showConfirm } = usePopup();
