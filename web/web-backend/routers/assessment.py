@@ -4,16 +4,10 @@ from fastapi.responses import FileResponse
 from fastapi.background import BackgroundTasks
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from docx import Document
-from docx.shared import Inches, Pt, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 import io, os, uuid, tempfile, json, re, random
 import platform
 import shutil
 import subprocess
-from docx.oxml import OxmlElement
-from docx.oxml.ns import qn
 from database import get_db
 import models
 from security import assert_campus_access, get_current_user
@@ -586,6 +580,16 @@ def _tos_header_data():
     return values
 
 
+def _load_docx_library():
+    global Document, Inches, Pt, RGBColor, WD_ALIGN_PARAGRAPH, WD_CELL_VERTICAL_ALIGNMENT, OxmlElement, qn
+    from docx import Document
+    from docx.shared import Inches, Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+
 def _add_centered_line(doc, text, size=10, bold=False):
     paragraph = doc.add_paragraph()
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -801,6 +805,7 @@ def build_assessment_docx(
     class_info: str = "",
     directions: list | None = None,
 ) -> str:
+    _load_docx_library()
     doc = Document()
     for style_name in ("Normal", "Title", "Heading 1", "Heading 2", "Heading 3"):
         style = doc.styles[style_name]

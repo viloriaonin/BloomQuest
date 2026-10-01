@@ -52,17 +52,19 @@ def require_super_admin(user: models.User = Depends(get_current_user)):
 
 
 def require_campus_admin(user: models.User = Depends(get_current_user)):
-    if str(user.role).lower() not in {"campus_admin", "super_admin"}:
+    role = str(user.role).lower()
+    if role not in {"admin", "campus_admin", "super_admin"}:
         raise HTTPException(status_code=403, detail="Campus administrator access required")
-    if str(user.role).lower() == "campus_admin" and not user.campus_id:
+    if role in {"admin", "campus_admin"} and not user.campus_id:
         raise HTTPException(status_code=403, detail="A campus assignment is required")
     return user
 
 
 def require_admin(user: models.User = Depends(get_current_user)):
-    if str(user.role).lower() not in {"super_admin", "campus_admin"}:
+    role = str(user.role).lower()
+    if role not in {"super_admin", "campus_admin", "admin"}:
         raise HTTPException(status_code=403, detail="Administrator access required")
-    if str(user.role).lower() == "campus_admin" and not user.campus_id:
+    if role in {"admin", "campus_admin"} and not user.campus_id:
         raise HTTPException(status_code=403, detail="A campus assignment is required")
     return user
 
@@ -71,7 +73,7 @@ def assert_campus_access(user: models.User, campus_id: int) -> None:
     role = str(user.role).lower()
     if role == "super_admin":
         return
-    if role == "campus_admin" and user.campus_id == campus_id:
+    if role in {"admin", "campus_admin"} and user.campus_id == campus_id:
         return
     raise HTTPException(status_code=403, detail="You do not have access to this campus")
 
@@ -79,7 +81,7 @@ def assert_campus_access(user: models.User, campus_id: int) -> None:
 def visible_campus_id(user: models.User) -> int | None:
     if str(user.role).lower() == "super_admin":
         return None
-    if str(user.role).lower() == "campus_admin" and user.campus_id:
+    if str(user.role).lower() in {"admin", "campus_admin"} and user.campus_id:
         return user.campus_id
     raise HTTPException(status_code=403, detail="Campus-scoped administrator access required")
 
@@ -88,7 +90,7 @@ def user_campus_id(db: Session, user: models.User) -> int | None:
     role = str(user.role).lower()
     if role == "super_admin":
         return None
-    if role == "campus_admin":
+    if role in {"admin", "campus_admin"}:
         return visible_campus_id(user)
     if user.campus_id:
         return user.campus_id

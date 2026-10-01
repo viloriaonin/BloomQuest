@@ -3,7 +3,6 @@ from contextlib import asynccontextmanager
 import io
 import json
 import base64
-import openpyxl
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, status, BackgroundTasks, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -1443,7 +1442,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     else:
         user = None
 
-    if user and str(user.role).lower() == "campus_admin":
+    if user and str(user.role).lower() in {"admin", "campus_admin"}:
         campus = db.query(models.Campus).filter(models.Campus.id == user.campus_id).first()
         if not campus or not campus.is_active:
             user = None
@@ -4538,6 +4537,8 @@ def preview_saved_file(activity_id: int, user_id: int = None, db: Session = Depe
             blocks.append(f"<table><tbody>{''.join(rows)}</tbody></table>")
         return {"kind": "html", "filename": log.filename, "content": "".join(blocks)}
     if media_type.endswith("spreadsheetml.sheet"):
+        import openpyxl
+
         workbook = openpyxl.load_workbook(io.BytesIO(log.file_content), read_only=False, data_only=True)
         candidate_sheets = []
         for sheet in workbook.worksheets:

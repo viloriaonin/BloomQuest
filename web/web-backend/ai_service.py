@@ -6,17 +6,29 @@ import re
 import time
 from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from google import genai
-from google.genai import types
 from dotenv import load_dotenv
 from file_extractor import clean_extracted_text
 
-load_dotenv()
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "database.env"))
 logger = logging.getLogger(__name__)
 
-# Initialize official SDK client using the fresh environment credential
-client = genai.Client()
+client = None
 MODEL_NAME = "gemini-flash-lite-latest"
+
+
+def _get_client():
+    global client
+    if client is None:
+        from google import genai
+
+        client = genai.Client()
+    return client
+
+
+def _get_genai_types():
+    from google.genai import types
+
+    return types
 
 AI_DEV_MODE = False
 DEV_MODE_MAX_QUESTIONS_PER_TOPIC = 3
@@ -441,14 +453,14 @@ def ask_groq(prompt: str, max_tokens: int = 4096, usage_tracker: GeminiUsageTrac
 
     usage_recorded = False
     try:
-        config = types.GenerateContentConfig(
+        config = _get_genai_types().GenerateContentConfig(
             response_mime_type="application/json",
             temperature=0.3,
             max_output_tokens=max_tokens,
             system_instruction="You are an expert assessment generator. Return ONLY valid JSON strings. Never wrap outputs in markdown formatting block boundaries."
         )
 
-        response = client.models.generate_content(
+        response = _get_client().models.generate_content(
             model=MODEL_NAME,
             contents=prompt,
             config=config
@@ -895,10 +907,10 @@ def _call_syllabus_ai(
     if usage_tracker:
         usage_tracker.begin_api_call()
     try:
-        response = client.models.generate_content(
+        response = _get_client().models.generate_content(
             model=MODEL_NAME,
             contents=prompt,
-            config=types.GenerateContentConfig(
+            config=_get_genai_types().GenerateContentConfig(
                 temperature=0.1,
                 max_output_tokens=max_output_tokens,
                 response_mime_type="application/json",  # Forces pure structured JSON output

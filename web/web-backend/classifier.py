@@ -1,9 +1,7 @@
 import os
 import logging
 from pathlib import Path
-from google import genai
 from dotenv import load_dotenv
-from predict_bloom import predict_bloom_level
 
 logger = logging.getLogger(__name__)
 
@@ -11,10 +9,19 @@ logger = logging.getLogger(__name__)
 load_dotenv(dotenv_path=str(Path(__file__).resolve().parent / "database.env"))
 
 api_key = os.getenv("GEMINI_API_KEY")
-if api_key:
-    client = genai.Client(api_key=api_key)
-else:
-    client = None
+client = None
+
+
+def _get_client():
+    global client
+    if client is None and api_key:
+        from google import genai
+
+        client = genai.Client(api_key=api_key)
+    return client
+
+
+if not api_key:
     logger.warning("GEMINI_API_KEY is not set. Manual classification will fall back to 'Understand' instead of crashing.")
 
 MODEL_NAME = "gemini-flash-lite-latest"
@@ -45,7 +52,8 @@ def classify_question(question_text: str, *args, usage_tracker=None, **kwargs) -
         f"Question: {question_text}"
     )
 
-    if client is None:
+    genai_client = _get_client()
+    if genai_client is None:
         logger.warning("Skipping Gemini classification because no API key is configured.")
         return "Understand"
 
@@ -53,7 +61,7 @@ def classify_question(question_text: str, *args, usage_tracker=None, **kwargs) -
         usage_tracker.begin_api_call()
     usage_recorded = False
     try:
-        response = client.models.generate_content(
+        response = genai_client.models.generate_content(
             model=MODEL_NAME,
             contents=prompt
         )
@@ -102,6 +110,8 @@ def classify_question_ml(question_text: str) -> str:
     No API key or internet connection needed — this runs entirely offline.
     """
     try:
+        from predict_bloom import predict_bloom_level
+
         result = predict_bloom_level(question_text)
         return BT_CODE_TO_LABEL.get(result["level_code"], "Understand")
     except Exception as e:
@@ -116,6 +126,8 @@ def classify_question_dual(question_text: str) -> dict:
     the app currently sees from classify_question().
     """
     gemini_result = classify_question(question_text)
+
+    from predict_bloom import predict_bloom_level
 
     ml_raw = predict_bloom_level(question_text)
     ml_result = BT_CODE_TO_LABEL.get(ml_raw["level_code"], "Understand")

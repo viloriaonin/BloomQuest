@@ -59,6 +59,29 @@ def test_campus_admin_is_limited_to_assigned_campus():
     assert error.value.status_code == 403
 
 
+def test_legacy_admin_is_limited_to_assigned_campus():
+    user = SimpleNamespace(role="admin", campus_id=7)
+
+    assert assert_campus_access(user, 7) is None
+    assert visible_campus_id(user) == 7
+    assert require_admin(user) is user
+    assert require_campus_admin(user) is user
+
+    with pytest.raises(HTTPException) as error:
+        assert_campus_access(user, 8)
+
+    assert error.value.status_code == 403
+
+
+def test_legacy_admin_without_campus_assignment_is_rejected():
+    user = SimpleNamespace(role="admin", campus_id=None)
+
+    with pytest.raises(HTTPException) as error:
+        require_admin(user)
+
+    assert error.value.status_code == 403
+
+
 def test_campus_admin_without_assignment_is_rejected():
     user = SimpleNamespace(role="campus_admin", campus_id=None)
 

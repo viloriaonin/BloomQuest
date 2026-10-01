@@ -1,11 +1,3 @@
-import fitz  # PyMuPDF for PDF
-from docx import Document
-from docx.oxml.table import CT_Tbl
-from docx.oxml.text.paragraph import CT_P
-from pptx import Presentation
-from docx.table import Table
-from docx.text.paragraph import Paragraph
-import openpyxl
 import io
 import re
 from collections import Counter
@@ -65,6 +57,8 @@ def _remove_repeated_page_furniture(pages):
     return cleaned_pages
 
 def extract_text_from_pdf(file_bytes):
+    import fitz
+
     pdf = fitz.open(stream=file_bytes, filetype="pdf")
     pages = [
         [
@@ -78,6 +72,12 @@ def extract_text_from_pdf(file_bytes):
     return clean_extracted_text("\n\n".join("\n".join(page) for page in pages))
 
 def extract_text_from_docx(file_bytes):
+    from docx import Document
+    from docx.oxml.table import CT_Tbl
+    from docx.oxml.text.paragraph import CT_P
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
     doc = Document(io.BytesIO(file_bytes))
     blocks = []
     for element in doc.element.body.iterchildren():
@@ -94,6 +94,8 @@ def extract_text_from_docx(file_bytes):
     return clean_extracted_text("\n".join(blocks))
 
 def extract_text_from_pptx(file_bytes):
+    from pptx import Presentation
+
     prs = Presentation(io.BytesIO(file_bytes))
     blocks = []
     for slide in prs.slides:
@@ -104,6 +106,8 @@ def extract_text_from_pptx(file_bytes):
     return clean_extracted_text("\n".join(blocks))
 
 def extract_text_from_excel(file_bytes):
+    import openpyxl
+
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes))
     rows = []
     for sheet in wb.worksheets:

@@ -7,7 +7,6 @@ import time
 import uuid
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
-import openpyxl
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
@@ -24,10 +23,6 @@ from security import (
     user_campus_id,
 )
 
-from docx import Document
-from reportlab.lib.pagesizes import LETTER
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
 
 # Import AI utilities and our new layout parsing fallback
 from ai_service import (
@@ -544,6 +539,8 @@ def _try_parse_number(val):
     except ValueError: return None
 
 def parse_syllabus_excel(contents: bytes):
+    import openpyxl
+
     workbook = openpyxl.load_workbook(io.BytesIO(contents), data_only=True)
     course_title, course_code, header_info, target_ws = None, None, None, None
 

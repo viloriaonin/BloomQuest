@@ -3,10 +3,6 @@ from copy import copy
 from collections import defaultdict
 from pathlib import Path
 
-import openpyxl
-from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-from openpyxl.utils import get_column_letter
-
 BLOOM_LEVELS = [
     "Remember",
     "Understand",
@@ -39,11 +35,18 @@ SUPPORTED_QUESTION_TYPES = [
 
 
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "tos_template.xlsx"
-STANDARD_TOS_FONT = Font(name="Times New Roman", size=11)
+
+
+def _load_spreadsheet_library():
+    global openpyxl, Font, Alignment, PatternFill, Border, Side, get_column_letter
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
 
 
 def _apply_consistent_tos_font(ws, min_row=1, max_row=None, min_col=1, max_col=None):
     """Standardize all populated cells in the generated TOS to one font family."""
+    _load_spreadsheet_library()
     max_row = ws.max_row if max_row is None else max_row
     max_col = ws.max_column if max_col is None else max_col
 
@@ -90,6 +93,7 @@ def _normalize_header(value):
 
 
 def _load_tos_template_workbook():
+    _load_spreadsheet_library()
     if TEMPLATE_PATH.exists():
         try:
             return openpyxl.load_workbook(TEMPLATE_PATH)
@@ -611,6 +615,7 @@ def generate_tos_from_institutional_template(
     dean_name="",
     program_chair_name="",
 ):
+    _load_spreadsheet_library()
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "TOS"
@@ -817,6 +822,7 @@ def generate_tos_from_excel_template(
     department_code="",
     program_code="",
 ):
+    _load_spreadsheet_library()
     wb = _load_tos_template_workbook()
     ws = wb.active
     ws.views.sheetView[0].showGridLines = True

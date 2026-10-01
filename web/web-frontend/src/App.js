@@ -3,25 +3,25 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { API_URL } from "./config/api";
 
 // Auth Pages
-import Login from "./pages/auth/Login";
-import ForgotPassword from "./pages/auth/Forgotpass";
-import ContactAdmin from "./pages/auth/ContactAdmin";
-import LandingPage from "./pages/LandingPage";
-
 // User Pages
-import Dashboard from "./pages/users/Dashboard";
-import InputQuestion from "./pages/users/InputQuestion";
-import QuestionBank from "./pages/users/QuestionBank";
-import History from "./pages/users/History";
 import Sidebar from "./pages/users/Sidebar";
-import UserWorkspacePage from "./pages/users/UserWorkspacePage";
-import UserToolsPage from "./pages/users/UserToolsPage";
 import PageContainer from "./components/PageContainer";
 import TopBar from "./components/TopBar";
 
 // Admin Pages
-import AdminDashboard from "./pages/admin/admindashboard";
-import SuperAdminDashboard from "./pages/admin/SuperAdminDashboard";
+
+const Login = React.lazy(() => import("./pages/auth/Login"));
+const ForgotPassword = React.lazy(() => import("./pages/auth/Forgotpass"));
+const ContactAdmin = React.lazy(() => import("./pages/auth/ContactAdmin"));
+const LandingPage = React.lazy(() => import("./pages/LandingPage"));
+const Dashboard = React.lazy(() => import("./pages/users/Dashboard"));
+const InputQuestion = React.lazy(() => import("./pages/users/InputQuestion"));
+const QuestionBank = React.lazy(() => import("./pages/users/QuestionBank"));
+const History = React.lazy(() => import("./pages/users/History"));
+const UserWorkspacePage = React.lazy(() => import("./pages/users/UserWorkspacePage"));
+const UserToolsPage = React.lazy(() => import("./pages/users/UserToolsPage"));
+const AdminDashboard = React.lazy(() => import("./pages/admin/admindashboard"));
+const SuperAdminDashboard = React.lazy(() => import("./pages/admin/SuperAdminDashboard"));
 
 // ---------------------------------------------------------
 // 1. User Layout (Standard Sidebar)
@@ -113,7 +113,7 @@ const AdminRoute = ({ children }) => {
             setIsAuthorized("super-admin");
             return;
           }
-          if (backendRole !== "campus_admin") {
+          if (!["admin", "campus_admin"].includes(backendRole)) {
             localStorage.removeItem("token");
             localStorage.removeItem("role");
             setIsAuthorized("denied");
@@ -190,7 +190,8 @@ const AdminAcademicRoute = () => (
 function App() {
   return (
     <BrowserRouter>
-      <Routes>
+      <React.Suspense fallback={<div className="flex min-h-screen items-center justify-center text-sm text-slate-500">Loading…</div>}>
+        <Routes>
         {/* Auth Routes */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/home" element={<LandingPage />} />
@@ -316,7 +317,8 @@ function App() {
           }
         />
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+        </Routes>
+      </React.Suspense>
     </BrowserRouter>
   );
 }
