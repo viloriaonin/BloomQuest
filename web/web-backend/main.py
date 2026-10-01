@@ -80,11 +80,36 @@ with engine.begin() as connection:
         connection.execute(text("DROP INDEX IF EXISTS ix_departments_code"))
         connection.execute(text("DROP INDEX IF EXISTS departments_name_key"))
         connection.execute(text("DROP INDEX IF EXISTS departments_code_key"))
-        connection.execute(text("DROP INDEX IF EXISTS uq_department_campus_name"))
-        connection.execute(text("DROP INDEX IF EXISTS uq_department_campus_code"))
-        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_department_campus_name ON departments (campus_id, lower(name)) WHERE campus_id IS NOT NULL"))
-        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_department_campus_code ON departments (campus_id, lower(code)) WHERE campus_id IS NOT NULL AND code IS NOT NULL"))
-        connection.execute(text("ALTER TABLE uploaded_files ALTER COLUMN user_id DROP NOT NULL"))
+
+    # Remove the UNIQUE constraints first.
+    # PostgreSQL owns the indexes backing these constraints.
+    connection.execute(text("""
+        ALTER TABLE departments
+        DROP CONSTRAINT IF EXISTS uq_department_campus_name
+    """))
+
+    connection.execute(text("""
+        ALTER TABLE departments
+        DROP CONSTRAINT IF EXISTS uq_department_campus_code
+    """))
+
+    # Recreate case-insensitive unique indexes.
+    connection.execute(text("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_department_campus_name
+        ON departments (campus_id, lower(name))
+        WHERE campus_id IS NOT NULL
+    """))
+
+    connection.execute(text("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_department_campus_code
+        ON departments (campus_id, lower(code))
+        WHERE campus_id IS NOT NULL
+          AND code IS NOT NULL
+    """))
+
+    connection.execute(text(
+        "ALTER TABLE uploaded_files ALTER COLUMN user_id DROP NOT NULL"
+    ))
     binary_definition = "BYTEA" if connection.dialect.name == "postgresql" else "BLOB"
     for column, definition in (("filename", "VARCHAR(255)"), ("media_type", "VARCHAR(255)"), ("file_content", binary_definition), ("archived", "BOOLEAN NOT NULL DEFAULT FALSE"), ("actor_id", "INTEGER"), ("target_user_id", "INTEGER")):
         connection.execute(text(f"ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS {column} {definition}"))
