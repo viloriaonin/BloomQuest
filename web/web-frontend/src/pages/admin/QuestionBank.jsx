@@ -3,7 +3,6 @@ import { usePopup } from "../../components/PopupProvider";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, BookOpen, Building2, CalendarDays, ChevronRight, FileText, FlaskConical, Search, Shield, Sigma, UserRound } from "lucide-react";
 
-// const API_URL = "http://localhost:8000";
 import { API_URL } from "../../api";
 
 const BLOOMS_LEVELS = [
@@ -72,7 +71,7 @@ const LegacyQuestionBankContent = () => {
   useEffect(() => {
     const fetchSubjects = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/subjects`);
+        const res = await fetch(`${API_URL}/subjects`);
         if (!res.ok) throw new Error("Failed to fetch subjects");
         const data = await res.json();
         setSubjects(data);
@@ -89,8 +88,8 @@ const LegacyQuestionBankContent = () => {
     const fetchBankSummary = async () => {
       try {
         const [questionsRes, logsRes] = await Promise.all([
-          fetch(`${API_URL}/api/questions`),
-          fetch(`${API_URL}/api/activity-logs`),
+          fetch(`${API_URL}/questions`),
+          fetch(`${API_URL}/activity-logs`),
         ]);
         if (questionsRes.ok)
           setTotalQuestionCount((await questionsRes.json()).length);
@@ -137,7 +136,7 @@ const LegacyQuestionBankContent = () => {
     setSelectedQuestions([]);
     try {
       const subjectQuery = subjectId ? `?subject_id=${subjectId}` : "";
-      const res = await fetch(`${API_URL}/api/questions${subjectQuery}`);
+      const res = await fetch(`${API_URL}/questions${subjectQuery}`);
       if (!res.ok) throw new Error("Failed to fetch questions");
       const data = await res.json();
       setQuestions(data);
@@ -156,7 +155,7 @@ const LegacyQuestionBankContent = () => {
     if (!confirmed) return;
     setDeletingId(id);
     try {
-      const res = await fetch(`${API_URL}/api/questions/${id}`, {
+      const res = await fetch(`${API_URL}/questions/${id}`, {
         method: "DELETE",
       });
       if (!res.ok) throw new Error("Delete failed");
@@ -186,7 +185,7 @@ const LegacyQuestionBankContent = () => {
       formData.append("correct_answer", editForm.correct_answer);
       formData.append("explanation", editForm.explanation);
       formData.append("lifecycle_status", editForm.lifecycle_status || "draft");
-      const res = await fetch(`${API_URL}/api/questions/${editingQuestion}`, {
+      const res = await fetch(`${API_URL}/questions/${editingQuestion}`, {
         method: "PUT",
         body: formData,
       });
@@ -227,7 +226,7 @@ const LegacyQuestionBankContent = () => {
         subject_id: parseInt(selectedSubject, 10),
       };
 
-      const res = await fetch(`${API_URL}/api/questions/manual`, {
+      const res = await fetch(`${API_URL}/questions/manual`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -273,7 +272,7 @@ const LegacyQuestionBankContent = () => {
       form.append("subject_id", selectedSubject);
       form.append("module_file", moduleFile);
       form.append("syllabus_file", syllabusFile);
-      const res = await fetch(`${API_URL}/api/upload`, {
+      const res = await fetch(`${API_URL}/upload`, {
         method: "POST",
         body: form,
       });
@@ -1027,8 +1026,8 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
     const loadAcademicData = async () => {
       try {
         const [hierarchyResponse, subjectsResponse] = await Promise.all([
-          fetch(`${API_URL}/api/academic-hierarchy`),
-          fetch(`${API_URL}/api/subjects`),
+          fetch(`${API_URL}/academic-hierarchy`),
+          fetch(`${API_URL}/subjects`),
         ]);
         if (!hierarchyResponse.ok || !subjectsResponse.ok) throw new Error("Could not load the academic structure.");
         const hierarchyData = await hierarchyResponse.json();
@@ -1053,7 +1052,7 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
       }
       setSubjects([]);
       try {
-        const response = await fetch(`${API_URL}/api/subjects?program_id=${selection.programId}`);
+        const response = await fetch(`${API_URL}/subjects?program_id=${selection.programId}`);
         if (!response.ok) throw new Error("Could not load subjects for this program.");
         const data = await response.json();
         setSubjects(data);
@@ -1072,7 +1071,7 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
     const loadQuestions = async () => {
       setQuestionsLoading(true);
       try {
-        const response = await fetch(`${API_URL}/api/questions?subject_id=${selection.subjectId}&program_id=${selection.programId}`);
+        const response = await fetch(`${API_URL}/questions?subject_id=${selection.subjectId}&program_id=${selection.programId}`);
         if (!response.ok) throw new Error("Could not load questions for this subject.");
         setQuestions(await response.json());
       } catch (err) {
@@ -1082,7 +1081,7 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
       }
     };
     loadQuestions();
-  }, [selection.subjectId]);
+  }, [selection.subjectId, selection.programId]);
 
   const selectedCampus = hierarchy.campuses.find((campus) => campus.id === selection.campusId);
   const selectedDepartment = selectedCampus?.departments.find((department) => department.id === selection.departmentId);

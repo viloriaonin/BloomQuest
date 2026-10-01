@@ -5,16 +5,11 @@ import LegalModal from "../../components/LegalModal";
 import PublicNav from "../../components/PublicNav";
 import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
 
-// Connects directly to your local backend server environment
-// const SEND_OTP_URL = "http://localhost:8000/api/contact-admin/send-otp";
-// const VERIFY_OTP_URL = "http://localhost:8000/api/contact-admin/verify-otp";
-// const CHECK_STATUS_URL = "http://localhost:8000/api/contact-admin/check-status";
+import { API_URL } from "../../api";
 
-import { API_BASE_URL } from "../../api";
-
-const SEND_OTP_URL = `${API_BASE_URL}/contact-admin/send-otp`;
-const VERIFY_OTP_URL = `${API_BASE_URL}/contact-admin/verify-otp`;
-const CHECK_STATUS_URL = `${API_BASE_URL}/contact-admin/check-status`;
+const SEND_OTP_URL = `${API_URL}/contact-admin/send-otp`;
+const VERIFY_OTP_URL = `${API_URL}/contact-admin/verify-otp`;
+const CHECK_STATUS_URL = `${API_URL}/contact-admin/check-status`;
 
 const paper = '#F7F6F3';
 const surface = '#FFFFFF';
@@ -76,10 +71,8 @@ const ContactAdmin = () => {
   useEffect(() => {
     let active = true;
     Promise.all([
-      // fetch("http://localhost:8000/api/campuses"),
-      // fetch("http://localhost:8000/api/departments"),
-        fetch(`${API_BASE_URL}/campuses`),
-        fetch(`${API_BASE_URL}/departments`), 
+        fetch(`${API_URL}/campuses`),
+        fetch(`${API_URL}/departments`), 
     ])
       .then(async ([campusResponse, departmentResponse]) => {
         if (!campusResponse.ok || !departmentResponse.ok) {

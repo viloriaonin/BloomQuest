@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { ArchiveRestore, RotateCcw, ShieldCheck } from "lucide-react";
 import { usePopup } from "../../components/PopupProvider";
 import { API_URL } from "../../api";
-// const API_URL = "http://localhost:8000";
 
 const Governance = () => {
   const { showAlert, showConfirm } = usePopup();
@@ -18,8 +17,8 @@ const Governance = () => {
     try {
       const userId = encodeURIComponent(localStorage.getItem("user_id") || "");
       const [recycleResponse, insightsResponse] = await Promise.all([
-        fetch(`${API_URL}/api/recycle-bin?user_id=${userId}`),
-        fetch(`${API_URL}/api/admin/insights`),
+        fetch(`${API_URL}/recycle-bin?user_id=${userId}`),
+        fetch(`${API_URL}/admin/insights`),
       ]);
       if (!recycleResponse.ok) throw new Error("Could not load governance records.");
       const data = await recycleResponse.json();
@@ -39,7 +38,7 @@ const Governance = () => {
   const restoreSubject = async (id) => {
     if (!(await showConfirm("Restore this subject and its academic record?", "Restore Subject"))) return;
     const userId = encodeURIComponent(localStorage.getItem("user_id") || "");
-    const response = await fetch(`${API_URL}/api/recycle-bin/subjects/${id}/restore?user_id=${userId}`, { method: "POST" });
+    const response = await fetch(`${API_URL}/recycle-bin/subjects/${id}/restore?user_id=${userId}`, { method: "POST" });
     if (!response.ok) return showAlert("Could not restore subject.", "Restore Error");
     await showAlert("Subject restored successfully.", "Restored");
     loadGovernance();
@@ -47,7 +46,7 @@ const Governance = () => {
 
   const restoreVersion = async (questionId, versionId) => {
     if (!(await showConfirm("Restore this version of the question?", "Restore Version"))) return;
-    const response = await fetch(`${API_URL}/api/questions/${questionId}/versions/${versionId}/restore`, { method: "POST" });
+    const response = await fetch(`${API_URL}/questions/${questionId}/versions/${versionId}/restore`, { method: "POST" });
     if (!response.ok) return showAlert("Could not restore this version.", "Version Error");
     await showAlert("Question version restored.", "Restored");
     setVersions(null);

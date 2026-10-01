@@ -3,9 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { usePopup } from "../../components/PopupProvider";
 import LoadingSpinner from "../../components/LoadingSpinner";
 import { Activity, FileText, Filter, History, X, Users } from "lucide-react";
-import { API_BASE_URL } from "../../api";
-
-// const API_BASE_URL = "http://localhost:8000/api";
+import { API_URL } from "../../api";
 
 
 export const UserMgmtContent = () => {
@@ -45,7 +43,7 @@ export const UserMgmtContent = () => {
     setLoadingRequests(true);
     setErrorRequests("");
     try {
-      const response = await fetch(`${API_BASE_URL}/contact-admin/pending`, { cache: "no-store" });
+      const response = await fetch(`${API_URL}/contact-admin/pending`, { cache: "no-store" });
       if (!response.ok) throw new Error("Failed to load account requests.");
       const data = await response.json();
       setRequests(data);
@@ -59,7 +57,7 @@ export const UserMgmtContent = () => {
 
   const fetchChangeRequests = useCallback(async (status = changeRequestStatus) => {
     try {
-      const url = new URL(`${API_BASE_URL}/admin/user-change-requests`);
+      const url = new URL(`${API_URL}/admin/user-change-requests`);
       if (status && status !== "all") url.searchParams.set("status", status);
       const response = await fetch(url.toString(), { cache: "no-store" });
       if (response.ok) setChangeRequests(await response.json());
@@ -70,7 +68,7 @@ export const UserMgmtContent = () => {
     setLoadingUsers(true);
     setErrorUsers("");
     try {
-      const response = await fetch(`${API_BASE_URL}/contact-admin/users`, { cache: "no-store" });
+      const response = await fetch(`${API_URL}/contact-admin/users`, { cache: "no-store" });
       if (!response.ok) throw new Error("Failed to fetch active users");
       const data = await response.json();
 
@@ -111,7 +109,7 @@ export const UserMgmtContent = () => {
   }, [changeRequestStatus, fetchChangeRequests]);
 
   const reviewChangeRequest = async (id, action) => {
-    const response = await fetch(`${API_BASE_URL}/admin/user-change-requests/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+    const response = await fetch(`${API_URL}/admin/user-change-requests/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) { await showAlert(data.detail || "Could not review request.", "User Request"); return; }
     await showAlert(`Request ${action}d successfully.`, "User Request");
@@ -125,7 +123,7 @@ export const UserMgmtContent = () => {
     if (!confirmed) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/contact-admin/approve`, {
+      const response = await fetch(`${API_URL}/contact-admin/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
@@ -152,7 +150,7 @@ export const UserMgmtContent = () => {
     const confirmed = await showConfirm(`Are you sure you want to decline the account for ${email}?`, "Decline Request");
     if (!confirmed) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/contact-admin/decline`, {
+      const response = await fetch(`${API_URL}/contact-admin/decline`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
@@ -191,7 +189,7 @@ export const UserMgmtContent = () => {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/users/verify-admin-password`, {
+      const response = await fetch(`${API_URL}/users/verify-admin-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -226,7 +224,7 @@ export const UserMgmtContent = () => {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/users/update-password`, {
+      const response = await fetch(`${API_URL}/users/update-password`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: editingUser.email, new_password: newPassword }),
@@ -252,7 +250,7 @@ export const UserMgmtContent = () => {
     if (!confirmed) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/users/archive`, {
+      const response = await fetch(`${API_URL}/users/archive`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: user.email }),
@@ -271,7 +269,7 @@ export const UserMgmtContent = () => {
 
   const handleRestoreUser = async (email) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/users/restore`, {
+      const response = await fetch(`${API_URL}/users/restore`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
@@ -294,7 +292,7 @@ export const UserMgmtContent = () => {
     if (!confirmed) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/users/${encodeURIComponent(email)}`, {
+      const response = await fetch(`${API_URL}/users/${encodeURIComponent(email)}`, {
         method: "DELETE",
       });
 

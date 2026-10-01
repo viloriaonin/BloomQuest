@@ -17,7 +17,6 @@ import { API_URL } from "../../api";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend);
 
-// const API_URL = "http://localhost:8000";
 
 // ─── Design tokens ───
 const surface = "#FFFFFF";
@@ -76,10 +75,10 @@ const Dashboard = ({ onToggleSidebar }) => {
         }
 
         const responses = await Promise.all([
-          fetch(`${API_URL}/api/subjects?user_id=${encodeURIComponent(userId)}`),
-          fetch(`${API_URL}/api/questions?user_id=${encodeURIComponent(userId)}`),
-          fetch(`${API_URL}/api/history?user_id=${encodeURIComponent(userId)}`),
-          fetch(`${API_URL}/api/history/export-count?user_id=${encodeURIComponent(userId)}`),
+          fetch(`${API_URL}/subjects?user_id=${encodeURIComponent(userId)}`),
+          fetch(`${API_URL}/questions?user_id=${encodeURIComponent(userId)}`),
+          fetch(`${API_URL}/history?user_id=${encodeURIComponent(userId)}`),
+          fetch(`${API_URL}/history/export-count?user_id=${encodeURIComponent(userId)}`),
         ]);
         const [subjectsRes, questionsRes, historyRes, exportCountRes] = responses;
         const subjectsData = subjectsRes.ok ? asList(await subjectsRes.json(), ['subjects', 'items']) : [];

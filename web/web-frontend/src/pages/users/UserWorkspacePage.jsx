@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ArrowRight, CheckCircle2, Download, Eye, EyeOff, FileText, KeyRound, LockKeyhole, Play, Save, UserRound, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-import { API_BASE_URL } from "../../api";
+import { API_URL } from "../../api";
 
 const WORKSPACES = {
   reports: {
@@ -27,7 +27,6 @@ const templates = [
   { name: "Midterm Examination", detail: "A compact blueprint with stronger application coverage.", meta: "4 topics · 40 items" },
   { name: "Department Master TOS", detail: "Your institution-wide starting point for new courses.", meta: "8 topics · 60 items" },
 ];
-const API_URL = "/api";
 
 const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
   const navigate = useNavigate();
@@ -300,7 +299,7 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
     setPasswordLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/user/change-password/update`, {
+      const response = await fetch(`${API_URL}/user/change-password/update`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

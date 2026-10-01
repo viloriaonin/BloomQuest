@@ -3,8 +3,7 @@ import { createPortal } from 'react-dom';
 import { CheckSquare, ChevronRight, Download, FileText, Filter, FlaskConical, Heart, Info, Plus, Search, Shield, Sigma, Trash2, Sparkles, AlertCircle } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { usePopup } from '../../components/PopupProvider';
-
-const API_URL = 'http://localhost:8000';
+import { API_URL } from '../../api';
 const PRIMARY = '#8F1424';
 const PRIMARY_SOFT = '#FBEEEF';
 
@@ -426,7 +425,7 @@ const QuestionBank = () => {
     const fetchSubjects = async () => {
       try {
         const userId = localStorage.getItem('user_id') || '';
-        const res = await fetch(`${API_URL}/api/subjects?user_id=${encodeURIComponent(userId)}`);
+        const res = await fetch(`${API_URL}/subjects?user_id=${encodeURIComponent(userId)}`);
         if (!res.ok) throw new Error('Failed to fetch subjects');
         const data = await res.json();
         setSubjects(data);
@@ -463,11 +462,11 @@ const QuestionBank = () => {
       const params = new URLSearchParams({ user_id: userId });
       if (subjectId) params.set('subject_id', subjectId);
       const subjectQuery = `?${params.toString()}`;
-      const res = await fetch(`${API_URL}/api/questions${subjectQuery}`);
+      const res = await fetch(`${API_URL}/questions${subjectQuery}`);
       if (!res.ok) throw new Error('Failed to fetch questions');
       const data = await res.json();
       setQuestions(data);
-      const subjectsRes = await fetch(`${API_URL}/api/subjects?user_id=${encodeURIComponent(userId)}`);
+      const subjectsRes = await fetch(`${API_URL}/subjects?user_id=${encodeURIComponent(userId)}`);
       if (subjectsRes.ok) setSubjects(await subjectsRes.json());
     } catch (err) {
       setError('Could not load questions.');
@@ -480,7 +479,7 @@ const QuestionBank = () => {
     event.stopPropagation();
     if (!(await showConfirm(`Remove "${subject.name}" from your Question Bank? Your generated questions and uploaded files will be kept.`, 'Remove Subject'))) return;
     try {
-      const res = await fetch(`${API_URL}/api/subjects/${subject.id}?user_id=${encodeURIComponent(localStorage.getItem('user_id') || '')}`, { method: 'DELETE' });
+      const res = await fetch(`${API_URL}/subjects/${subject.id}?user_id=${encodeURIComponent(localStorage.getItem('user_id') || '')}`, { method: 'DELETE' });
       if (!res.ok) {
         const responseError = await res.json().catch(() => ({}));
         throw new Error(responseError.detail || 'Could not delete subject');
@@ -501,7 +500,7 @@ const QuestionBank = () => {
   const undoDeleteSubject = async () => {
     if (!deletedSubject) return;
     try {
-      const res = await fetch(`${API_URL}/api/recycle-bin/subjects/${deletedSubject.id}/restore`, { method: 'POST' });
+      const res = await fetch(`${API_URL}/recycle-bin/subjects/${deletedSubject.id}/restore`, { method: 'POST' });
       if (!res.ok) throw new Error('Could not undo subject deletion');
       const restored = await res.json();
       setSubjects((current) => [...current, restored]);
@@ -518,7 +517,7 @@ const QuestionBank = () => {
     setAddingSubject(true);
     setError('');
     try {
-      const res = await fetch(`${API_URL}/api/subjects`, {
+      const res = await fetch(`${API_URL}/subjects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newSubjectName.trim(), code: newSubjectCode.trim() || null, user_id: Number(localStorage.getItem('user_id')) || null }),
@@ -541,7 +540,7 @@ const QuestionBank = () => {
     if (!confirmed) return;
     setDeletingId(id);
     try {
-      const res = await fetch(`${API_URL}/api/questions/${id}?user_id=${encodeURIComponent(localStorage.getItem('user_id') || '')}`, { method: 'DELETE' });
+      const res = await fetch(`${API_URL}/questions/${id}?user_id=${encodeURIComponent(localStorage.getItem('user_id') || '')}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Delete failed');
       setQuestions(prev => prev.filter(q => q.id !== id));
       setSelectedQuestions(prev => prev.filter(qId => qId !== id));
@@ -567,7 +566,7 @@ const QuestionBank = () => {
       formData.append('question', editForm.question);
       formData.append('correct_answer', editForm.correct_answer);
       formData.append('explanation', editForm.explanation);
-      const res = await fetch(`${API_URL}/api/questions/${editingQuestion}`, {
+      const res = await fetch(`${API_URL}/questions/${editingQuestion}`, {
         method: 'PUT',
         body: formData,
       });
@@ -597,7 +596,7 @@ const QuestionBank = () => {
 
   const openVersions = async (question) => {
     try {
-      const res = await fetch(`${API_URL}/api/questions/${question.id}/versions`);
+      const res = await fetch(`${API_URL}/questions/${question.id}/versions`);
       if (!res.ok) throw new Error('Could not load question versions');
       setVersions(await res.json());
       setVersionQuestion(question);
@@ -607,7 +606,7 @@ const QuestionBank = () => {
 
   const restoreVersion = async (version) => {
     if (!versionQuestion) return;
-    const res = await fetch(`${API_URL}/api/questions/${versionQuestion.id}/versions/${version.id}/restore`, { method: 'POST' });
+    const res = await fetch(`${API_URL}/questions/${versionQuestion.id}/versions/${version.id}/restore`, { method: 'POST' });
     if (!res.ok) { setError('Could not restore question version'); return; }
     setVersionsOpen(false);
     fetchQuestions(selectedSubject, true);
@@ -713,7 +712,7 @@ const QuestionBank = () => {
       const userId = localStorage.getItem('user_id');
       if (userId) formData.append('user_id', userId);
 
-      const res = await fetch(`${API_URL}/api/questions/export`, {
+      const res = await fetch(`${API_URL}/questions/export`, {
         method: 'POST',
         body: formData,
       });
@@ -783,7 +782,7 @@ const QuestionBank = () => {
       if (userId) formData.append('user_id', userId);
 
       setTosSavingProgress(30); // Progress: sending request
-      const res = await fetch(`${API_URL}/api/questions/export/tos`, {
+      const res = await fetch(`${API_URL}/questions/export/tos`, {
         method: 'POST',
         body: formData,
       });

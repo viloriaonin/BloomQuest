@@ -6,15 +6,11 @@ import LegalModal from "../../components/LegalModal";
 import PublicNav from "../../components/PublicNav";
 import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
 
-// const SEND_OTP_URL    = "http://localhost:8000/api/forgot-password/send-otp";
-// const VERIFY_OTP_URL  = "http://localhost:8000/api/forgot-password/verify-otp";
-// const RESET_PASS_URL  = "http://localhost:8000/api/forgot-password/reset";
+import { API_URL } from "../../api";
 
-import { API_BASE_URL } from "../../api";
-
-const SEND_OTP_URL = `${API_BASE_URL}/forgot-password/send-otp`;
-const VERIFY_OTP_URL = `${API_BASE_URL}/forgot-password/verify-otp`;
-const RESET_PASS_URL = `${API_BASE_URL}/forgot-password/reset`;
+const SEND_OTP_URL = `${API_URL}/forgot-password/send-otp`;
+const VERIFY_OTP_URL = `${API_URL}/forgot-password/verify-otp`;
+const RESET_PASS_URL = `${API_URL}/forgot-password/reset`;
 
 const paper = '#F7F6F3';
 const surface = '#FFFFFF';

@@ -1,5 +1,6 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { API_URL } from "./api";
 
 // Auth Pages
 import Login from "./pages/auth/Login";
@@ -97,7 +98,7 @@ const AdminRoute = ({ children }) => {
     }
 
     let cancelled = false;
-    fetch(`${process.env.REACT_APP_API_BASE_URL || "http://localhost:8000/api"}/admin/me`, {
+    fetch(`${API_URL}/admin/me`, {
       cache: "no-store",
       headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
     })

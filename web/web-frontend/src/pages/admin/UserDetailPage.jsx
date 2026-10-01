@@ -9,10 +9,9 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import { usePopup } from "../../components/PopupProvider";
 import LoadingSpinner from "../../components/LoadingSpinner";
+import { API_URL } from "../../api";
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:8000/api";
-
-const apiFetch = (path, options = {}) => fetch(`${API_BASE_URL}${path}`, {
+const apiFetch = (path, options = {}) => fetch(`${API_URL}${path}`, {
   ...options,
   headers: {
     Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
