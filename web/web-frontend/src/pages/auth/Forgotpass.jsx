@@ -6,7 +6,7 @@ import LegalModal from "../../components/LegalModal";
 import PublicNav from "../../components/PublicNav";
 import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
 
-import { API_URL } from "../../api";
+import { API_URL } from "../../config/api";
 
 const SEND_OTP_URL = `${API_URL}/forgot-password/send-otp`;
 const VERIFY_OTP_URL = `${API_URL}/forgot-password/verify-otp`;

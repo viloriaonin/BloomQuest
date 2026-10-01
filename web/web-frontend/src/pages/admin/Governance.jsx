@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { ArchiveRestore, RotateCcw, ShieldCheck } from "lucide-react";
 import { usePopup } from "../../components/PopupProvider";
-import { API_URL } from "../../api";
+import { API_URL } from "../../config/api";
 
 const Governance = () => {
   const { showAlert, showConfirm } = usePopup();

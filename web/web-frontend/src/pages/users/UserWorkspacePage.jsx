@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ArrowRight, CheckCircle2, Download, Eye, EyeOff, FileText, KeyRound, LockKeyhole, Play, Save, UserRound, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-import { API_URL } from "../../api";
+import { API_URL } from "../../config/api";
 
 const WORKSPACES = {
   reports: {

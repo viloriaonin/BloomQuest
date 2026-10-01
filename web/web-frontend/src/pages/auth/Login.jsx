@@ -6,7 +6,9 @@ import PublicNav from "../../components/PublicNav";
 import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
 import { Eye, EyeOff } from "lucide-react";
 
-const API_URL = "/api/login";
+import { API_URL } from "../../config/api";
+
+const LOGIN_URL = `${API_URL}/login`;
 
 const paper = '#F7F6F3';
 const surface = '#FFFFFF';
@@ -73,7 +75,7 @@ const Login = () => {
 
     setLoading(true);
     try {
-      const response = await fetch(API_URL, {
+      const response = await fetch(LOGIN_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),

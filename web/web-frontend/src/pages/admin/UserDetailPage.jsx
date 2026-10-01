@@ -9,7 +9,7 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import { usePopup } from "../../components/PopupProvider";
 import LoadingSpinner from "../../components/LoadingSpinner";
-import { API_URL } from "../../api";
+import { API_URL } from "../../config/api";
 
 const apiFetch = (path, options = {}) => fetch(`${API_URL}${path}`, {
   ...options,

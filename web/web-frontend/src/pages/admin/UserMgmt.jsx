@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { usePopup } from "../../components/PopupProvider";
 import LoadingSpinner from "../../components/LoadingSpinner";
 import { Activity, FileText, Filter, History, X, Users } from "lucide-react";
-import { API_URL } from "../../api";
+import { API_URL } from "../../config/api";
 
 
 export const UserMgmtContent = () => {

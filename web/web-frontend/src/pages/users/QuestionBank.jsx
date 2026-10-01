@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { CheckSquare, ChevronRight, Download, FileText, Filter, FlaskConical, Heart, Info, Plus, Search, Shield, Sigma, Trash2, Sparkles, AlertCircle } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { usePopup } from '../../components/PopupProvider';
-import { API_URL } from '../../api';
+import { API_URL } from '../../config/api';
 const PRIMARY = '#8F1424';
 const PRIMARY_SOFT = '#FBEEEF';
 

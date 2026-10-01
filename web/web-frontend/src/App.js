@@ -1,6 +1,6 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { API_URL } from "./api";
+import { API_URL } from "./config/api";
 
 // Auth Pages
 import Login from "./pages/auth/Login";

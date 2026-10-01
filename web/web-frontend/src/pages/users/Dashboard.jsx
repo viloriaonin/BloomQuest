@@ -12,7 +12,7 @@ import {
 import { Bar, Doughnut } from "react-chartjs-2";
 import { BookOpen, ClipboardList, Download, Lightbulb, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { API_URL } from "../../api";
+import { API_URL } from "../../config/api";
 
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend);
