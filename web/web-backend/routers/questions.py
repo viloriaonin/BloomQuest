@@ -37,7 +37,7 @@ from ai_service import (
     _extract_ilo_label,
     GroqDailyQuotaExceeded,
 )
-from classifier import classify_question
+from classifier import classify_question, classify_question_ml
 from file_extractor import extract_text
 from routers.tos_utils import (
     compute_tos,
@@ -1149,6 +1149,8 @@ async def reclassify_preview_question(payload: PreviewQuestionActionPayload, db:
     )
     usage_tracker = GeminiUsageTracker()
     question["bloom_level"] = classify_question(question["question"], usage_tracker=usage_tracker)
+    if usage_tracker.failure_count or usage_tracker.api_call_count == 0:
+        question["bloom_level"] = classify_question_ml(question["question"])
     finish_ai_usage(
         db,
         usage_id,

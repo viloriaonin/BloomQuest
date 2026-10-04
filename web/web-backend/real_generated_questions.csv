@@ -1,0 +1,337 @@
+question,bloom_level
+Which keyword is used in Python to provide a fallback path when none of the previous conditional expressions have been met?,Remember
+How does a while loop fundamentally differ from a for loop in Python based on the provided text?,Understand
+"A developer writes a Python program with a loop, but the program gets stuck executing the same block infinitely without stopping. Based on the common mistakes discussed in the text, what is the most likely cause?",Analyze
+"A programmer is deciding whether to place an if statement inside an existing loop to check a condition during every repetition. Based on the module, which evaluation best describes the trade-off of this nesting approach?",Evaluate
+How does a while loop primarily differ from a for loop based on the provided text?,Understand
+"A programmer is writing a script where a block of code needs to be executed to check a condition during every single repetition of an outer loop. According to the text, what structure should be utilized?",Apply
+"If a Python program is running indefinitely and never terminating because its looping condition fails to update to False, which common mistake from the module has occurred?",Analyze
+"A student developer writes a Python script that heavily nests multiple loops and conditional statements to handle complex logic. Based on the module guidelines, what is the primary trade-off the developer must judge and manage?",Evaluate
+"Which type of loop is typically used when iterating over a sequence, such as a list or a range of numbers, a fixed number of times?",Remember
+What is the primary purpose of an elif keyword in Python conditional statements?,Understand
+"If a programmer needs a loop that repeats a block of code as long as an unknown number of repetitions are required and a condition remains True, which control structure should they choose?",Apply
+"A student writes a loop where the terminating condition never changes to False inside the loop body, causing the program to run continuously. Which common mistake from the module has the student made?",Analyze
+"A developer is planning to use deep nesting by placing multiple loops and conditional statements inside one another to handle a complex logic flow. Based on the module guidelines, why might this approach be critiqued?",Evaluate
+Which control structure keyword is used to check multiple conditions in sequence after an initial if statement?,Remember
+What is the primary difference between a for loop and a while loop as described in the module?,Understand
+"A programmer wants to write a Python script that checks the variable temperature and prints 'It is hot' if it is above 30, 'It is warm' if it is above 20, and 'It is cool' otherwise. Based on the module example, which structure is best suited for this?",Apply
+"A student writes a program with a loop, but the program freezes and continuously runs without stopping. According to the module, what is the most likely cause of this issue?",Analyze
+"A developer is reviewing a complex Python script that contains multiple loops placed inside conditional statements, which themselves contain other loops. Based on the module's guidance regarding nested control structures, how should the developer assess this code?",Evaluate
+Which keyword is used in Python to provide a fallback path when none of the previous conditional statements are met?,Remember
+A while loop in Python repeats a block of code as long as a given condition remains True.,Remember
+What is the primary purpose of control structures in a Python program?,Understand
+A for loop in Python is typically used when the exact number of repetitions is unknown in advance.,Understand
+When should you choose a while loop instead of a for loop according to the text?,Understand
+Placing a loop inside an example of an if statement is an illustration of nesting control structures.,Apply
+Touching the outside of a mask after donning it is considered a common infection control error in nursing practice.,Evaluate
+"If a program uses the statement `if temperature > 30:` and `temperature` is equal to 35, which path of execution is chosen?",Apply
+An infinite loop occurs when a conditional statement in a loop's condition never becomes False.,Analyze
+Which of the following describes a structural risk introduced by nesting control structures?,Analyze
+Incorrect indentation in Python can change which instructions belong inside a specific control structure block.,Evaluate
+Why might a programmer encountering an off-by-one error examine their code's range parameters in a loop?,Evaluate
+Conditional statements and loops can be combined to form the backbone of non-trivial programs.,Create
+Which keyword is used to provide a fallback path when none of the previous conditions in a conditional statement are met?,Remember
+A while loop repeats a block of code as long as a given condition remains True.,Remember
+What is the primary difference between a for loop and a while loop as described in the module?,Understand
+Placing an if statement inside a loop is an example of nested control structures.,Understand
+Why does Python require careful attention to indentation when using control structures?,Understand
+"If temperature equals 25, the code snippet using elif temperature > 20 will output 'It is warm'.",Apply
+A programmer needs to execute a block of code repeatedly because they do not know in advance how many repetitions will be required before a condition changes. Which control structure should they use?,Apply
+An infinite loop occurs when a loop's condition eventually becomes False after a fixed number of iterations.,Analyze
+What is a structural consequence of adding nesting to control structures in a program?,Analyze
+"Without control structures, a program would execute instructions from top to bottom one time without reacting to conditions.",Evaluate
+"A developer is reviewing a section of code that iterates over a range of numbers and notices that the loop misses checking the final expected value. Based on the module, what kind of common mistake is this?",Evaluate
+"To design a program that checks a condition during every single repetition of a task, a developer can construct a nested control structure by placing an if statement inside a loop.",Create
+Which keyword is used in Python to provide a fallback path when none of the previous conditions in a conditional statement are met?,Remember
+What is the primary purpose of control structures in programming according to the text?,Understand
+An infinite loop occurs when a loop's condition eventually becomes False after a fixed number of iterations.,Understand
+Why might a programmer choose a while loop instead of a for loop?,Understand
+"Based on the example code in the text, if the temperature variable is set to 35, the program will print 'It is hot'.",Apply
+"If a programmer needs to check a condition during every single repetition of an outer loop, which concept from the module should they use?",Apply
+Placing an if statement inside a loop is considered a nested control structure.,Apply
+"Without control structures like conditional statements and loops, a program would execute instructions from top to bottom only one time.",Evaluate
+What is a major consequence of incorrect indentation in Python when using control structures?,Analyze
+"Nesting control structures adds power to a program, but it never impacts the readability of the code.",Analyze
+Why is choosing a for loop generally safer than a poorly constructed while loop?,Evaluate
+Off-by-one errors are a recognized risk when looping over a range of numbers.,Evaluate
+Which combination of control structure features would you design to handle a situation where a program must repeatedly process incoming user data while simultaneously making multi-way decisions on each data point?,Create
+Which keyword allows checking multiple conditions in sequence after an initial if statement?,Remember
+A for loop in Python is typically used when iterating over a sequence such as a list or a range of numbers.,Understand
+What is the primary purpose of a while loop according to the text?,Understand
+Incorrect indentation in Python can change what belongs inside a specific code block.,Understand
+"If a program needs to repeat a block of code when the exact number of repetitions is not known in advance, which control structure should be used?",Apply
+You can place a loop inside an if statement or an if statement inside a loop to check conditions during repetitions.,Apply
+Which scenario best describes the application of an else statement based on the provided text?,Apply
+"Nesting control structures adds complexity to a program, which means care should be taken to keep the code readable.",Analyze
+Which of the following describes a key difference between a for loop and a while loop as described in the module?,Analyze
+Suppose you want to execute a specific block of code only when none of the preceding conditions in your check are met. Which keyword should you use?,Apply
+Why are conditional statements and loops considered critical to programming based on the text?,Evaluate
+A programmer can combine conditional statements and loops together to design code structures that check conditions during every repetition.,Create
+Match the infection control terms from the learning material to their corresponding definitions or characteristics.,Remember
+"Explain the fundamental difference between medical asepsis and surgical asepsis, and provide a clinical example of when each technique should be utilized in routine nursing care according to the module.",Understand
+Match each nursing action to the specific link or concept in infection control that it directly addresses based on the learning material.,Apply
+"Analyze how breaking a single link in the chain of infection stops the spread of infection, and examine why errors such as reusing gloves between patients or touching the outside of a mask after donning compromise this protective system.",Analyze
+Evaluate the following clinical behaviors and match them with their assessment category regarding infection control errors and adherence.,Evaluate
+List and briefly define the six links that make up the chain of infection as discussed in the learning material.,Remember
+Match each infection control concept or technique to its correct description or clinical application.,Understand
+A nurse is preparing to change a patient's wound dressing. Explain how the nurse should determine whether to use medical or surgical asepsis and describe the level of technique required for this specific procedure based on the learning material.,Apply
+What term refers to 'clean technique' which reduces the number of microorganisms and prevents their spread?,Remember
+Match each common infection control practice error to its category or implication within the chain of infection and safety guidelines.,Analyze
+"A nurse is preparing to insert a urinary catheter for a patient. Explain how the nurse must apply the principles of surgical asepsis during this procedure, and contrast this with the technique used for routine handwashing.",Apply
+"A healthcare facility is reviewing its infection control protocols. A staff nurse argues that standard precautions are unnecessary when caring for patients who have no known transmissible infections. Critique this argument using the principles of standard precautions outlined in the learning material, and justify why this practice undermines patient and worker safety.",Evaluate
+Match the asepsis technique or standard precaution with its corresponding definition or clinical description.,Remember
+"Explain how breaking a single link in the chain of infection can halt the spread of disease, and provide an example of how hand hygiene interrupts this process.",Understand
+Match each clinical nursing procedure or activity to the appropriate level of asepsis required according to the learning material.,Apply
+"Examine the common infection control errors discussed in the module (such as improper hand hygiene technique, reusing gloves between patients, touching the outside of a mask after donning it, and delayed isolation). Differentiate how each of these specific errors can lead to a breakdown in patient safety and the transmission of healthcare-associated infections.",Analyze
+"Nesting control structures adds complexity to a program, which requires extra care to maintain code readability.",Analyze
+Evaluate the following nursing actions and match each action to its critique regarding whether it represents proper or improper infection control practice.,Evaluate
+Define the chain of infection and list its six constituent links as discussed in the learning material.,Remember
+How many total links make up the chain of infection according to the learning module?,Remember
+Match each infection control concept or aseptic technique with its correct definition or clinical application.,Understand
+Match each common infection control error with the specific breach of practice it represents.,Analyze
+Critique the practice of applying standard precautions only to patients with diagnosed infectious diseases. Justify why standard precautions must instead apply to the care of all patients.,Evaluate
+Which of the following techniques is also known as 'clean technique'?,Remember
+How many total links make up the chain of infection?,Remember
+What is the primary purpose of applying standard precautions in healthcare settings?,Understand
+What specific link in the chain of infection is directly interrupted when a healthcare worker performs hand hygiene?,Understand
+Which nursing procedure requires the use of surgical asepsis or sterile technique?,Understand
+"If a nurse needs to perform a wound dressing change, what level of asepsis (medical or surgical) must be applied?",Apply
+A nurse is preparing to care for a patient and needs to select personal protective equipment (PPE). What should guide the nurse's choice?,Apply
+Identify the common infection control error described as touching the outside of a protective item immediately after putting it on.,Analyze
+How do medical asepsis and surgical asepsis fundamentally differ in their scope regarding microorganisms?,Analyze
+What infection control principle is violated when a nurse uses the same pair of gloves for more than one patient?,Evaluate
+Which of the following is considered the first link in the chain of infection?,Remember
+"A nurse observes a colleague failing to isolate a patient with a known transmissible infection in a timely manner. Based on the module, how should this action be classified?",Evaluate
+State the term for the specific link in the chain of infection that represents the source where an infectious agent lives and multiplies.,Create
+Which term describes 'clean technique' which is used to reduce the number of microorganisms and prevent their spread in routine nursing care?,Remember
+How many total links make up the chain of infection according to the learning module?,Remember
+Which of the following best describes the primary purpose of breaking any single link in the chain of infection?,Understand
+What specific practice interrupts the mode of transmission link in the chain of infection?,Understand
+"Under standard precautions, what foundational assumption do nurses make regarding all patients?",Understand
+What level of asepsis (medical or surgical) must a nurse use when inserting a urinary catheter?,Apply
+A nurse is preparing to change a patient's wound dressing. Which type of asepsis and technique should the nurse employ?,Apply
+What specific equipment item is incorrectly handled when a nurse touches its outside surface after donning it?,Analyze
+What is the key functional difference between medical asepsis and surgical asepsis as described in the text?,Analyze
+"According to the list of common errors, what unacceptable practice involves using the same pair of gloves for more than one patient?",Evaluate
+Which specific link in the chain of infection is directly interrupted when a nurse performs proper hand hygiene?,Understand
+"A nurse observes a colleague failing to isolate a patient with a known transmissible infection in a timely manner. Based on the module, how should this action be categorized?",Evaluate
+"What overarching category of protection includes items such as gloves, gowns, masks, and eye protection selected based on expected exposure?",Create
+What is the primary purpose of applying medical asepsis in routine nursing care?,Understand
+When must standard precautions be applied according to healthcare guidelines?,Understand
+What type of asepsis or technique must a nurse use when inserting a urinary catheter?,Apply
+A nurse is preparing to perform a wound dressing change for a patient. Which type of technique is required for this procedure?,Apply
+"What category of protective gear includes gloves, gowns, masks, and eye protection?",Apply
+How does surgical asepsis fundamentally differ from medical asepsis?,Analyze
+"Based on common errors in infection control practice, what action involving masks compromises sterility after donning?",Analyze
+A nurse observes a colleague reusing gloves between two different patients. How should this practice be evaluated based on the module?,Evaluate
+What is the clinical consequence of failing to isolate patients with known transmissible infections in a timely manner?,Evaluate
+"A nurse manager is designing a new unit-based protocol to minimize preventable patient harm. Based on the module, which core strategy must be emphasized as central to stopping the spread of infection?",Create
+Which of the following best describes the fundamental purpose of standard precautions?,Understand
+What technique eliminates all microorganisms including spores and is required for procedures like urinary catheter insertion?,Understand
+A nurse is preparing to perform a wound dressing change for a patient. Which infection control technique must the nurse implement?,Apply
+What personal protective equipment category should a nurse select and use based on the expected type of exposure during a specific patient care activity?,Apply
+A nurse is providing routine nursing care such as handwashing and wearing non-sterile gloves. Which type of asepsis is the nurse practicing?,Apply
+What common infection control error occurs when a healthcare provider touches the outside of a protective face covering immediately after putting it on?,Analyze
+"When examining common infection control practices listed in the text, which of the following represents a direct violation of safety protocols?",Analyze
+What action must a healthcare facility take promptly regarding patients with known transmissible infections to prevent practice errors?,Evaluate
+"A newly hired nurse asks why standard precautions must be used for every patient even if they have no diagnosed infection. Based on the module, which rationale is most accurate?",Evaluate
+"According to the principles taught in infection control, what fundamental action applied to any single link can stop the overall spread of an infection?",Create
+"What type of asepsis, also known as 'clean technique', is used to reduce the number of microorganisms and prevent their spread in routine nursing care?",Remember
+Standard precautions apply exclusively to the care of patients with diagnosed transmissible infections.,Remember
+What is another term commonly used to describe medical asepsis?,Remember
+How does hand hygiene primarily function within the chain of infection?,Understand
+"Surgical asepsis, or sterile technique, eliminates all microorganisms including spores.",Understand
+Which loop type is typically used when the number of repetitions is not known in advance?,Remember
+"What term describes the equipment category that includes gloves, gowns, masks, and eye protection?",Understand
+A nurse is preparing to insert a urinary catheter for a patient. Which technique must the nurse employ for this procedure?,Apply
+"If a nurse selects gloves, gowns, masks, and eye protection based on the expected type of exposure during a patient care activity, what general category of precautions is the nurse applying?",Apply
+Reusing gloves between patients is considered an acceptable practice under standard infection control guidelines as long as hand hygiene is performed beforehand.,Analyze
+Which of the following actions represents a breakdown in proper infection control practices according to the text?,Analyze
+What critical error occurs when a healthcare worker delays putting a patient with a known transmissible infection into isolation?,Evaluate
+"According to the principles of the chain of infection, an infection can only be stopped if all six links are simultaneously broken.",Evaluate
+A nurse educator is designing a new hospital orientation protocol for handling patient blood and body fluids safely. Which fundamental concept from the module must form the foundation of this protocol?,Create
+What type of asepsis is also known as 'clean technique' and aims to reduce the number of microorganisms and prevent their spread?,Remember
+Standard precautions apply only to the care of patients with diagnosed transmissible infections.,Remember
+How does hand hygiene primarily function within the chain of infection?,Understand
+"Surgical asepsis eliminates all microorganisms, including spores.",Understand
+How many links make up the chain of infection according to the learning material?,Understand
+A nurse is preparing to insert a urinary catheter for a patient. Which technique should the nurse select to ensure safe practice?,Apply
+"What type of equipment category includes gloves, gowns, masks, and eye protection used during patient care?",Apply
+Reusing gloves between patients is considered an acceptable practice under standard infection control guidelines.,Analyze
+Which of the following actions represents a failure in infection control practice based on the provided text?,Analyze
+What foundational concept is described as being broken to successfully stop the spread of infection?,Evaluate
+"A nurse educator is designing a protocol to address frequent clinical errors identified in the unit. Based on the module, which intervention should the nurse formulate to directly target the error of 'failing to isolate patients with known transmissible infections in a timely manner'?",Create
+Medical asepsis is also known as clean technique.,Remember
+How many links make up the chain of infection according to the learning material?,Remember
+Standard precautions are applied only to patients who have a confirmed transmissible infection diagnosis.,Understand
+Which of the following best describes the primary purpose of surgical asepsis?,Understand
+What specific practice interrupts the mode of transmission link in the chain of infection?,Understand
+A nurse is preparing to perform a wound dressing change for a patient. Which type of technique must the nurse utilize?,Apply
+"What type of equipment category includes gloves, gowns, masks, and eye protection?",Apply
+A nurse should assume that all blood and body fluids may be infectious when caring for any patient.,Apply
+What is a primary cause of an infinite loop according to the learning material?,Analyze
+How do medical asepsis and surgical asepsis differ in their level of microbial elimination?,Analyze
+"According to the text, what common infection control error involves mishandling a face covering after placing it on?",Analyze
+Reusing gloves between patients is considered an acceptable practice under standard precautions if the gloves appear clean.,Evaluate
+"According to the module, which type of loop is typically used to repeat a block of code a fixed number of times over a sequence?",Remember
+Why is failing to isolate patients with known transmissible infections in a timely manner considered a critical error in practice?,Evaluate
+"What is the collective term for the six components (infectious agent, reservoir, portal of exit, mode of transmission, portal of entry, and susceptible host) that nurses must understand to stop the spread of infection?",Create
+How many links make up the chain of infection according to the learning material?,Remember
+What specific link in the chain of infection is interrupted by performing hand hygiene?,Understand
+Standard precautions only apply to the care of patients diagnosed with known transmissible infections.,Understand
+Which of the following best describes the goal of medical asepsis?,Understand
+What type of asepsis or technique is required when inserting a urinary catheter?,Apply
+A nurse performing a wound dressing change should use surgical asepsis.,Apply
+A nurse is preparing to care for a patient and selects appropriate personal protective equipment (PPE). What determines the specific PPE the nurse must select?,Apply
+Identify one common infection control error mentioned in the text that involves reusing items between patients.,Analyze
+Touching the outside of a mask after donning it is identified as a common infection control error.,Analyze
+A healthcare facility reviews its infection control protocols. Which of the following scenarios represents an action that successfully breaks a link in the chain of infection?,Evaluate
+What clinical consequence is associated with failing to isolate patients with known transmissible infections in a timely manner?,Evaluate
+Breaking any single link in the six-link chain of infection can successfully stop the spread of infection.,Create
+Which keyword is used in Python to provide a fallback path when none of the previous conditional statements are met?,Remember
+How does a while loop primarily differ from a for loop based on the provided material?,Understand
+What is the primary purpose of control structures in programming?,Understand
+Why is care required when using nested control structures?,Understand
+A programmer needs to check multiple distinct conditions in sequence to print different messages based on a variable named temperature. Which Python construct should be used?,Apply
+"If a developer wants to check a condition during every single repetition of an active loop, what programming practice should they implement?",Apply
+"A student's Python program runs continuously without stopping, repeatedly executing the same block of code because the condition never evaluates to False. Based on the text, what category of mistake has been made?",Analyze
+"A developer writes a Python script, but the execution block behaves unexpectedly because lines that should be grouped together are separated. According to the text, what common mistake directly changes what belongs inside a block in Python?",Analyze
+A programmer is deciding whether to use a for loop or a while loop to process a dataset where the exact count of items is completely unknown before runtime. Which evaluation of the two loop types is most accurate based on the text?,Evaluate
+"A colleague proposes writing a deeply nested structure containing multiple loops and conditional checks to handle a simple problem, arguing that more code structure is always better. How should this proposal be critiqued based on the module?",Evaluate
+"To design a program structure that evaluates a variable against multiple sequential thresholds (e.g., checking temperature levels) and executes a fallback instruction if none match, what design combination from the text should be formulated?",Create
+Which Python keyword is used to provide a fallback path when none of the previous conditions in an if-elif block are met?,Remember
+Which type of loop in Python is typically used to repeat a block of code a fixed number of times over a sequence?,Remember
+What is the primary purpose of control structures in a computer program?,Understand
+When is it most appropriate to use a while loop instead of a for loop?,Understand
+How does nesting control structures affect a Python program?,Understand
+"Given the code snippet:
+if temperature > 30:
+    print('It is hot')
+elif temperature > 20:
+    print('It is warm')
+else:
+    print('It is cool')
+What output is produced if temperature is equal to 25?",Apply
+A programmer wants to check a specific condition during every single repetition of a loop. Which programming concept should they use?,Apply
+"A student writes a while loop, but when they run the program, it keeps executing continuously without stopping. Based on the module, what is the most likely cause?",Analyze
+"While reviewing a Python script, a developer notices that changing the horizontal spacing of a code block completely alters which instructions belong to a conditional statement. What issue does this represent?",Analyze
+"A peer programmer suggests nesting multiple loops and conditional statements deep inside one another to handle a complex logic requirement. Considering best practices, how should this suggestion be critiqued?",Evaluate
+"When debugging a program that iterates over a range of numbers, a developer finds that their loop misses the final element of the sequence. Which evaluation of the error is most accurate?",Evaluate
+"If you were to construct an original Python code structure to evaluate three distinct sequential temperature ranges (hot, warm, cool) and output a message for each, which combination of control structures would you design?",Create
+"According to the text, which loop type is best used when the number of repetitions is not known in advance?",Remember
+How does a for loop typically function when executing in Python?,Understand
+What is the primary function of control structures in a program?,Understand
+Why might a programmer choose to use an elif statement in Python?,Understand
+"If a program needs to execute a block of code as long as a user-defined condition remains True, which control structure should be implemented?",Apply
+"When designing a program that must check a condition during every single repetition of a loop, which structure should be applied?",Apply
+"Given the temperature check example in the text, if the temperature variable is set to 25, which print statement will execute?",Apply
+What is the primary structural difference between an if-elif-else chain and a nested control structure?,Analyze
+Why can nesting control structures lead to programming complexities based on the provided text?,Analyze
+"Without control structures, a program would execute every instruction from top to bottom one time without reacting to different conditions.",Evaluate
+Standard precautions assume that blood and body fluids may be infectious.,Evaluate
+"A student writes a program where a while loop runs continuously without stopping. Based on the text, how would you critique this code?",Evaluate
+"If a Python programmer encounters unexpected behavior where lines of code execute outside of their intended conditional block, which common mistake should be assessed first?",Evaluate
+Which design approach correctly combines control structures to process a sequence of numbers while checking a decision condition during every repetition?,Create
+What is the primary purpose of control structures in a program?,Understand
+How does an else statement function within a conditional block?,Understand
+Why is nested control structures considered a practice that requires care?,Understand
+"If a program needs to iterate over a fixed sequence such as a list of numbers, which control structure should be used?",Apply
+A programmer wants to check a condition during every single repetition of an active loop. What feature should they use?,Apply
+"When executing a program where temperature equals 25, which output is produced by the example structure if temperature > 30 prints 'It is hot', elif temperature > 20 prints 'It is warm', else prints 'It is cool'?",Apply
+What is the relationship between control structures and the sequential execution of code without them?,Analyze
+Which of the following errors is specifically tied to incorrectly determining the boundaries when looping over a range of numbers in Python?,Analyze
+Medical asepsis is also known as clean technique.,Remember
+"A developer writes a while loop where the condition never updates to False. Based on the module, what is the best critique of this code?",Evaluate
+Why might a programmer judge that using a while loop is superior to a for loop in a specific scenario?,Evaluate
+"To design a program segment that handles multiple sequential conditions followed by a final fallback execution path, what combination of structures should be formulated?",Create
+How many links make up the chain of infection as described in the module?,Remember
+"Medical asepsis, also known as 'clean technique,' eliminates all microorganisms including spores from an object or area.",Understand
+A nurse is preparing to insert a urinary catheter for a newly admitted patient. Which type of technique or asepsis is required for this procedure?,Apply
+"During a shift observation, a nurse notes several infection control practices. Which of the following observed actions represents an infection control error?",Evaluate
+"To properly interrupt the mode of transmission link in the chain of infection during routine care, a nurse can effectively utilize hand hygiene.",Create
+How many links make up the chain of infection as described in the module?,Remember
+"Medical asepsis, also known as 'clean technique,' eliminates all microorganisms including spores.",Understand
+A nurse is preparing to insert a urinary catheter for a patient. Which type of technique must the nurse utilize to perform this procedure safely?,Apply
+Performing hand hygiene directly interrupts the mode of transmission link in the chain of infection.,Analyze
+A nurse observes a colleague touching the outside of a mask immediately after donning it and then preparing to care for a patient. Which assessment of the colleague's action is correct?,Evaluate
+"Because standard precautions assume that all blood and body fluids may be infectious, they must be applied to the care of all patients regardless of their specific diagnosis.",Create
+"Which of the following consists of six links, including the infectious agent, reservoir, portal of exit, mode of transmission, portal of entry, and susceptible host?",Remember
+How does medical asepsis differ primarily from surgical asepsis based on the provided text?,Understand
+Standard precautions apply exclusively to the care of patients with diagnosed transmissible infections and assume that uninfected patients carry no bodily fluids of concern.,Understand
+"When performing a wound dressing change, a nurse should utilize surgical asepsis (sterile technique) because it eliminates all microorganisms including spores.",Apply
+"A nurse performs hand hygiene prior to patient care. Based on the chain of infection, which specific link is primarily being interrupted by this action?",Analyze
+A newly hired nurse is designing a clinical orientation module on infection control. Which of the following activities should the nurse designate as requiring surgical asepsis rather than medical asepsis?,Create
+Standard precautions apply exclusively to the care of patients with diagnosed transmissible infections.,Remember
+"Medical asepsis, or clean technique, is defined as eliminating all microorganisms including spores from an area or object.",Understand
+Which of the following best describes the role of hand hygiene within the chain of infection?,Understand
+A nurse is preparing to insert a urinary catheter for a patient. Which type of technique must the nurse employ to ensure patient safety?,Apply
+Touching the outside of a mask after donning it is considered a common infection control error in practice.,Analyze
+"A program needs to execute a block of code repeatedly when the exact number of required repetitions is completely unknown in advance. Based on the module, which control structure is most appropriate to use?",Apply
+A nurse observes a colleague reusing gloves between two different patients during routine care. What is the most accurate evaluation of this action based on infection control principles?,Evaluate
+"To effectively stop the spread of an infection, a nurse must successfully break at least one of the six links in the chain of infection.",Create
+Which keyword is used in Python to provide a fallback path when none of the previous conditional statements are met?,Remember
+A for loop in Python is typically used to repeat a block of code a fixed number of times by iterating over a sequence.,Remember
+What is the primary purpose of control structures in programming?,Understand
+A while loop is best utilized when the exact number of required repetitions is known beforehand.,Understand
+Which of the following describes the function of the 'elif' keyword in Python?,Understand
+Placing an if statement inside a loop is an example of nested control structures that allows checking a condition during every repetition.,Apply
+"If you need a block of code to execute repeatedly as long as a condition remains True, which control structure should you choose?",Apply
+An infinite loop can occur if the loop condition never evaluates to False.,Analyze
+What is a primary risk introduced by nesting control structures?,Analyze
+"Incorrect indentation in Python can change what statements belong inside a specific control block, making it a critical error to monitor.",Evaluate
+"When designing a program that loops over a range of numbers, which of the following is a recognized issue mentioned in the text that a developer must watch out for?",Evaluate
+Standard precautions must only be applied when caring for patients who have a confirmed or diagnosed transmissible infection.,Analyze
+Conditional statements and loops together form the backbone of almost every non-trivial program.,Create
+Which keyword is used to provide a fallback path in a conditional statement when none of the previous conditions are met?,Remember
+A while loop repeats a block of code as long as a given condition remains True.,Remember
+What is the primary purpose of control structures in programming?,Understand
+An infinite loop can occur when a loop condition never becomes False.,Understand
+When is it most appropriate to use a while loop instead of a for loop?,Understand
+Placing an if statement inside a loop is an example of nested control structures.,Apply
+"Given the code snippet:
+if temperature > 30:
+    print('It is hot')
+elif temperature > 20:
+    print('It is warm')
+else:
+    print('It is cool')
+What will the program output if the temperature variable is set to 25?",Apply
+Incorrect indentation in Python can change what code belongs inside a specific execution block.,Analyze
+Which of the following describes a key distinction between a for loop and a while loop based on the text?,Analyze
+"Nesting control structures adds complexity to code, meaning care should be taken to maintain readability.",Evaluate
+Why might an off-by-one error occur when working with loops in programming?,Evaluate
+Which keyword is used to provide a fallback path when none of the previous conditions in a conditional statement have been met?,Remember
+"A for loop repeats a block of code a fixed number of times, typically iterating over a sequence such as a list or a range of numbers.",Remember
+What is the primary purpose of control structures in Python programs?,Understand
+A while loop is best used when the exact number of required repetitions is known in advance.,Understand
+Why might a programmer use an elif keyword in a Python script?,Understand
+Placing an if statement inside a loop is an example of using nested control structures.,Apply
+"Based on the provided example, if the temperature variable is set to 25, what will be the output of the conditional block?
+if temperature > 30:
+    print('It is hot')
+elif temperature > 20:
+    print('It is warm')
+else:
+    print('It is cool')",Apply
+"If a program continues to run indefinitely because its condition never becomes False, it has created an off-by-one error.",Apply
+Which of the following describes a key difference between a for loop and a while loop as described in the text?,Analyze
+"Nesting control structures adds program complexity, meaning developers must exercise care to keep their code readable.",Analyze
+Why might incorrect indentation be considered a critical issue in Python programs utilizing control structures?,Evaluate
+Using an if statement inside a loop is discouraged because it completely eliminates the need for conditional statements outside of loops.,Evaluate
+An if statement lets a program choose between different paths of execution based on whether a condition is True or False.,Remember
+A while loop is best used when the exact number of repetitions is known in advance.,Understand
+What is the primary function of a for loop as described in the module?,Understand
+"Control structures can be placed inside one another, such as putting an if statement inside a loop.",Understand
+"If a program needs to repeat a block of code as long as a user has not entered the correct password, which control structure is most appropriate?",Apply
+Which keyword is used in Python to provide a fallback path when none of the previous conditional statements are met?,Remember
+A while loop repeats a block of code as long as a given condition remains True.,Remember
+An infinite loop is caused by a condition that never becomes False.,Remember
+Which specific link in the chain of infection is directly interrupted when a nurse performs hand hygiene?,Understand
+Which keyword is used to check multiple conditions in sequence after an initial if statement?,Remember
+Which keyword is used in Python to provide a fallback path when none of the previous conditional statements are met?,Remember
+Incorrect indentation in Python can change what belongs inside a specific control block.,Apply
+Conditional statements and loops together form the backbone of almost every non-trivial program.,Create
+Suppose you need to design a logic sequence that chooses between multiple different execution paths in sequence and provides a fallback when no paths match. Which combination of control structure elements should you formulate?,Create
+Which keyword allows checking multiple conditions in sequence in Python?,Remember
+Why are conditional statements and loops considered vital components of Python programming based on the summary?,Evaluate
+Designing a program structure that places an if statement inside a loop is an example of using nested control structures.,Create

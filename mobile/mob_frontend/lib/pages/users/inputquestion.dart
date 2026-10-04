@@ -3,7 +3,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:BloomQuest/config/api_config.dart';
@@ -562,7 +561,7 @@ class _InputPageState extends State<InputPage>
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
+                    color: Colors.black.withValues(alpha: 0.06),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -829,7 +828,7 @@ class _InputPageState extends State<InputPage>
                     : Colors.grey.shade300,
               ),
               color: _duplicateWarning.isNotEmpty
-                  ? Colors.orange.withOpacity(0.02)
+                  ? Colors.orange.withValues(alpha: 0.02)
                   : Colors.white,
               borderRadius: BorderRadius.circular(8),
             ),
@@ -1456,7 +1455,7 @@ class _InputPageState extends State<InputPage>
                       borderRadius: BorderRadius.circular(8),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.03),
+                          color: Colors.black.withValues(alpha: 0.03),
                           blurRadius: 4,
                           offset: const Offset(0, 2),
                         ),

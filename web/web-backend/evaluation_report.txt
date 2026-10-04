@@ -1,0 +1,37 @@
+=== AI (Gemini) vs ML Model -- Accuracy Comparison ===
+Evaluated on 120 held-out test questions with known, expert-assigned labels
+
+Gemini accuracy: 0.358
+Gemini weighted F1: 0.327
+
+Gemini per-class report:
+              precision    recall  f1-score   support
+
+     Analyze      0.786     0.550     0.647        20
+       Apply      0.000     0.000     0.000        20
+      Create      1.000     0.100     0.182        20
+    Evaluate      1.000     0.200     0.333        20
+    Remember      0.857     0.300     0.444        20
+  Understand      0.217     1.000     0.357        20
+
+    accuracy                          0.358       120
+   macro avg      0.643     0.358     0.327       120
+weighted avg      0.643     0.358     0.327       120
+
+
+ML model accuracy: 0.833
+ML model weighted F1: 0.833
+
+ML model per-class report:
+              precision    recall  f1-score   support
+
+     Analyze      0.842     0.800     0.821        20
+       Apply      0.800     0.800     0.800        20
+      Create      1.000     1.000     1.000        20
+    Evaluate      0.952     1.000     0.976        20
+    Remember      0.750     0.750     0.750        20
+  Understand      0.650     0.650     0.650        20
+
+    accuracy                          0.833       120
+   macro avg      0.832     0.833     0.833       120
+weighted avg      0.832     0.833     0.833       120

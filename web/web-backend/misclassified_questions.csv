@@ -1,0 +1,1404 @@
+question,true_label,predicted_label,correct_bloom_level,source
+About what proportion of the population of the US is living on farms?,Remember,Apply,,kaggle
+Draw the basic outline of a page of notes using the Cornell Method?,Remember,Apply,,kaggle
+How many states are there in USA,Remember,Apply,,kaggle
+Make a list of facts you learned from the story.,Remember,Create,,kaggle
+Name the food groups and at least two items of food in each group.,Remember,Understand,,kaggle
+Name the four major food groups.,Remember,Understand,,kaggle
+Compare Calliope with Howie. Use the word bank.,Analyze,Apply,,kaggle
+Complete an analogy (analogy tasks are inference tasks),Understand,Remember,,kaggle
+Describe 4 types of coupling in software design.,Understand,Remember,,kaggle
+Describe in prose what is shown in graph form.,Understand,Remember,,kaggle
+Determine the authors point of view,Understand,Apply,,kaggle
+Determine the next number in a sequence,Understand,Apply,,kaggle
+Express your opinion of 'Drugs in Sport' through poetry.,Understand,Evaluate,,kaggle
+"Given these five corrosion inhibitors, V, W, X, Y, Z, identify which are passivators  ",Understand,Remember,,kaggle
+Illustrate what you think the main idea was.,Understand,Evaluate,,kaggle
+Outline the most important insight of the tale.,Understand,Analyze,,kaggle
+Outline the mechanisms employed by bacteria allowing them to evade phagocytic destruction.,Understand,Analyze,,kaggle
+"Outline an ""attack plan"" that will allow you to test your hypothesis using computational molecular modeling tools",Understand,Create,,kaggle
+Classify types of corrosion inhibitors  ,Understand,Remember,,kaggle
+would you classify the zener diode in this circuit as a series voltage regulator or a shunt voltage regulator,Understand,Analyze,,kaggle
+"Classify the following protocols: IP, TCP, HTTP according to the ISO OSI classification",Understand,Analyze,,kaggle
+How would you classify the geographic location of your school,Understand,Analyze,,kaggle
+Rewrite you predicted equation for the ideal gas law,Understand,Apply,,kaggle
+Select the best title for a passage,Understand,Evaluate,,kaggle
+Apply laws of statistics to evaluate the reliability of a written test.,Apply,Evaluate,,kaggle
+Can you group by characteristics such as . . .?,Apply,Create,,kaggle
+Categorise the pictures and add them to the wall display.,Apply,Understand,,kaggle
+Choose a country that does not compete at the Olympics and explain why that country is not an Olympic member.,Apply,Analyze,,kaggle
+Choose any U.S. president and explain how he exercised his power as Commander in Chief of the Armed Forces.,Apply,Understand,,kaggle
+Derive a kinetic model from experimental data.,Apply,Analyze,,kaggle
+Describe an experiment to answer the question of the effects of weight on the fall of an object.,Apply,Understand,,kaggle
+Construct a market strategy for your product using a known strategy as a model.,Apply,Create,,kaggle
+"Draw 3 pictures showing the beginning, middle and ending of the story.",Apply,Remember,,kaggle
+Draw a picture of the bears' house.,Apply,Understand,,kaggle
+"From the information given, can you develop a set of instructions about . . .?",Apply,Create,,kaggle
+How could someone modify the Cornell Method to make it effective for researching a topic for a paper?,Apply,Evaluate,,kaggle
+How might lifestyles in the United States be modified if a more socialistic system were adopted?,Apply,Create,,kaggle
+"If notes are available on the professors website, how should those notes be used?",Apply,Understand,,kaggle
+Make a diorama to illustrate an important event.,Apply,Understand,,kaggle
+Make a paper-mache map to include relevant information about an event.,Apply,Understand,,kaggle
+Make a scrapbook about the areas of study.,Apply,Evaluate,,kaggle
+Model an Olympic Village for the new Millenium.,Apply,Create,,kaggle
+Pretend you are one of the characters in the book. Write a diary about the happenings in your life for two consecutive days.,Apply,Create,,kaggle
+How would you relate position concept with position strategy,Apply,Create,,kaggle
+Who can use what we know about sonnets and finish this poem?,Apply,Create,,kaggle
+Would this information be useful if you had a . . .?,Apply,Evaluate,,kaggle
+Sketch a prediction of the field lines for the arrangement of electrodes shown in Figure 2,Apply,Analyze,,kaggle
+"By comparing the map of the tectonic plates to the earthquake map, what inferences can you make?",Analyze,Understand,,kaggle
+Can you explain what must have happened when . . .?,Analyze,Remember,,kaggle
+Can you find four different feelings Pa Lia had during the story?,Analyze,Apply,,kaggle
+Compare this book to the last book you read.,Analyze,Create,,kaggle
+Conduct an investigation to produce information to support a view.,Analyze,Apply,,kaggle
+Contrast building in the coastal zone with building in a river floodplain.,Analyze,Understand,,kaggle
+Contrast Olympic athletes of today with athletes of past Olympic games.,Analyze,Apply,,kaggle
+"Divide the story into initiating event, rising action, climax, and falling action",Analyze,Create,,kaggle
+"Examine what helps to make a good Olympics? Think about money, schedules, sports and people.",Analyze,Evaluate,,kaggle
+How would this story be different if it had happened in a different country?,Analyze,Create,,kaggle
+Investigate innovations that can enhance future Olympics.,Analyze,Create,,kaggle
+"If interest were compounded monthly instead of daily, what would the difference in interest be?",Analyze,Apply,,kaggle
+What are the parts or features of...?,Analyze,Remember,,kaggle
+How do psychologists differ in their general attitudes toward third party presence,Analyze,Understand,,kaggle
+Compose a dialogue between Atticus Finch and Tom Robinson when they first met.,Create,Analyze,,kaggle
+Create a set of guidelines to determine the points of a plant susceptible to localized corrosion.,Create,Apply,,kaggle
+Design a building according to given specifications,Create,Apply,,kaggle
+Design a testing scenario to assess the susceptibility of an alloy to be used in a given environment?,Create,Evaluate,,kaggle
+Design costumes for the characters.,Create,Apply,,kaggle
+Design the architecture of the software system based on the requirements defined in the Software Requirement Specification document,Create,Remember,,kaggle
+"Develop a way to teach the concept of ""adjectives"".",Create,Understand,,kaggle
+Draw a painting that uses various principles of perspective to achieve its effect.,Create,Understand,,kaggle
+"Following the identification of the forms of corrosion that were involved in a failure, recommend a solution to avoid this failure?",Create,Evaluate,,kaggle
+Given two opposing theories design an experiment to compare them.,Create,Apply,,kaggle
+How could we determine the number of pennies in a jar without counting them?,Create,Apply,,kaggle
+How could you re-write this story with a city setting?,Create,Understand,,kaggle
+"how do the clauses and expressions given in the article which replace GOTO statements, lead to the three traditional control statements",Create,Understand,,kaggle
+How would the U.S.A. be different if the South had won the Civil War?,Create,Apply,,kaggle
+How would you restructure the school day to reflect children's developmental needs?,Create,Understand,,kaggle
+Integrate training from several sources to solve a problem.,Create,Apply,,kaggle
+Make a radio announcement that advertise the book. Write it out.,Create,Remember,,kaggle
+Make up a new language code and write material using it.,Create,Apply,,kaggle
+Predict the differences of a planet with no seasonal changes.,Create,Understand,,kaggle
+Pretend you are a librarian recommending this book to someone. Write a paragraph telling what  you would say.,Create,Apply,,kaggle
+"After designing an experiment, examining the results, and drawing conclusions, determines in what ways the experiment could be conducted more effectively in order to draw more productive conclusions in the future.",Evaluate,Create,,kaggle
+"After examining the videotape of a play in a football game, determine the degree to which the defensive team performed effectively and",Evaluate,Apply,,kaggle
+"After solving a problem, determine the degree to which the problem was solved as efficiently as possible",Evaluate,Apply,,kaggle
+Are there students who should not use the Cornell method?,Evaluate,Apply,,kaggle
+Are you a . . . person?,Evaluate,Remember,,kaggle
+Assess the strengths and weaknesses of the current Olympics and recommend action that should be taken in future Olympics: What can be,Evaluate,Analyze,,kaggle
+Choose and illustrate the two most important events in the story.,Evaluate,Understand,,kaggle
+Describe the economic consequence of a neolocal society. Support your description with information you have learned from this course.,Evaluate,Understand,,kaggle
+Determine if a characters actions were heroic ,Evaluate,Apply,,kaggle
+Evaluate the level of galvanic coupling between two metals using basic kinetic information? (level 4) ,Evaluate,Apply,,kaggle
+Evaluate whether their model is a true representation of the local environment.,Evaluate,Apply,,kaggle
+Examine the stated positions of both major political candidates with regard to a particular issue and state good reasons (based on principles discussed in class) for why one candidates position is more likely to be effective than the other's.,Analyze,Understand,,kaggle
+"Given an argument on any position, enumerate the logical fallacies in that argument.",Evaluate,Remember,,kaggle
+"Given the two solutions to the stated programming problem, rate the solutions in  terms of efficiency and readability.",Evaluate,Apply,,kaggle
+"Given three possible approaches to implement the defined system, discuss the possible advantages and disadvantages of each approach.",Evaluate,Understand,,kaggle
+How effective are . . .?,Evaluate,Remember,,kaggle
+How would you feel if . . .?,Evaluate,Apply,,kaggle
+How would you have handled . . .?,Evaluate,Analyze,,kaggle
+Is there a better solution to . . .?,Evaluate,Create,,kaggle
+udge aesthetic qualities and relationship to future values.,Evaluate,Create,,kaggle
+Place the following in order of priority...,Evaluate,Remember,,kaggle
+Predict what will happen next in.,Evaluate,Create,,kaggle
+Predict whether Phillip will ever go back to visit the Cay after several years of recovery. Assuming he gets his sight back.,Evaluate,Create,,kaggle
+Which of the two liquids is hypotonic,Remember,Evaluate,,kaggle
+which part of a data packet is used by a router to determine the destination network,Remember,Apply,,kaggle
+who was the first to compose in the arts of makamat,Remember,Create,,kaggle
+Tell how Phillip kept himself alive after Timothy died.,Understand,Create,,kaggle
+"Briefly compare this way of testing the satisfiability of to the more standard way using SLD Resolution, as in Prolog",Understand,Analyze,,kaggle
+How would you compare SAS with the Visual Basic Application and SPSS for the processing and analysis of mainframe data,Understand,Analyze,,kaggle
+Outline the aim of two studies within the,Understand,Analyze,,kaggle
+Outline your experience in working with service users,Understand,Analyze,,kaggle
+What happens if you restrict a determinental process to a subset R  S? ,Apply,Create,,kaggle
+What would happen if the rainfall doubled in your state next year,Apply,Create,,kaggle
+What would you do if a heavy growth of bacteria had occurred,Apply,Create,,kaggle
+What would result if ,Apply,Create,,kaggle
+How do we construct agents that can deliver. good assistance,Apply,Create,,kaggle
+Show how they have used creative writing strategies appropriate to the format,Apply,Understand,,kaggle
+Show how E-CRM can be used to improve marketing positioning as explained in the article,Apply,Understand,,kaggle
+Examine the differences between the model excluding the most influential observation and the model including all observations.,Analyze,Apply,,kaggle
+Critically examine the strengths and weaknesses of the positivist paradigm,Analyze,Apply,,kaggle
+Examine carefully the given map extract on the following page to help you work out the exercise below.,Analyze,Apply,,kaggle
+"Inspect each of these Boolean expressions, and determine whether each one is a sum of products, or a product of sums",Analyze,Apply,,kaggle
+Can you distinguish for me between what is reasonably  achievable and what are  exaggerations,Analyze,Remember,,kaggle
+Can you please analyze modern contemporary culture and tell me how your work plays a significant part in the remains of our post-modernist culture ?,Analyze,Remember,,kaggle
+Investigate whether or not the system can be solved for x; y; z ,Analyze,Evaluate,,kaggle
+Investigate (pointwise) convergence and absolute convergence of the given series of functions,Analyze,Apply,,kaggle
+Revises and process to improve the outcome.,Create,Apply,,kaggle
+"structure, sorts the list in ascending order, displays the list on the screen and stores the list",Create,Remember,,kaggle
+Suppose Phillip wasn't rescued shortly after Timothy's death. How long could he have survived?,Create,Evaluate,,kaggle
+"Using information from the book about one of the main characters, rewrite the ending of the book.",Create,Understand,,kaggle
+What would happen if . . .?,Create,Apply,,kaggle
+What would you predict/infer from...?,Create,Apply,,kaggle
+"Write a C program that accepts integer inputs from the screen, computes the total and average values; and displays the values on the screen.",Create,Apply,,kaggle
+Write a letter to the editor on a social issue of concern to you.,Create,Remember,,kaggle
+Write a logically organized argument in favor of a given position.,Create,Apply,,kaggle
+Write a set of rules to prevent what happened in the story.,Create,Remember,,kaggle
+Write a short story relating a personal experience in the style of a picaresque novel.,Create,Remember,,kaggle
+Write a song about 'Old MacDonald' who had a bulldozer instead of a farm.,Create,Remember,,kaggle
+How do you combine the results of various individual tests to determine whether a student can progress to a next semester / phase / year?,Create,Evaluate,,kaggle
+How to combine virtual symmetry and symbolic model checking effectively,Create,Remember,,kaggle
+Develop a network based on the following information: Activity Immediate predecessors,Create,Apply,,kaggle
+suggest ways in which it could have responded more effectively,Evaluate,Create,,kaggle
+"Using straight value depreciation, decide between two copper-nickel alloys for the design of a heat exchanger. ",Evaluate,Apply,,kaggle
+Was Hemingway a great American writer? First you will need to define greatness.,Evaluate,Remember,,kaggle
+Would you have liked to have had Cinderella for a sister? Explain why or why not.,Evaluate,Understand,,kaggle
+Revise the story and specify the type of audience that would enjoy this book.,Evaluate,Create,,kaggle
+An infinitely long plane uniform plate is bounded by two parallel edges in the y direction and an end at right angles to them.,Analyze,Apply,,kaggle
+Write short notes on the structure of RNA. ,Understand,Remember,,kaggle
+"Referring to the advertisement design below, evaluate the usage of Dominance and Unity in principles of design.",Evaluate,Apply,,kaggle
+Causes of Gear Tooth Failure explain in detail.,Analyze,Remember,,kaggle
+Give the mechanism of nitration of benzene.,Apply,Remember,,kaggle
+How is the equilibrium constant K related to the standard free energy change?,Analyze,Apply,,kaggle
+Write short note on current boosting regulator.,Understand,Remember,,kaggle
+Draw the ASM chart for the following state machine.,Apply,Remember,,kaggle
+Explain model for network security.,Remember,Understand,,kaggle
+Describe the historical development of wind turbine on global level.,Remember,Understand,,kaggle
+Explain the working o single-phase full wave centre tapped rectifier with pure resistive laod.,Understand,Remember,,kaggle
+Evaluate 1 2 01dx xï«ï² using Trapezoidal rule taking h = 1 4.,Apply,Analyze,,kaggle
+Explore the role of various fields in Page Level Protection.,Remember,Analyze,,kaggle
+Show that the vector Field.,Evaluate,Analyze,,kaggle
+How folds are developed?,Understand,Apply,,kaggle
+With suitable diagram explain constructional details of 3 phase slipring induction motor,Remember,Understand,,kaggle
+"As a project manager, you are evaluating the building design for its compliance to intended function as a private college accommodating over 2000 students. Analyze the problems and propose the building performance to meet these functions. ",Create,Apply,,kaggle
+Write a short note on control system and electronics.,Remember,Understand,,kaggle
+Barbie Dolls have been banned in some of countries. Provide FOUR (4) countries and evaluate the reason behind the ban. ,Evaluate,Understand,,kaggle
+Depict the figure showing he feeder pathways for glycolysis.,Remember,Apply,,kaggle
+Describe Logical Programming.,Remember,Understand,,kaggle
+Explain and differentiate between TWO types of aggregations when colloidal particles are unstable. ,Understand,Analyze,,kaggle
+"Write recursive function for in-order, pre-order and post-order traversal of Binary tree.",Apply,Understand,,kaggle
+A badminton hall to be provided with a lighting installation.,Apply,Understand,,kaggle
+Show that the wavefunction of a free particle is a plane wave. ,Apply,Evaluate,,kaggle
+Draw and explain the ARM family core architecture?,Analyze,Remember,,kaggle
+Explain Calorific Value.,Remember,Understand,,kaggle
+Write a short note on Saytzeff rule.,Analyze,Remember,,kaggle
+Explain Kinematic modeling in Virtual Reality.,Understand,Remember,,kaggle
+How wind and ice loading affect the presence of sag.,Understand,Analyze,,kaggle
+Sketch and label the section of the ground floor slab. Explain the purpose of each labelled component. ,Apply,Remember,,kaggle
+Draw and explain the working of a Digital kilo watt Hour Meter.,Remember,Understand,,kaggle
+Explain the page translation process in 80386.,Analyze,Understand,,kaggle
+Write algorithms to create and delete a segment.,Remember,Create,,kaggle
+"Suppose milk and yogurt are within Sophie's budget and she views yogurt as an inferior good. Using indifference curve and budget line, explain the substitution, income and total effects when the price of yogurt falls. ",Apply,Understand,,kaggle
+Explain the following in relation with filters.,Remember,Understand,,kaggle
+Explain the working of full wave precision rectifier with neat diagrams.,Understand,Remember,,kaggle
+A Rankine cycle operates between pressure of 80 bar and 0.,Apply,Analyze,,kaggle
+Illustrate the following Map methods with an example.,Understand,Apply,,kaggle
+A  tacheometer with analystic lens.Having the multiplying constant 100 was used and the following observations were made on staff held vertical.,Apply,Analyze,,kaggle
+Give basic definition of Y parameters explain why Y parameters are called short circuit admittance parameters.,Remember,Understand,,kaggle
+Sketch a diagram to illustrate the activities and products in the construction industry. ,Apply,Analyze,,kaggle
+Describe the operation of timer 555 with suitable block diagram.,Remember,Understand,,kaggle
+Explain seismic waves in detail.,Remember,Understand,,kaggle
+"Besides silicon and germanium, name ONE (1) other material that can be used as the substrate of a transistor. ",Understand,Create,,kaggle
+With the help of diagram explain the diesel power plant.,Understand,Remember,,kaggle
+Analyze SIX (6) types of modern construction problems as to how they negatively impact the various building functions. ,Analyze,Understand,,kaggle
+Outline the FIVE (5) options marketers have when it comes to Agency Selection. ,Understand,Analyze,,kaggle
+A thermos flask with evacuated space to reduce the heat losses having surfaces facing each other of emissivity 0.,Apply,Create,,kaggle
+"As an educator, evaluate FIVE (5) advantages and FIVE (5) disadvantages of using technology in education. ",Evaluate,Analyze,,kaggle
+Identify FIVE (5) strategies to make hypermarket retail layout to be more attractive in responding to customers' various shopping behaviors.,Understand,Remember,,kaggle
+"In a table, list EIGHT differences between GenBank and RefSeq DNA sequences. ",Understand,Remember,,kaggle
+Write a short note on topological sorting.,Apply,Remember,,kaggle
+Write one important feature and an application each of the following motors.,Remember,Understand,,kaggle
+Identify THREE (3) types of securities that are issued by Malaysian government. Explain each in detail. ,Understand,Remember,,kaggle
+Elaborate on detectors used in AC bridges.,Apply,Remember,,kaggle
+Illustrate the effect of an expansionary monetary policy. Justify your answer with an appropriate diagram. ,Evaluate,Understand,,kaggle
+What are the factors that must be considered for deciding the instruction length.,Understand,Remember,,kaggle
+"Discuss in detail the Sharpe, Treynor, and Jensen measures of portfolio performance evaluation, by identifying the situations in which each measure is the most appropriate measure. ",Apply,Evaluate,,kaggle
+"Within an organization, each employee holds different roles in the informal communication networks. Explain any FOUR (4) roles with an example for each role. ",Apply,Understand,,kaggle
+Explain indexed sequential file organization.,Remember,Understand,,kaggle
+The internet is ideal for gathering people from all corners of the globe into communities with similar interests and tasks. Recommend THREE (3) ways that can be used to target online communities. ,Create,Understand,,kaggle
+How packaging is providing protection to product from biological effects.,Analyze,Evaluate,,kaggle
+Explain the behaviour of ferromagnetic material under curie temperature.,Remember,Understand,,kaggle
+In an engine mechanism as shown in figure.,Evaluate,Apply,,kaggle
+Explain the features of LISP programming.,Remember,Understand,,kaggle
+Obtain regression lines for the following data.,Analyze,Apply,,kaggle
+Explain the types of HMI.,Remember,Understand,,kaggle
+Mr.,Apply,Remember,,kaggle
+Explain the following operations performed on lathe with suitable sketch.,Understand,Remember,,kaggle
+Explain in brief the mesh selection criteria for screen printing applications.,Apply,Understand,,kaggle
+Write in details FIVE (5) phases of design process.,Understand,Remember,,kaggle
+With suitable circuit diagram and phasor diagram explain one wattmeter method for measurement of reactive power.,Remember,Apply,,kaggle
+Explain low drop out regulator with neat diagram in detail.,Remember,Understand,,kaggle
+Write a short note on survey for drainage line work?,Remember,Understand,,kaggle
+What are the advantages of digital instruments over analog instruments.,Understand,Remember,,kaggle
+What improvements needs to be done for packaging waste.,Evaluate,Remember,,kaggle
+Money growth is always interrelated with inflation phenomenon. Explain how the growth of money will affect the economy when the economy is operating at the full capacity. Illustrate by using an appropriate diagram.,Analyze,Understand,,kaggle
+Explain the Bezier curve.,Understand,Remember,,kaggle
+Find the Laplace Transform and ROC of Unit Step function and Unit Ramp function.,Analyze,Apply,,kaggle
+Explain in brief reactions involved in manufacture of silicone rubbers with mechanisms.,Understand,Remember,,kaggle
+Give dimensionless numbers in case of natural and forced convection.,Remember,Apply,,kaggle
+Explain Network stability.,Remember,Understand,,kaggle
+List TEN (10) components of an effective crisis communication plan.,Remember,Create,,kaggle
+Discuss in detail with a case history how geological investigations have helped for proper site of Dam.,Analyze,Understand,,kaggle
+Explain Intel i860 processor with block diagram.,Remember,Understand,,kaggle
+How are polymers classified on the basis of their structure?,Remember,Understand,,kaggle
+Write short note on Self Lubricated Bearing.,Understand,Remember,,kaggle
+Discuss the methods of synthesis of furan and pyrrole.,Analyze,Understand,,kaggle
+Explain Shell and Tube heat exchanger in detail with neat sketch.,Understand,Remember,,kaggle
+The  results of measurements of electric resistance R of a copper bar at various temperature are listed below.,Analyze,Apply,,kaggle
+State and discuss the approach as prescribed in Malaysian Code on Corporate Governance (MCCG) 2017. ,Understand,Remember,,kaggle
+Describe Exception.,Remember,Understand,,kaggle
+Interface DAC 0808 with 8051 Microcontroller.,Apply,Remember,,kaggle
+"Discuss the role of an infomediary in the online distribution system and evaluate the benefits of this type of distribution system to the consumer, infomediary and advertiser. ",Evaluate,Understand,,kaggle
+Explain the construction of three phase induction motor?,Remember,Understand,,kaggle
+Give detail classification of measuring instruments.,Remember,Apply,,kaggle
+Write a program that returns the size in bytes of a program entered on the command line.,Analyze,Apply,,kaggle
+Explain working of vertical type wind turbine with neat diagram.,Remember,Understand,,kaggle
+Explain what are factors to be consider for selecetion of span length hence state factors affecting sag of transmission line.,Understand,Remember,,kaggle
+Sketch the polar plot for.,Analyze,Apply,,kaggle
+Ethylene Oxide is produce from oxidation of ethylene.,Remember,Apply,,kaggle
+Draw and explain the general descriptor format available in various descriptor tables.,Analyze,Remember,,kaggle
+If ten percent of a articles from a certain machine are defective.,Evaluate,Apply,,kaggle
+Explain Frame Representation with its merits and demerits.,Remember,Understand,,kaggle
+List and briefly describe FOUR (4) types of secondary equity markets. ,Remember,Understand,,kaggle
+Elaborate the impact of usage of EV on power grid.,Remember,Understand,,kaggle
+Draw and Explain Timer counter of 8051 in detail.,Understand,Remember,,kaggle
+"Maslow's hierarchy of needs was developed by Abraham Maslow, a specialist in human behavioural psychology. The hierarchy was first developed to help explain the connection between basic human needs and human desires. Distinguish the hierarchy with appropriate example. ",Analyze,Understand,,kaggle
+"List the five groupings of amino acids based on the R groups, Give one example for each group. ",Understand,Remember,,kaggle
+Explain Friend function with example.,Remember,Understand,,kaggle
+Explain the supercharging with neat sketch.,Remember,Understand,,kaggle
+Design 2 bit synchronous up counter using MS JK flipflop.,Remember,Apply,,kaggle
+Explain functional units of computer.,Remember,Understand,,kaggle
+Enlist the various benefits of EV A to any project.,Understand,Remember,,kaggle
+Managing and engaging stakeholders have gained important grounds in corporate decision making. Provide your justifications for companies to adopt stakeholder model. ,Understand,Create,,kaggle
+Write a program to create files using constructor function.,Remember,Apply,,kaggle
+The foundation is the base on which a building rest and its purpose is to safely transfer the load of a building to a suitable subsoil. Identify the specified bearing loads and give the explanations for each bearing load.,Understand,Remember,,kaggle
+What are the limitations of Fourier series.,Understand,Remember,,kaggle
+Explain extrusion process for thermoplastic plastics.,Remember,Understand,,kaggle
+Difference between Rankin cycle and Carnot cycle.,Remember,Analyze,,kaggle
+Explain the factors for selection of motor for an EV .,Remember,Understand,,kaggle
+Analyze FIVE (5) disadvantages of multimedia in education. ,Analyze,Understand,,kaggle
+Write following C functions in SLL:,Apply,Remember,,kaggle
+Explain working of IC 555 as astable multivibrator.,Understand,Remember,,kaggle
+List and explain THREE factors that are affecting microbial biodegradation rates of petroleum hydrocarbon. ,Understand,Remember,,kaggle
+A fluid of viscosity 0.,Remember,Apply,,kaggle
+What observations and precautions are necessary during Core Drilling for Preliminary Geological Exploration?,Remember,Understand,,kaggle
+Discusst the speedup and scaleup issue in parallelism with suitable diagram.,Remember,Understand,,kaggle
+A pressure vessel having outer diameter 1.,Remember,Apply,,kaggle
+Name the enzyme commonly used to detect liver damage or muscle damage in clinical diagnosis.,Remember,Understand,,kaggle
+Determine shape factor for Circular section having diameter d in m.,Analyze,Apply,,kaggle
+Describe in detial  Read Only Memory (ROM).,Remember,Understand,,kaggle
+"A site is proposed for excavation of tunnel is A-B and M-N, which is passing through axis and limb region of fold respectively. Justify thesuitability of tunnel is such conditions.",Analyze,Evaluate,,kaggle
+How do you express the life of a bearing?,Remember,Understand,,kaggle
+Whta is Backface?,Remember,Apply,,kaggle
+Explain how memories are classified based on physical characteristics.,Remember,Understand,,kaggle
+Compare single phase HWR and single phase FWR.,Remember,Analyze,,kaggle
+Show that ï¨ï© ï¨ï© ï¨ï©22 22 22ËË Ë Fi xy xz yx yz j zx zy kï½ï« ï«ï« ï«ï«ï² is irrotational. Find scalar ï¦ such that F.ï¦ï½ïï²,Analyze,Apply,,kaggle
+How landslides can be prevented?,Apply,Understand,,kaggle
+Explain different drainage conditions in triaxial test.,Remember,Understand,,kaggle
+Write an algorithm of B tree deletion.,Remember,Understand,,kaggle
+A three phase transmission line has its conductors at the corner of equilateral triangle with side of 3 meter.,Analyze,Apply,,kaggle
+Explain with example:,Remember,Understand,,kaggle
+Explain all the elements of multimedia with examples. ,Understand,Remember,,kaggle
+Describe the working principle of capacitive humidity sensors with diagram.,Understand,Remember,,kaggle
+Find the maximum flow in the given network.,Remember,Apply,,kaggle
+Explain any 3 Welding defects along with remedies.,Remember,Understand,,kaggle
+Discuss why the fertility program for potted plants is different from field crops. ,Understand,Analyze,,kaggle
+When do deadlock happens?,Remember,Apply,,kaggle
+"With necessary diagram, classify magnetic materials on the basis of magnetic dipole moment and magnetic susceptibility.",Remember,Analyze,,kaggle
+Draw a neat and labeled diagram showing electrons transport chain.,Remember,Apply,,kaggle
+Bag 1 contains 2 white and 3 red balls.,Remember,Apply,,kaggle
+Consider the following Book Relation.,Remember,Apply,,kaggle
+How to perform loading and unloading of parts in machining operations using robots?,Apply,Remember,,kaggle
+Write a short note on Glass and its types.,Apply,Remember,,kaggle
+Describe how soil surface roughness affects both water and wind erosion. Suggest ways to increase roughness to reduce erosion. ,Understand,Create,,kaggle
+Explain the applications of Virtual Reality systems.,Remember,Understand,,kaggle
+Probability of man aged 60 years will live for 70 years is 1 10.,Remember,Apply,,kaggle
+"As a supervisor for the brickworks, List FOUR (4) aspects of brick quality control in order to produce good architectural work. ",Remember,Analyze,,kaggle
+Derive the torque equation of dynamometer type wattmeter. Explain the errors and its compensation in dynamometer type wattmeter.,Remember,Analyze,,kaggle
+Explain the Standard Marking System of a grinding wheels.,Remember,Understand,,kaggle
+Estimate the value of the roughness parameter of the riverbed from the observed surface slope and velocity. Compare your computed value with generally known values for the present river bed. ,Analyze,Evaluate,,kaggle
+Choose ONE (1) activity and describe briefly how you plan to carry it out in your reading lesson. ,Remember,Understand,,kaggle
+A steel column of 4m long and of 100mm diameter is fixed at one end and free at other end.,Evaluate,Apply,,kaggle
+Describe no load and blocked rotor test conducted on 3 phase induction motor with suitable circuit diagram write down the calculations involved.,Understand,Remember,,kaggle
+Write short notes on the following.,Remember,Understand,,kaggle
+Explain class template and function template with example.,Remember,Understand,,kaggle
+Where are semiconductors used?,Remember,Apply,,kaggle
+Nomination committee plays a crucial role in ensuring the continuity of the board of directors into the future. Analyse the functions of nomination committee in the context of corporate governance. ,Analyze,Understand,,kaggle
+Explain various parts and any two types of faults with neat sketches.,Remember,Understand,,kaggle
+With neat pin diagram explain function of each pin of IC 741,Remember,Analyze,,kaggle
+With a neat block diagram explain AC current measurement using 8051 microcontroller.,Understand,Apply,,kaggle
+Explain any three sheet metal working operations with their working.,Understand,Remember,,kaggle
+Explain working principle of Induction motor and concept of rotating magnetic field.,Understand,Remember,,kaggle
+Draw and explain the working of a digital multimeter.,Analyze,Understand,,kaggle
+Explain the following terms.,Remember,Understand,,kaggle
+NIKE will be conducting consumer research on their footwear. Assess FIVE (5) types of consumer research that Nike can implement by providing an appropriate example for each. ,Evaluate,Understand,,kaggle
+In a certain company install 2000 LED bulbs on each floor.,Apply,Evaluate,,kaggle
+Explain RTD with its principle of working. Explain three wire lead arrangement of RTD.,Remember,Understand,,kaggle
+Write a short note on Level Shifter circuits.,Understand,Remember,,kaggle
+Explain the classification of steel on the basis of carbon content with its applications.,Remember,Understand,,kaggle
+"Search engines are key means of attracting traffic to websites. As a new marketing executive with Munchy's Malaysia, recommend THREE (3) tactics used in search engine marketing (SEM). ",Create,Evaluate,,kaggle
+Explain Scan line polygon filling Algorithm?,Remember,Understand,,kaggle
+How to enhance decision making with information systems give suitable examples.,Remember,Create,,kaggle
+"Your profit from previous project is RM30,000.00 and you just won a new project to construct a new airport runway at Sepang, Selangor. Decide whether you are going to purchase the bulldozer or pay out bonuses to your staff. Use the concept of opportunities cost, choices and scarcity to aid your explanation. ",Apply,Understand,,kaggle
+Explain the different mechanical properties of Ceramics.,Analyze,Understand,,kaggle
+Sketch the Type Il isotherm and provide a brief description of its nature and the processes that gives rise to the isotherm. ,Apply,Understand,,kaggle
+List and explain four common examples of exceptions.,Remember,Understand,,kaggle
+What do you meant by roller compacted concrete.,Understand,Remember,,kaggle
+"Output and capital are increasing more rapidly than labour in the pharmaceutical industry. However, labour is increasing faster than capital and output in the agriculture industry. Evaluate the different in the output growth and productivity between these two industries.",Evaluate,Analyze,,kaggle
+Explain the various methods to protect slopes from failure with clear sketch.,Remember,Understand,,kaggle
+Give the appropriate formula to calculate the velocity of the sedimentation. ,Understand,Apply,,kaggle
+For the differential eq.,Analyze,Apply,,kaggle
+Illustrate with suitable circuit diagram inverting comparator.,Apply,Understand,,kaggle
+Describe FIVE (5) key players in advertising. ,Remember,Understand,,kaggle
+Explain how shear tests are conducted with different drainage conditions?,Remember,Understand,,kaggle
+Discuss diamond problem in detail?,Analyze,Understand,,kaggle
+Determine the vertical displacement of the joint C of the pin jointed frame as shown in figure below.,Analyze,Apply,,kaggle
+Design a strip layout for manufacturing a steel component as shown in figure.,Apply,Analyze,,kaggle
+Explain with a neat diagram CMOS NOR gate.,Remember,Understand,,kaggle
+Describe the implementation of queue using a Circular Array.,Remember,Understand,,kaggle
+What are the advantages of Digital Storage oscilloscope over Dual Trace oscilloscope.,Understand,Remember,,kaggle
+Explain ISO 9000 and its importance.,Remember,Understand,,kaggle
+Write a short note on fetching a word from Memory.,Understand,Remember,,kaggle
+Draw and explain PCM Receiver.,Remember,Understand,,kaggle
+Draw the âmarket demand' and 'supply curve'. ,Understand,Apply,,kaggle
+Draw and explain the basic building of an ideal microprocessor based system with the help of neat diagram.,Analyze,Remember,,kaggle
+Explain âCore of the Sectionâ and obtain a core section for a hollow circular column of external and internal diameter âDâ and âdâ respectively.,Understand,Apply,,kaggle
+Describe with neat diagram - Nano wires.,Remember,Understand,,kaggle
+Support your answers with ONE (1) example for each factor.,Create,Evaluate,,kaggle
+Write the JavaScript code to create Login page Form.,Apply,Create,,kaggle
+Enlist the limitations of the prevalent survey techniques and also give advantages of Space Based Positioning System.,Understand,Remember,,kaggle
+Write an algorithm for Fibonacci search.,Understand,Remember,,kaggle
+"Response and Task-Based Learning are methods often used in an  classroom. Differentiate the two methods by describing THREE (3) characteristics for each method, and give examples of ONE (1) material and ONE (1) activity using that material. ",Analyze,Understand,,kaggle
+Draw and explain architecture of 8086.,Understand,Remember,,kaggle
+Derive torque equation of induction type energy meter with usual notations.,Apply,Analyze,,kaggle
+Analyze FOUR (4) advantages of mobile assisted learning as an emerging digital technology used in teaching and learning. ,Analyze,Understand,,kaggle
+Explain structural error related to synthesis of mechanism.,Remember,Understand,,kaggle
+Discuss the errors in wheatstone bridge along with limitations.,Remember,Understand,,kaggle
+Draw a neat sketch of DC generator.,Remember,Apply,,kaggle
+With suitable diagram explain constructional details of 3pahse slipring induction motor.,Understand,Remember,,kaggle
+Explain different types of riveted joints.,Remember,Understand,,kaggle
+Describe with the help of neat sketches of wave forms methods of generation of PWM.,Understand,Remember,,kaggle
+Explain Normal combustion and abnormal combustion Phenomena in SI engine.,Remember,Understand,,kaggle
+Draw and explain working of IGBT.,Analyze,Understand,,kaggle
+With suitable diagrams explain armature reaction in DC machine.,Apply,Understand,,kaggle
+Draw and Explain the Architecture of a Typical Microcontroller.,Apply,Remember,,kaggle
+"Using Marginal approach, explain and identify how many unit of CD players should the firm producer per day if its goal is to maximize its profit.",Apply,Remember,,kaggle
+Explain with neat diagram 2 input CMOS NOR gate.,Understand,Remember,,kaggle
+Explain different levels of protection?,Analyze,Understand,,kaggle
+"Assume that you have been assigned to run a Google Ads search advertising campaign for a new cafÃ© in Kampar, Perak. Recommend FIVE (5) strategies to develop a successful search advertising campaign for the cafÃ©.",Create,Evaluate,,kaggle
+Draw circuit diagram of frequency multiplier using PLL and explain in detial.,Understand,Apply,,kaggle
+Describe the RAM and ROM memory organization in 8051 microcontroller.,Remember,Understand,,kaggle
+"In the renovation of a new car showroom, the client wishes to attract the attention of pedestrians who passes by their building. Propose the type of external envelop for this building and explain the reasons. Sketch the proposed external envelop. ",Create,Understand,,kaggle
+Draw an inverting summing amplifier with three inputs and derive expression for its output voltage V o?,Remember,Analyze,,kaggle
+Specify the need of final control element in process and explain globe and butterfly control valve in detail with neat sketch.,Understand,Remember,,kaggle
+"Construct a product structure. Identify components. 
+parents, and components.",Create,Apply,,kaggle
+Describe measurement of flux density with Gauss meter.,Understand,Remember,,kaggle
+Deduce the equation of maximum work done in terms of volume and in terms of pressure.,Analyze,Remember,,kaggle
+Classify broaching machines.,Remember,Understand,,kaggle
+State and prove time shifting and integration property of Laplace Transform.,Analyze,Remember,,kaggle
+The forward path transfer function of a unity feedback control system is.,Apply,Remember,,kaggle
+Illustrate the stages of product approach of teaching ESL writing. Use appropriate examples. ,Understand,Apply,,kaggle
+Explain Interrupt Priority Register of 8051 Microcontroller.,Remember,Understand,,kaggle
+"A manager of a small company makes the following statement - ""We need to keep hiring additional workers up to the point where the marginal productivity of the last worker we hire is at its maximum. This way we can maximize the total productivity of the firm.""  Critically evaluate this statement. ",Evaluate,Apply,,kaggle
+Why not to start dc series motor on no load?,Analyze,Understand,,kaggle
+Explain different types of Learning Models in Machine Learning.,Remember,Understand,,kaggle
+"Propose a fertilizer placement method of nitrogen, phosphorus and potassium for a successful fertilization of a large mango tree. Justify your answer. ",Create,Evaluate,,kaggle
+How does Virtual Reality Work?,Remember,Analyze,,kaggle
+Explain injection moulding process with suitable sketch.,Understand,Remember,,kaggle
+"Write an appropriate learning outcome to teach âinâ, âonâ, beside', 'opposite and 'under. ",Understand,Create,,kaggle
+Write in detail about Cori cycle.,Analyze,Remember,,kaggle
+Explain any three methods for synthesis of Furan.,Understand,Remember,,kaggle
+Draw and explain Wein Bridge oscillator.,Understand,Remember,,kaggle
+Write algorithm for posfix expression evalution.,Apply,Create,,kaggle
+Explain renaming of a segment with suitable example.,Analyze,Understand,,kaggle
+Explain with the help of neat sketch,Understand,Remember,,kaggle
+Classify the different modes of failure of finite and infinite slopes.,Understand,Analyze,,kaggle
+Draw the block diagram of Op Amp and explain in detail.,Understand,Remember,,kaggle
+Write the short note on MOSFET scaling.,Understand,Remember,,kaggle
+Explain Dijkstra âs Algorithm with suitable example.,Remember,Understand,,kaggle
+Explain  the effect of a cut in taxes of $100 billion on the economy if the marginal propensity to consume were 0.9. Explain why this policy is much different from simply having the government initiate a $100 billion spending program. Support your answer with specific calculations. ,Analyze,Understand,,kaggle
+Identify any TWO (2) advantages of matching demand strategy and level strategy each in preparing aggregate production plan. ,Remember,Understand,,kaggle
+The first four moments about the working mean 30.,Remember,Apply,,kaggle
+Define social commerce and discuss its advantages for e-marketers.,Understand,Remember,,kaggle
+Explain Reynolds Number with example.,Remember,Understand,,kaggle
+Draw the connection diagram of 3 point starter used for DC shunt motor & explain the function of,Remember,Understand,,kaggle
+A HPF section is constructed from two capacitors 1 microfarad each and 15 milli henery find cutoff frequency and design Resistance.,Analyze,Apply,,kaggle
+Design and explain 6 to 15 UP counter using IC 74193.,Apply,Remember,,kaggle
+Explain the property of ceramic material.,Remember,Understand,,kaggle
+Explain various socket primitives used in connection oriented client server approach.,Remember,Understand,,kaggle
+State the primary and secondary objectives of material management.,Understand,Remember,,kaggle
+Apply the energy band diagram to explain why an intrinsic semiconductor is conductive and that its conductivity increases with temperature.,Apply,Understand,,kaggle
+Expain current boosting voltage regulator using LM317.,Remember,Understand,,kaggle
+Define FOUR (4) primary roles of advertising in business and society. ,Remember,Understand,,kaggle
+Derive an expression for heat exchanger effectiveness for concurrent flow.,Remember,Analyze,,kaggle
+State your opinion on whether financial reporting system is more important than management reporting system and the appropriateness of placing more emphasis on producing non-discretionary financial reports. Provide arguments to support. ,Remember,Evaluate,,kaggle
+"Discuss the comparison between the microeconomics and macroeconomics field of study in term of production, prices, income and employment. ",Analyze,Understand,,kaggle
+"Compare the project by NPV and B/C ratio method and state its feasibility if project cost is Rs. 2,80,000 and it has net cash flow of Rs. 90,000 fora peiod 4 years. Firm expect returns 10% per annum.",Apply,Analyze,,kaggle
+Explain linked implementation of queue with suitable example.,Analyze,Understand,,kaggle
+Explain the key features of object oriented programming language.,Understand,Remember,,kaggle
+Describe Micro motion study.,Remember,Understand,,kaggle
+Draw a neat sketch of 4 point starter of DC motor mark all parts in it Describe the working of it.,Understand,Remember,,kaggle
+Identify any TWO (2) product design strategies you have learned. Explain how both strategies could be useful for instant respond to customer demand. ,Remember,Understand,,kaggle
+Explain Vacuum forming in Plastics.,Remember,Understand,,kaggle
+Explain the stress-strain relationship of concrete with neat sketch.,Remember,Understand,,kaggle
+Identify THREE (3) types of imperfectly competitive firms and construct THREE (3) important characteristics of these imperfectly competitive firms.,Remember,Understand,,kaggle
+Explain the input and output devices with suitable example.,Analyze,Understand,,kaggle
+Explain Plugging of DC motor.,Remember,Understand,,kaggle
+Draw and explain Microkernel kernel Operating System.,Understand,Remember,,kaggle
+Draw the water surface profile when the rainfall intensity is more than the design rainfall so that the inlet of the cuivert is submerged. Explain how the flow rate can be computed in this case. ,Apply,Understand,,kaggle
+Write a pseudo code for basic operations of stock.,Apply,Remember,,kaggle
+Describe the process of using the STL algorithms for Quick sort.,Analyze,Apply,,kaggle
+Explain homogenous and heterogeneous nucleation with neat sketches.,Remember,Understand,,kaggle
+Design a 3-Bit synchronous counter using JK FF.,Apply,Remember,,kaggle
+Design primary school for 6 class room the building is single story and RCC frame the structure following details.,Apply,Understand,,kaggle
+Describe graphic design. ,Remember,Understand,,kaggle
+Categorize the basic concepts of multimedia with an example for each. ,Understand,Analyze,,kaggle
+Explain armature reaction in DC machine with suitable diagrams.,Understand,Apply,,kaggle
+Write a note on necessity and types of transition curves?,Understand,Remember,,kaggle
+Discuss the desired characteristics of control valves.,Remember,Understand,,kaggle
+Determine the optimum proportions of a cylindrical vessel with flat top and 60Âº conical bottoms.,Analyze,Apply,,kaggle
+Define teachers' Pedagogical Reasoning Skills and explain how it helps teachers use instructional materials in classroom. ,Understand,Remember,,kaggle
+"Inflation is one of the major concerns of all countries in the world. Discuss how the Bank Negara Malaysia (BNM) would fight against inflation problem and by using appropriate diagrams, show how the BNM actions affect the investment level and equilibrium output level. ",Apply,Understand,,kaggle
+Explain following terms in brief.,Understand,Remember,,kaggle
+"Comparing to the reference sequence, identify the functional elements to represent S2 and S3, respectively. ",Understand,Remember,,kaggle
+Explain brass and its types with suitable examples.,Remember,Understand,,kaggle
+Explain Linear queue and Circular queue with suitable example.,Understand,Remember,,kaggle
+The postorder and inorder traversals of a binary tree are given below.,Understand,Apply,,kaggle
+"""The monetary policy is always useful in stimulating the economic growth by increasing the money supply in the market."" Comment on this statement. Support your answer with an appropriate diagram. ",Evaluate,Understand,,kaggle
+Derive the emf equation of a DC machine and hence write the voltage equation of a DC shunt motor.,Analyze,Apply,,kaggle
+Draw Bending stress and shear stress distribution diagram for the rectangular section?,Remember,Analyze,,kaggle
+Audit committee is responsible to implement and support the monitoring function of the board of directors. Develop a list of best practices for audit committee meeting. ,Create,Evaluate,,kaggle
+Draw and explain the functional diagram of 723 regulator.,Remember,Understand,,kaggle
+Explain role of telecommunication.,Remember,Understand,,kaggle
+Write TWO reasons on the slow adoption of biological control in weed management. ,Understand,Evaluate,,kaggle
+Steel is the most widely used reinforcing materials in concrete structure. Briefly explain the general properties of steel. ,Understand,Remember,,kaggle
+Suppose that the relation R on a set is represented by the matrix MR.,Remember,Apply,,kaggle
+Explain sensitization of stainless steel?,Remember,Understand,,kaggle
+Define solvency and liquidity. Give some simple strategies that banks can follow to avoid insolvency or illiquidity. State reasons banks might option not to adopt these strategies. ,Understand,Remember,,kaggle
+Explain with a neat sketch following parts of belt conveyors.,Understand,Remember,,kaggle
+Explain any 3 addressing modes with example.,Remember,Understand,,kaggle
+Express hybrid parameters in terms of transmission line parameters.,Analyze,Remember,,kaggle
+Draw and explain interfacing of LED in common anode and common cathode configurations.,Apply,Understand,,kaggle
+With suitable block diagram explain working of electronic energy meter.,Apply,Understand,,kaggle
+Explain EHVDC transmission system with the help of suitable diaram.,Understand,Remember,,kaggle
+Give ONE common crossbreed for porker production in Malaysia and name the state in Peninsular Malaysia that has the highest production rate. ,Understand,Remember,,kaggle
+"How    todefine a package ? How to access ,import a package?",Remember,Understand,,kaggle
+Draw similar repetition and interval repetition. ,Understand,Apply,,kaggle
+Prove the following identities (any one),Analyze,Apply,,kaggle
+"Due to saturated domestic markets, large firms were looking for foreign countries for new customers. Explain why China has been choose as a new market. ",Understand,Evaluate,,kaggle
+How retail marketing has extreme importance.,Evaluate,Apply,,kaggle
+Explain Machine to Machine Architecture?,Understand,Create,,kaggle
+In a building there is always concern with fire safety. List what aspects you would assess in order to achieve strict compliance in the building design. ,Understand,Evaluate,,kaggle
+Discuss the steps in executing interrupts in PIC 18 microcontroller.,Remember,Analyze,,kaggle
+"Let ï¨ï© 7,1 3 XBï½  be the Binomial distribution with parameters n = 7 and p = 1/3. Then ï¨ï© ï¨ï© 25 px pxï½ï« ï½  is",Analyze,Apply,,kaggle
+Find the vertical deflection of the joint c of truss as shown in fig.,Analyze,Apply,,kaggle
+Define the basic concepts involved in incorporating technology in teaching English language at secondary school level. ,Understand,Remember,,kaggle
+Generalize FIVE (5) ways to use digital photography in classroom teaching and learning.,Evaluate,Understand,,kaggle
+Compare the electrical conductivity of an insulator and a semiconductor at room temperature by using the energy band diagram. ,Understand,Analyze,,kaggle
+How do you inspect quality of material like sand and aggregate on your site?,Apply,Analyze,,kaggle
+Propose a strategy that minority can use to influence the majority. Support your answer with ONE (1) relevant example. Elaborate your example in details. ,Create,Evaluate,,kaggle
+What do you meant by light weight concrete and discuss its types.,Remember,Understand,,kaggle
+With the help of neat diagram explain working of IC 555 as a Astable Multivibrator.,Remember,Understand,,kaggle
+Ten coins thrown simultaneously.,Analyze,Apply,,kaggle
+Malaysian Code on Corporate Governance (MCCG 2017) encourages Board of Directors to improve shareholders' participations in decision making. Provide recommendations that will lead to more constructive use of Annual General Meeting (AGM). ,Create,Evaluate,,kaggle
+Obtain the expression for current flowing through Inductor in series RL circuit and voltage across capacitor in series RC circuit connected to a d.,Apply,Analyze,,kaggle
+Discuss in brief direct cost and indirect cost.,Understand,Remember,,kaggle
+Enlist the documents to be submitted for seeking commencement certificate and occupancy certificate.,Remember,Apply,,kaggle
+Explain Flat-top sampling with waveforms.,Remember,Understand,,kaggle
+Explain manipulators for file handling in C++?,Remember,Understand,,kaggle
+Discuss the advantages of using container adapters in the STL.,Analyze,Understand,,kaggle
+Write Short notes on industrial robotic application of Light Curtains and Laser Area Scanner.,Remember,Understand,,kaggle
+How is coastline measured?,Remember,Apply,,kaggle
+Write an essay on the importance of comparative genomics. ,Create,Evaluate,,kaggle
+What are the advantages and disadvantages of Abstract Data Type?,Analyze,Remember,,kaggle
+Show that the maximum number of edges in a simple graph with n vertices is n.,Analyze,Remember,,kaggle
+Explain spray painting robots and its advantages.,Remember,Understand,,kaggle
+Examine cross-docking warehouse layout. ,Analyze,Apply,,kaggle
+Find the expected value of the number of heads obtained when three fair coins are tossed simultaneously.,Remember,Apply,,kaggle
+With the help of diagram explain the main concept of solar thermal power plant?,Analyze,Understand,,kaggle
+Write down the advantages and disadvantages of gaseous fuel.,Remember,Analyze,,kaggle
+A Vertical vessel with a cylindrical shell and hemispherical heads is to be installed in a closed shed.,Remember,Apply,,kaggle
+What question needs to be answered in order to develop a project plan according to W5HH principle?,Analyze,Create,,kaggle
+Illustrate difference between conflict serializable schedule and view serializable schedual by an appropriate example.,Remember,Understand,,kaggle
+Draw a block diagram of the PLA device and explain.,Analyze,Understand,,kaggle
+Explain why the effectiveness of an expansionary monetary policy in increasing aggregate output is partially dependent on the interest sensitivity of the demand for money. ,Understand,Evaluate,,kaggle
+Explain concept of rotating magnetic field in ease of 3 phase induction motor.,Understand,Remember,,kaggle
+Explain in detail the working and construction of single phase induction type energy meter with a neat diagram.,Remember,Understand,,kaggle
+Explain with a neat diagram CMOS inverter.,Understand,Remember,,kaggle
+Derive the relation of power in wind and explain impact of tower height on power generation in wind  energy system.,Understand,Analyze,,kaggle
+Enlist special concreting techniques? Explain under water concreting.,Remember,Understand,,kaggle
+Draw and explain the block diagram of DSO.,Remember,Understand,,kaggle
+With suitable diagram explain the calibration of single phase Energy Meter.,Apply,Remember,,kaggle
+Write a short note on causes and remedial measures of landslides.,Understand,Remember,,kaggle
+Carry out ABC analysis for the following items and plot ABC curve.,Analyze,Apply,,kaggle
+Determine the driving point impedance for the network shown in fig.,Analyze,Apply,,kaggle
+"Japan is operating above the potential output level. As a committee member of central bank, suggest a policy that should be implemented in order to restore Japan's potential output level. Using appropriate diagram(s), explain the effect of the policy on price and unemployment level in short run and long run. ",Create,Understand,,kaggle
+Derive the equation for elevation in boiling point and show it is colligative properties.,Apply,Analyze,,kaggle
+Explain in detail the role of Project Management Consultants in Civil Engineering field.,Remember,Understand,,kaggle
+Explain advantages of indexing over sequential file.,Remember,Understand,,kaggle
+Sketch the Type III isotherm and provide a brief description of its nature and the processes that give rise to the isotherm. ,Apply,Understand,,kaggle
+Sketch the 1-V curve of a zener diode and explain what a zener breakdown is. ,Apply,Understand,,kaggle
+Describe briefly the experimental flow of fluorescent in situ hybridization (FISH). List THREE of its major applications. ,Understand,Remember,,kaggle
+Explain Compression molding polymer processing with sketch.,Remember,Understand,,kaggle
+What are the advantages of forging over the casting process?,Analyze,Remember,,kaggle
+Independent Non-Executive Directors (INEDs) play crucial roles in the  assurance of effective corporate governance of public listed companies. Provide an assessment on the contributions of INEDs in promoting effective corporate governance. ,Understand,Evaluate,,kaggle
+Write in detail on double helix structure of DNA.,Remember,Understand,,kaggle
+Write pseudo code to implement a circular queue using arrays.,Remember,Apply,,kaggle
+Give the corrected bearing of the following traverse taken from compass survey.,Apply,Remember,,kaggle
+Explain class template & function template with example.,Remember,Understand,,kaggle
+Explain any three grinding operations.,Remember,Understand,,kaggle
+Classify insulating materials and hence write properties and application of any two materials from Class F type.,Remember,Understand,,kaggle
+Differentiate between commercial letter of credit and standby letter of credit. ,Analyze,Understand,,kaggle
+Write sudo codes to perform following operations on index sequential file.,Apply,Remember,,kaggle
+Draw and explain Single bus organization of CPU?,Analyze,Remember,,kaggle
+Explain coal handling system in thermal power plant with neat flow chart.,Understand,Remember,,kaggle
+Draw block diagram and explain any one application of IC PLL 565 in detail.,Apply,Analyze,,kaggle
+Explain the need of demand paging with advantages.,Remember,Understand,,kaggle
+Draw and explain block diagram of PLC.,Understand,Remember,,kaggle
+State which market structure adopts this practice. List and briefly explain what are the conditions needed for this practice to be successful.,Understand,Remember,,kaggle
+Draw typical velocity distribution diagrams for fully developed laminar and turbulent flow through pipe.,Apply,Analyze,,kaggle
+Derive an expression for line to neutral capacitance of three phase overhead line with unsymmetrical spacing of conductors.,Apply,Analyze,,kaggle
+Enzymes are applied in the medical field based on their specific functions. List the THREE main areas of clinical enzymology and provide ONE example how enzymes are used in each area. ,Understand,Remember,,kaggle
+Explain file opening modes in detail.,Remember,Understand,,kaggle
+Explain in brief main classes of soaps.,Remember,Understand,,kaggle
+Explain Gauss-Seidal method for solution of linear simultaneous equation. (Numerical is not expected),Remember,Understand,,kaggle
+Examine the use of pedagogical reasoning skills by teachers to enhance the usage of instructional materials in classroom. ,Analyze,Apply,,kaggle
+Write an algorithm for breadth first traversal of a graph.,Apply,Remember,,kaggle
+Is Etching is essential every time ?,Analyze,Apply,,kaggle
+Write pseudo code to implement circular queue using array.,Apply,Remember,,kaggle
+Design and sketch the optimized stick-diagram layout. ,Create,Understand,,kaggle
+Find the velocity and wavelength of the electron. ,Understand,Analyze,,kaggle
+Draw a neat labeled diagram showing Oxidation of Fatty Acids in three stages.,Remember,Apply,,kaggle
+Draw 3 bit asynchronous up counter using JK flip flops and explain its operation using output waveforms.,Remember,Apply,,kaggle
+Explain the applications of applied geometric algebra for modelling of robotics physics.,Remember,Understand,,kaggle
+Describe FIVE (5) categories of space.,Remember,Understand,,kaggle
+Discuss the various exceptional conditions that should be handled while using stack operations.,Remember,Understand,,kaggle
+What is A VL tree? Explain all the rotations in A VL tree. Construct A VL tree for the following data:,Remember,Apply,,kaggle
+Provide the equations for the Eadie-Hofstee and Hanes-Woolf plot. Explain how these equations could be derived from the Michaelis-Menten equation. ,Apply,Understand,,kaggle
+Derive strain energy stored in a body when the load is suddenly applied.,Analyze,Apply,,kaggle
+Discuss in detail Proctor needle in field compaction control.,Apply,Remember,,kaggle
+Explain Pressure forming polymer processing with sketch.,Remember,Analyze,,kaggle
+Draw circuit diagram of precision full wave rectifier with showing input and output waveform.,Apply,Understand,,kaggle
+Compare and contrast microbial and chemical risk assessment. ,Analyze,Understand,,kaggle
+Explain the behavioral modeling in Virtual Reality.,Analyze,Remember,,kaggle
+Describe the 5 hierarchical stages of Welliver's Instructional Transformation Model. ,Remember,Understand,,kaggle
+Write the steps involved in programming compare mode of CCP1 module in PIC18F458.,Remember,Analyze,,kaggle
+Write short note on state diagram and state table with suitable example.,Understand,Remember,,kaggle
+Explain RS232 standard with suitable diagram.,Remember,Understand,,kaggle
+Explain different types of exceptions in 80386 with suitable examples.,Understand,Analyze,,kaggle
+With the help of diagram explain interfacing of ADC 0809 with 8051 microcontrollers.,Remember,Understand,,kaggle
+Identify whether the firm is in the short-run or long-run  equilibrium. Explain.,Remember,Evaluate,,kaggle
+Explain decision support trends in businesses.,Remember,Understand,,kaggle
+"The tyrosinase-containing solution was dissolved in 50 mM potassium phosphate buffer containing 0.01 mM NaCl, pH 6.5, before applying to a DEAE Sephadex A50 column. Suggest and explain how the mobile phase should be modified to elute the bound tyrosinase. ",Create,Apply,,kaggle
+"Propose with justification, the types of maintenance relevant to a library building. ",Evaluate,Create,,kaggle
+Attempt any one:,Apply,Analyze,,kaggle
+Explain interfacing of LM35 temperature sensor with PIC 18FXX microcontroller.,Understand,Remember,,kaggle
+Consider following relational table.,Remember,Apply,,kaggle
+Draw the Circuit diagram for the following equations.,Apply,Remember,,kaggle
+Write a pseudo code to Represent Doubly Link list as an ADT.,Remember,Apply,,kaggle
+Draw and explain interfacing diagram of ADC with 8051.,Apply,Understand,,kaggle
+Explain with neat sketch tube drawing process.,Remember,Understand,,kaggle
+Draw & explain the working of inclined tube manometer? Give the reason for its higher sensitivity.,Remember,Understand,,kaggle
+Evaluate by Gaun divergence theorem333.,Apply,Evaluate,,kaggle
+Derive an expression for inductance of three phase transmission line with symmetrical spacing.,Apply,Analyze,,kaggle
+Suppose there are two relation r and s such that the foreign key B of r references the primary key A of s.,Apply,Understand,,kaggle
+Explain nine requirements of Good Lighting Scheme.,Remember,Understand,,kaggle
+How is pyridine is synthesized?,Apply,Analyze,,kaggle
+Enlist various types of fixtures for doors and explain anyone with a neat sketch.,Apply,Remember,,kaggle
+There are two restaurants next to each other.,Remember,Apply,,kaggle
+Explain operation of capture mode of PIC18FXX microcontroller along with diagram.,Understand,Analyze,,kaggle
+Explain in brief use of raw materials in manufacture of soap.,Remember,Understand,,kaggle
+âMillennials and kids are important market segments for e-marketersâ. Discuss on the above statement. ,Understand,Evaluate,,kaggle
+Draw the hexapeptide Gly-Phe-Asp-Leu-Ala-Glu. Identify the formation of hydrogen bonding in an a-helix form of this hexapeptide.,Understand,Remember,,kaggle
+How Defects are managed?,Remember,Understand,,kaggle
+Discuss any 2 of the following in detail.,Remember,Understand,,kaggle
+Explain in details FIVE (5) ways to make a brand name effective.,Understand,Remember,,kaggle
+Explain magneto ignition system and state its advantages and disadvantages.,Understand,Remember,,kaggle
+Two parallel shafts having centre distance 5 meters are connected by open flat belt.,Apply,Analyze,,kaggle
+Explain applications and selection criterion of valves in robotics and automation systems.,Remember,Understand,,kaggle
+Explain any two speed control techniques used in wind turbine to extract maximum power.,Understand,Remember,,kaggle
+Explain types of price discriminations.,Understand,Remember,,kaggle
+"Compare the crippling loads given by Eulerâs and Rankineâs formulae for a steel strut 2.5 m long having outer & inner diameter as 40 mm and30 mm respectively loaded through pin jointed at the ends. Take yield stress as 320 N/mm 2 the Rankineâs constant 1 7500, E = 2 Ã 105 MPa.",Analyze,Apply,,kaggle
+Write FOUR (4) purposes of poster. ,Remember,Understand,,kaggle
+Summarise the challenges of global advertising. ,Understand,Remember,,kaggle
+Explain the need of level shifting stage in op-amp. Explain any one circuit for the same.,Remember,Understand,,kaggle
+You are appointed to identify building defects for a new building. Briefly identify SIX (6) common construction problems you would expect for modern buildings. ,Understand,Create,,kaggle
+Discuss on unfavorable geological conditions for reservoir area of dam.,Analyze,Remember,,kaggle
+Explain digital control system in detail.,Remember,Understand,,kaggle
+Explain the stepper motor interfacing with PIC18FXX microcontroller with suitable diagram.,Analyze,Understand,,kaggle
+Write a note on Rain Water Harvesting and its importance.,Understand,Remember,,kaggle
+A gas expands isothermally against a constant external pressure of 1 atmosphere from a volume of 10 dm 3 to a volume of 20 dm3.,Remember,Apply,,kaggle
+Explain importance of project Management and how to manage project risk.,Understand,Remember,,kaggle
+Give detail classification of Heat Exchanger.,Apply,Remember,,kaggle
+Discuss the significance of topological sorting.,Remember,Understand,,kaggle
+"Internal control system is among the most prominent monitoring mechanisms in promoting effective corporate governance. Assuming you are the manager of purchasing department, provide TWELVE (12) recommendations on how to prevent staffs from making personal gains from their positions.",Create,Evaluate,,kaggle
+Elaborate on the challenges faced by EV technology in present context.,Remember,Understand,,kaggle
+Write short note on applications of recorders.,Apply,Remember,,kaggle
+Draw and explain the forward feed multiple effect evaporator.,Remember,Understand,,kaggle
+Discuss insulating materials used for transmission line.,Understand,Remember,,kaggle
+Discuss the design procedure of spur gears.,Analyze,Understand,,kaggle
+Draw and explain construction of FET with its characteristics.,Understand,Remember,,kaggle
+With a neat block diagram explain AC voltage measurement using 8051 microcontroller.,Apply,Understand,,kaggle
+Discuss in details what Accounting Information Systems (AIS) is. ,Understand,Remember,,kaggle
+A certain feedback system is described by the following transfer function.,Remember,Apply,,kaggle
+Explain interrupt structure of 8051 microcontroller with neat diagram.,Remember,Understand,,kaggle
+With suitable diagram explain constructional details of 3 phase squirrel cage induction motor.,Apply,Remember,,kaggle
+Explain hydrograph and flow duration curve with example.,Remember,Understand,,kaggle
+ Which of the following is not the value of correlation coefficient between x and y?,Remember,Analyze,,kaggle
+Explain any two methods of speed control of DC shunt motor.,Remember,Understand,,kaggle
+Discuss feasibility of DAM in folded areas.,Analyze,Understand,,kaggle
+Explain the types of Capital.,Remember,Understand,,kaggle
+A transmission line has a span of 220 m between level supports.,Remember,Apply,,kaggle
+Explain MIG welding processes with a neat sketch.,Remember,Understand,,kaggle
+Explain the internal diagram of IC 7490.,Remember,Understand,,kaggle
+Explain Architecture of Distributed database system.,Understand,Remember,,kaggle
+Determine whether the graphas G and H displayed in Figure are isomorphic or not?,Analyze,Evaluate,,kaggle
+Explain with example trie tree.,Understand,Remember,,kaggle
+Explain in brief the frame size selection criteria for screen printing process.,Understand,Apply,,kaggle
+Explain the following A VL tree rotations with example.,Understand,Remember,,kaggle
+Compare with a neat sketch pressure forming process over vacuum forming process.,Analyze,Remember,,kaggle
+Draw the block diagram of a regulated dc power supply and explain the function of each block in it.,Remember,Analyze,,kaggle
+Show with the help of potential energy diagram staggered conformations more favoured over eclipsed conformation of propane.,Remember,Apply,,kaggle
+Explain STEP with scope and Architecture.,Remember,Understand,,kaggle
+How to perform Analysis of Financial performances.,Analyze,Remember,,kaggle
+"The resisting force R of a supersonic plane during the flight can be considered as dependent upon the length of the aircaft l, velocity V , air viscosity Î¼, air density Ï, and bulk modulus of air K. Express the functional relationship between these variables and the resisting force.Use Buckinghamâs Î  Method",Analyze,Apply,,kaggle
+Explain the virtual memory system with suitable diagram.,Remember,Understand,,kaggle
+Sketch the Type I isotherm and provide a brief description of its nature and the processes that gives rise to the isotherm. ,Apply,Understand,,kaggle
+Explain following with diagram.,Remember,Understand,,kaggle
+Propose and explain a suitable enzyme-substrate interaction model for enzyme X.,Create,Apply,,kaggle
+Explain with example the significance of priority queue over simple queue.,Understand,Remember,,kaggle
+Draw line code formats for 10110100.,Remember,Apply,,kaggle
+Critically discuss on human's need to maintain a temperature of 37Â°C. Provide TWO (2) points. ,Analyze,Understand,,kaggle
+Velocity of slider D and angular velocity of link CD.,Apply,Understand,,kaggle
+"Based on the social learning perspective, propose a strategy that able to reduce or eliminate prejudice. Support your strategy with ONE (1) relevant example. Elaborate your example in details. ",Evaluate,Create,,kaggle
+How the following measurement can be done using CRO:,Remember,Apply,,kaggle
+Estimate the magnitude of the bed shear stress by making necessary assumptions and justifications. ,Apply,Evaluate,,kaggle
+Sketch ONE (1) organic object in one layout to show harmony in shape and color. ,Understand,Apply,,kaggle
+Difference between unavailable and available energy.,Remember,Analyze,,kaggle
+Explain FM generation by Armstrong method with neat block diagram.,Remember,Understand,,kaggle
+The unemployment problem can be overcome by increasing the aggregate output in a country. Explain THREE (3) multiplier concepts that can be applied in this problem. ,Apply,Understand,,kaggle
+Derive an expression for sag in case of overhead transmission line when the supports are at unequal level.,Apply,Analyze,,kaggle
+"Suppose prices of two goods are constant, explain what will happen to the budget line if there is an increase in consumer's income. Support your answer with an appropriate diagram.	",Understand,Evaluate,,kaggle
+How virtual Memory is managed using paging.,Understand,Remember,,kaggle
+Describe the ARM design philosophy.,Remember,Understand,,kaggle
+Explain cavitation and NPSH in pump.,Remember,Understand,,kaggle
+What will be the effects of faulting on civil engineering structures?,Analyze,Evaluate,,kaggle
+Define and explain 'Fiscal Policy' in terms of its objectives and differentiate between the 'Discretionary Fiscal Policy' and 'Automatic Fiscal Policy'. ,Remember,Analyze,,kaggle
+Propose an admixture to increase the workability of concrete in the fresh state without reducing the engineering performance of the hardened concrete. ,Create,Understand,,kaggle
+List and explain TWO simple techniques used to prepare colloids by mean of dispersion. Use simple diagrams to clarify the explanation.,Understand,Apply,,kaggle
+Explain any two detectors used in gas chromatography.,Remember,Understand,,kaggle
+How 80386 performs  task switching operation?,Remember,Create,,kaggle
+Explain coordinate system with types in brief?,Remember,Understand,,kaggle
+Write a short note on survey for drainage line work.,Understand,Remember,,kaggle
+Write a description about the following String methods in Java with suitable example.,Understand,Apply,,kaggle
+What are the responsibilities of a safety manager on construction sites?,Apply,Remember,,kaggle
+Explain cutting variables.,Remember,Understand,,kaggle
+Discuss Homeothermy rule for substitutional solid solutions?,Remember,Understand,,kaggle
+Explain in details Solenoids and Photocells.,Remember,Understand,,kaggle
+Draw layout of hydroelectric power plant and explain functions of different components.,Understand,Analyze,,kaggle
+Describe eye pattern Graphical Display of Inter Symbol Interference with diagram.,Remember,Understand,,kaggle
+Explain construction of dynamo meter type wattmeter with neat diagram.,Understand,Remember,,kaggle
+Discuss the Causes of Gear Tooth Failure.,Remember,Analyze,,kaggle
+Give the appropriate formula to calculate the kinetic energy of sodium. ,Understand,Apply,,kaggle
+When do designers think in shapes and signs.,Analyze,Evaluate,,kaggle
+The expected number of matches those will be won by India in a series of five one day matches between India and England is three.,Remember,Apply,,kaggle
+Analyze and explain the critical purpose of the components design of a raking shore to avoid faÃ§ade retention failure. ,Analyze,Create,,kaggle
+State the various types of non-destructive tests carried on hardened concrete. Explain ultrasonic pulse velocity test with its limitations.,Remember,Understand,,kaggle
+How to calculate simple and compound interest?,Remember,Apply,,kaggle
+Explain Velocity Image Principle with neat sketch.,Remember,Understand,,kaggle
+With the help of pin diagram explain the functions of Operational Amplifier.,Analyze,Understand,,kaggle
+Draw a line plan to a suitable scale for single story bank building.,Apply,Create,,kaggle
+Draw an expiry profit diagram for the GCB bankâs position. ,Understand,Apply,,kaggle
+Provide the objectives of building maintenance. ,Understand,Evaluate,,kaggle
+Explain the rules for constructing the ladder diagram of PLC.,Remember,Understand,,kaggle
+âThe US dollar hit its highest levels in years shortly after Donald Trump won the presidential election in November 2016.â The statement above refers to the strong dollar scenario. Explain the pros and cons under this scenario. ,Analyze,Understand,,kaggle
+Draw and explain the block diagram of digital control system.,Understand,Remember,,kaggle
+"Analyse the usage of a reading passages to enhance reading and thinking skills for 
+Form 4 students with a high proficiency level. ",Analyze,Evaluate,,kaggle
+Explain the working principle of superhetrodyne receiver.,Understand,Remember,,kaggle
+Static and dynamic tree tables with suitable example.,Remember,Analyze,,kaggle
+Explain all types of minor losses in pipe.,Understand,Remember,,kaggle
+Explain Architecture of parallel databases.,Remember,Understand,,kaggle
+Explain the types of construction excavation. ,Understand,Remember,,kaggle
+Draw the block diagram of Hardwired control unit.,Remember,Understand,,kaggle
+Discuss in detail preliminary geological investigations of tunneling.,Remember,Understand,,kaggle
+A feedback control system is described as.,Remember,Understand,,kaggle
+Derive the thermodynamic equation for Depreesion in frizzing point of solution.,Create,Analyze,,kaggle
+Explain Pre-emptive shortest Job First scheduling algorithm in detail.,Remember,Understand,,kaggle
+There are TWO (2) common methods used in the semiconductor industry to fabricate single crystal silicon. Analyze the advantage and disadvantage of both methods. ,Analyze,Understand,,kaggle
+Explain the procedure for unconfined compression test with neat sketches.,Understand,Remember,,kaggle
+Explain Bisection method for solution of transcendental equation with graphical representation.,Understand,Remember,,kaggle
+How packaging is promoting the product in market explain in detail.,Analyze,Understand,,kaggle
+Explain any three lathe operations with sketch.,Understand,Remember,,kaggle
+"Illustrate with a drawing the biochemical pathway for natural rubber biosynthesis, beginning with acetyl CoA. ",Understand,Apply,,kaggle
+The mean and variance of Binomial distribution are 4 and 2 respectively.,Remember,Apply,,kaggle
+Explain functioning of LM 317 as a voltage regulator.,Remember,Understand,,kaggle
+Enlist graph traversal techniques and explain briefly.,Remember,Understand,,kaggle
+Explain DOE method of concrete mix design.,Remember,Understand,,kaggle
+A pipe line carrying water has average height of irregularities projecting from the surface of the boundary of the pipe as 0.,Evaluate,Apply,,kaggle
+Explain in brief the glue selection criteria for screen making.,Understand,Apply,,kaggle
+Explain the properties of line codes.,Understand,Remember,,kaggle
+Draw schematic diagram of EDM.,Apply,Analyze,,kaggle
+Explain with neat diagram working CMOS invertor.,Remember,Understand,,kaggle
+Explain in brief four color separation method for screen printing process.,Remember,Understand,,kaggle
+Enlist the various bridge circuits you have studied and mention the measurement carried out using these bridges.,Understand,Remember,,kaggle
+Explain Construction and working Principle of single-phase induction motor.,Remember,Understand,,kaggle
+List THREE (3) characteristics of monopolistic competition and explain how do firms in this market structure compete.,Understand,Remember,,kaggle
+With a neat diagram show interfacing of 8 KB of Data ROM memory to 8051.,Understand,Remember,,kaggle
+Discuss Cloud computing.,Remember,Understand,,kaggle
+Sketch & explain the Torque- Armature current characteristics of,Remember,Understand,,kaggle
+Explain Free space management and Directory Structure in File management.,Remember,Understand,,kaggle
+Explain in brief the relationship in tension and compression of concrete in hardened state.,Understand,Remember,,kaggle
+Design a sequence generator using T FFs.,Apply,Create,,kaggle
+Explain any one type of Cache Mapping technique with diagram.,Understand,Remember,,kaggle
+Explain Set membership and set comparison operator.,Remember,Understand,,kaggle
+In a sample of 1000 cases a mean of certain test is 14 and standard deviation is 2.,Remember,Apply,,kaggle
+Explain Ziegler Nichols close loop tuning method in detail.,Remember,Understand,,kaggle
+Explain working of IC 555 astable multivibrator.,Understand,Remember,,kaggle
+You are working with SP Setia Properties as the Sales Manager for the following project. Discuss EIGHT (8) ways to increase profits of the project. ,Understand,Apply,,kaggle
+Write short note on motion specification.,Apply,Remember,,kaggle
+Explain in brief wet and dry lamination methods.,Remember,Understand,,kaggle
+Derive output voltage equation for three op-amps. Instrumentation amplifier. Draw neat circuit diagram.,Analyze,Remember,,kaggle
+Explain acceleration image principle with neat sketch.,Remember,Understand,,kaggle
+The scope of institutional shareholder activism includes attempts made to bring about changes in a company's behavior for adoption of good governance practices. Differentiate shareholder resolution and proxy voting as the two major tools for institutional shareholder to promote corporate governance. ,Analyze,Evaluate,,kaggle
+Explain Rankin cycle.,Remember,Understand,,kaggle
+Explain data preprocessing with example.,Remember,Understand,,kaggle
+"With the help of circuit diagram and relevant waveforms, explain the operation of a 3-phase bridge rectifier with resistive load.",Remember,Understand,,kaggle
+A three hinged parabolic arch having supports at different levels as shown in figure 6.,Analyze,Apply,,kaggle
+Write an algorithm for searching an element using Fibonacci search method.,Remember,Understand,,kaggle
+Explain software reuse.,Remember,Understand,,kaggle
+Write a short note on PLA.,Understand,Remember,,kaggle
+Give TWO methods to measure the surface coverage. ,Understand,Evaluate,,kaggle
+With the help of diagram explain the main concept of solar thermal power plant.,Understand,Analyze,,kaggle
+Explain with neat sketch different modes of slope failure.,Remember,Understand,,kaggle
+Justify steady state depends on relative characteristics of motor and load both.,Evaluate,Remember,,kaggle
+Explain the working of voltage controlled oscillator by using IC 566.,Analyze,Understand,,kaggle
+"Using Gauss - Divergence Theorem, show that",Analyze,Apply,,kaggle
+Explain the method of reducing cutting forces in sheet metal work.,Remember,Understand,,kaggle
+Draw and explain characteristics of LVDT.,Analyze,Remember,,kaggle
+Draw the TCON and TMOD register and explain use of individual bits of both the registers.,Understand,Remember,,kaggle
+"Write copy constructor for Employee class, in which objects of string class and Date class are the Data members.",Apply,Remember,,kaggle
+Outline FIVE (5) functional requirements of a floor. ,Understand,Remember,,kaggle
+Describe the construction and working of the Universal motor with the help of suitable diagrams and state its two applications.,Understand,Remember,,kaggle
+Explain the factors affecting rate of E1 and E2 reactions.,Analyze,Understand,,kaggle
+Explain micro operations of CPU.,Remember,Understand,,kaggle
+Write  a short note on.,Understand,Remember,,kaggle
+Describe the following sytesm in renewable energy system.,Remember,Understand,,kaggle
+Write in detail a about structural lipids in Membranes.,Remember,Analyze,,kaggle
+Discuss the time complexity of removing an item from priority queue if sequential memory organization is used.,Analyze,Remember,,kaggle
+Draw neat diagram and explain operation of 3 pt.,Apply,Remember,,kaggle
+Draw and explain the circuit diagram of CMOS inverter.,Analyze,Understand,,kaggle
+If .,Evaluate,Apply,,kaggle
+"In order to achieve high economy growth the government can implement expansionary fiscal policy, however, the effect of an increase in government spending can be taken aback by crowding out effect. Recommend and graphically explain the action that can be taken by Bank Negara Malaysia (BNM) to avoid this problem.",Create,Understand,,kaggle
+Explain working principle of a linear induction motor and state its applications.,Remember,Understand,,kaggle
+Draw and explain the Von Neumann architecture.,Remember,Understand,,kaggle
+"Count Enable and E=0, Count Disable. OR Q6) a) Design a sequence detector to detect a sequence 1101 using D FF",Apply,Create,,kaggle
+Explain in brief factors to be considered while selecting a adhesives.,Remember,Understand,,kaggle
+Analyze bent ABC as shown in Fig. 7 by moment distribution method.,Apply,Analyze,,kaggle
+Construct the Binary Search Tree (BST) from the following data:,Create,Apply,,kaggle
+"Using Routhâs & Hurwitzâs criteria, comment on the stability if characteristic equation is: S6 + 2S5 + 8S4 + 12S3 + 20S2 + 16S + 16.",Apply,Evaluate,,kaggle
+What is the difference between traffic shaping and congestion control at transport layer?,Analyze,Remember,,kaggle
+Write a short note on diazotisation and coupling in azo dyes.,Apply,Understand,,kaggle
+"Assume that Saudi Arabia is currently operating at the natural level of output. However, due to the political uncertainty it leads to an increase in oil price. Discuss the effects of the event on the price level, unemployment and output in the long run and short run in Saudi Arabia by using appropriate diagrams. Besides, suggest the policy that can be implemented by Saudi Arabia in order to achieve long run equilibrium after the event. ",Create,Understand,,kaggle
+Explain various rules for development of Ladder diagram.,Understand,Remember,,kaggle
+Evaluate following postfix expression with the help of stack.,Evaluate,Analyze,,kaggle
+Explain the process of Enabling and Disabling Interrupts in 80386.,Understand,Analyze,,kaggle
+With the help of a block diagram explain the concept of SMPS.,Remember,Understand,,kaggle
+Derive the thermodynamic equation for depression in freezing point of solution.,Remember,Analyze,,kaggle
+Give any 3 points of comparison between 1 wattmeter method and 2 Wattmeter method for measurement of active power in a 3 phase circuit.,Analyze,Remember,,kaggle
+Recommend a suitable admixture to increase the workability of concrete and explain how it functions. ,Evaluate,Understand,,kaggle
+Explain swing door with the help of a sketch.,Apply,Understand,,kaggle
+Draw neat diagram and waveforms of single phase half wave rectifier with resistive load.,Apply,Remember,,kaggle
+A steel bar 3.,Apply,Remember,,kaggle
+Explain adjustable voltage regulator using LM317.,Understand,Apply,,kaggle
+Explain need of digital communication.,Remember,Understand,,kaggle
+To find out coefficient of permeability of clay the permeability test was carried out in a variable head permeameter having the diameter of thesample container to be 100 mm.,Analyze,Apply,,kaggle
+Propose TWO (2) strategies to reduce the occurrence of bullying.,Create,Apply,,kaggle
+Write a short note on React JS and Angular JS.,Remember,Understand,,kaggle
+Discuss the roles of construction industry in a country's growth. Provide evidences on how construction industries worldwide have contributed to the economic growths of their respective countries to enhance your discussions.,Analyze,Understand,,kaggle
+Explain effective diameter measurement by three wire method.,Remember,Understand,,kaggle
+The construction industry comprises a wide diversity of firms that it is impossible to categorise them all within one type of market structure. Discuss.,Analyze,Understand,,kaggle
+Explain tunneling conditions in Deccan trap region.,Remember,Understand,,kaggle
+The internet increases customer benefits in many ways that have revolutionised marketing practices. Discuss with examples THREE (3) ways in which internet increases customer benefits from products offered online.,Understand,Create,,kaggle
+Write an explanatory note on Bucket Elevators.,Analyze,Remember,,kaggle
+i) Explain the Specific energy curve with neat sketch.,Analyze,Understand,,kaggle
+"Write a formula to show the steady state assumption. If all other conditions remain identical, explain how an increase in k-1 would affect the Michaelis constant.",Apply,Understand,,kaggle
+Explain in detail with diagram Bezier curve generation using midpoint subdivision method.,Remember,Understand,,kaggle
+Write down Schrodinger's equation in one dimension and explain the meaning of each term of the equation. ,Understand,Remember,,kaggle
+What are the functions of arches and lintels?,Understand,Remember,,kaggle
+Suppose the following sequence lists the nodes of a binary tree in preorder and inorder respectively.,Analyze,Understand,,kaggle
+Draw neat circuit diagram and phasor diagram of following transmission line models.,Analyze,Apply,,kaggle
+Differentiate between general controls and application controls. Provide ONE (1) example for each. ,Analyze,Understand,,kaggle
+Define âecosystem servicesâ and describe how they are benefiting our society. ,Understand,Remember,,kaggle
+Explain COCOMO Model for project estimation with suitable example.,Analyze,Understand,,kaggle
+Compare the role of thread diameter with ink transfer in screen printing process.,Analyze,Remember,,kaggle
+Draw the connection diagram of shunt.,Apply,Remember,,kaggle
+Explain the procedure of Hardy Cross method for the analysis of pipe network.,Apply,Understand,,kaggle
+Which of the following codes are prefix codes?,Analyze,Apply,,kaggle
+Explain the double rotations in A VL tree with examples.,Remember,Understand,,kaggle
+Draw the acceleration polygon and find the linear acceleration of slider D and angular acceleration of link of slotted OC.,Analyze,Apply,,kaggle
+Explain truncation error and round off errors with example.,Understand,Remember,,kaggle
+Explain the difference between standard concrete and special concrete.,Analyze,Understand,,kaggle
+Write C functions for :,Apply,Remember,,kaggle
+Identify TWO (2) perspectives that are able to explain the origin of prejudice. ,Remember,Understand,,kaggle
+Illustrate with examples the Reheap up and Reheap down operations w.,Remember,Apply,,kaggle
+Explain midpoint circle generation algorithm by deriving the steps.,Understand,Remember,,kaggle
+Differentiate between ROM and RAM?,Remember,Analyze,,kaggle
+"Describe the effectiveness of advertising value of products, price, competition, consumer and business.",Understand,Evaluate,,kaggle
+Propose TWO (2) factors that are relevant to the initiation of conflict in group. ,Create,Understand,,kaggle
+Define Time Study and explain different steps of Time study.,Analyze,Remember,,kaggle
+A tacheometer with analytic lens.,Apply,Analyze,,kaggle
+Illustrate and explain how perfect competitive firms adjust in long-run if they are enjoying positive economic profit in short-run.,Understand,Analyze,,kaggle
+Provide justifications as to why integrity and reliability is important in a company's annual report and accounts (ARAS) from corporate governance point of view.,Evaluate,Create,,kaggle
+Discuss the merits of circular queue over linear queue and write sudo code for over flow and under flow conditions of circular queue.,Analyze,Understand,,kaggle
+Draw and Explain Hardwired control unit.,Understand,Remember,,kaggle
+Explain any three methods of subsurface investigation.,Remember,Understand,,kaggle
+Explain the project management life cycle.,Remember,Understand,,kaggle
+Brief the concept of byte streams?,Remember,Understand,,kaggle
+Prove that the wave function of a free electron is a plane wave by using Schrodinger's equation. ,Evaluate,Apply,,kaggle
+Class.,Remember,Apply,,kaggle
+List the information that can be obtained from X-Ray Photoelectron Spectroscopy (XPS). ,Remember,Understand,,kaggle
+Evaluate the benefits and drawbacks of artificial drainage. ,Evaluate,Analyze,,kaggle
+What is the difference between PAL and PLA.,Analyze,Remember,,kaggle
+With suitable diagram explain polarity test on transformer.,Understand,Remember,,kaggle
+Design low pass first order Butterworth filter having cut off frequency 1 kHz with  passband gain of 2.,Create,Apply,,kaggle
+"Draw a graph showing the demand curve faced by a perfectly competitive firm. On the same graph, draw the demand curve faced by a monopolistically competitive firm. Explain your reasoning for each curve. ",Understand,Remember,,kaggle
+Sketch a diagram which indicates the Damp Proof Membrane (DPM) in the non reinforced concrete ground floor. ,Apply,Understand,,kaggle
+Illustrate negative indexing in list with an example.,Understand,Remember,,kaggle
+Explain with block diagram virtual instrumentation.,Remember,Understand,,kaggle
+Derive an expression for digital PID velocity algorithm and state the merit of velocity algorithm.,Apply,Analyze,,kaggle
+Draw and explain low dropout regulator?,Analyze,Remember,,kaggle
+Draw two possible connections of wattmeter for power measurement in single phase circuit.,Apply,Remember,,kaggle
+Give the functions of zinc.,Remember,Understand,,kaggle
+Define economic growth. List and explain how the public policies can promote economic growth. ,Understand,Remember,,kaggle
+Discuss in detail fragmentation in terms of IPv4.,Analyze,Understand,,kaggle
+Write detailed classifications of Internal combustion engines.,Remember,Understand,,kaggle
+"Suppose firms in industry Y are having an increase in demand. By using appropriate diagrams, explain the effect of an increase in demand and how industry Y achieves the long-run equilibrium in perfect competition. ",Analyze,Understand,,kaggle
+Write following C functions in circular in SLL.,Apply,Remember,,kaggle
+Five pencils and 5 pens are to be arranged in a row.,Analyze,Apply,,kaggle
+"The Friesian cow, a dairy breed, is a product of selective breeding. Predict the problems that may occur during the selection of Friesian Cows. ",Apply,Understand,,kaggle
+Describe concept of digital multiplexer and Demultiplexer with necessary diagram.,Remember,Understand,,kaggle
+With the help of neat sketch explain single block brake.,Understand,Remember,,kaggle
+Explain A VL tree rotations with example.,Remember,Understand,,kaggle
+"Design a sketch section of the floor slab adjoining the parapet that includes the scupper drain, drain guard, water proofing layer, and protective topping. ",Create,Apply,,kaggle
+Illustrate the enqueue and dequeue operations of queue.,Understand,Apply,,kaggle
+Explain linked list sorting with example.,Understand,Remember,,kaggle
+Illustrate the needs of timber preservation and the techniques. ,Understand,Apply,,kaggle
+"State any TWO (2) of Malaysia's rules, regulations or standards which are related to scaffolding and falsework. ",Understand,Remember,,kaggle
+"Besides LOCOS, name TWO (2) other applications which require thermal processes. ",Understand,Remember,,kaggle
+Specify the selection criteria for low pressure measurement transducers.,Remember,Apply,,kaggle
+How do the mitochondria maintain the chemiosmotic gradient used for the electron transport chain?,Analyze,Remember,,kaggle
+Discuss what world-class producers do in regards to product or service design and process design. ,Understand,Create,,kaggle
+List the factors affecting compaction and explain the effect of compaction on any four soil properties.,Remember,Understand,,kaggle
+Write an algorithm for depth first search technique.,Apply,Create,,kaggle
+Between 2 pm to 4 pm the average no of phone calls per minute coming into a switch board of a company is 2.,Apply,Analyze,,kaggle
+Draw and describe Pool Boiling Curve.,Remember,Understand,,kaggle
+Explain various parts Fold and any three types of fold with neat sketches.,Understand,Remember,,kaggle
+Discuss THREE (3) types of anomalies associated with database tables that have not been normalized. ,Understand,Remember,,kaggle
+Explain properties of insulating materials which are used in line insulator.,Understand,Remember,,kaggle
+Draw neat diagram and explain operation of 3 pt. Starter?,Remember,Apply,,kaggle
+Draw and explain the Backward feed multiple effect evaporator.,Analyze,Understand,,kaggle
+Explain in brief the squeeze selection criteria for screen printing applications.,Apply,Understand,,kaggle
+Discuss the working of a parabola collector with neat sketch.,Remember,Understand,,kaggle
+Write a note on setting out alignment of road.,Understand,Remember,,kaggle
+Draw process flow diagram of a continuous process for the production of fatty acids and soap________.,Remember,Analyze,,kaggle
+Highlight the differences between an equilibrium in dominant strategy as compared to Nash equilibrium.,Understand,Analyze,,kaggle
+Write C function to create a doubly circular linked list.,Apply,Remember,,kaggle
+Draw neat diagram of three input averaging amplifier and derive the equation for output voltage.,Apply,Remember,,kaggle
+Draw and explain the single bus organization of the CPU.,Remember,Analyze,,kaggle
+"Draw ASM chart for 2 bit binary counter having one enable line E such that: E=1,",Remember,Apply,,kaggle
+Write short note on varnishing.,Understand,Remember,,kaggle
+Write short notes on:,Remember,Understand,,kaggle
+Write note on interrupt structure of 8051.,Understand,Remember,,kaggle
+Explain the following number predicates using a suitable example.,Analyze,Understand,,kaggle
+Write the short note on application of PLL,Remember,Understand,,kaggle
+Design and discuss the project decomposition and work task communication process.,Create,Understand,,kaggle
+Write short note on design activism.,Understand,Remember,,kaggle
+Discuss any FOUR (4) elements which are embedded in Total Quality Management Programme. ,Understand,Remember,,kaggle
+Draw and explain in detail Pool boiling curve with significance of each point in the pool boiling.,Analyze,Remember,,kaggle
+Describe the constructional details and operation of the capacitor start capacitor run induction motor with the help of diagrams.,Remember,Understand,,kaggle
+Draw and explain diagram of a CRO.,Apply,Understand,,kaggle
+With the neat diagram explain working of weighted resistor DAC?,Analyze,Understand,,kaggle
+Sketch a graph that associates with a monopoly. Find the profit-maximizing level of output and label it as q*. Find the price that firm should charge and label it as P*. Explain how the profit-maximizing output and price the firm should charge are determined. Explain what the firm should do if marginal revenue is higher than marginal cost. ,Analyze,Understand,,kaggle
+Write in detail mineral wealth of GONDWANA.,Understand,Remember,,kaggle
+Companies must take reasonable steps to ensure that their investors enjoy equal access to material information. Briefly describe SIX (6) corporate disclosure policies under Main Market Listing Requirements (MMLR). ,Remember,Understand,,kaggle
+Massive Open Online Course (MOOC) is a developing trend in media and technology. Predict the future of higher education with MOOC. ,Understand,Evaluate,,kaggle
+Give brief description of optical isomerism.,Remember,Apply,,kaggle
+Explain in detail the functions of ADCON0 SFR of PIC 18 microcontroller.,Analyze,Understand,,kaggle
+Discuss in detail the studies to be carried out in reservoir areas of a dam.,Remember,Understand,,kaggle
+With the help of diagram explain the concept of solar thermal power plant.,Remember,Analyze,,kaggle
+"Microbiota-based models may be an alternative method to facilitate the use of data on the gut microbiota in certain diseases. For example, NextSeq 550 and NextSeq 550DX platforms have been used to detect gut microbiota in non communicable diseases. Compare and contrast both platforms with regards to their regulatory status, key applications and array scanning.",Analyze,Understand,,kaggle
+Explain in detail the working of wheatstone bridge with equations.,Understand,Remember,,kaggle
+Describe with block diagram ditital signal hierarchy using T1 carrier system.,Understand,Remember,,kaggle
+Discuss the different file allocation methods with suitable example.,Remember,Understand,,kaggle
+Give classification of steels on the basis of composition.,Remember,Analyze,,kaggle
+"Discuss why physical weathering is more prevalent in dry, cool regions while chemical weathering is more prevalent in wet, hot regions. ",Understand,Remember,,kaggle
+With neat diagram explain working of IC 555 as a Astable Multivibrator.,Remember,Understand,,kaggle
+Draw and explain the interfacing diagram of DAC0808 with PIC18FXXX.,Remember,Understand,,kaggle
+Draw the neat sketch of arch and explain any four components.,Apply,Remember,,kaggle
+In a geometrically similar model of weir the discharge is 0.,Apply,Analyze,,kaggle
+Find the Laplace transform of the function.,Analyze,Apply,,kaggle
+Draw ONE (1) self-contained format and ONE (1) free form format of logo design. ,Understand,Apply,,kaggle
+Explain the virtual memory.,Remember,Understand,,kaggle
+Draw ONE (1) organic shape and ONE (1) geometric shape. Apply tone and shading.,Apply,Understand,,kaggle
+The vapour pressure of aqueous solution of glucose at 373 k is 750 mmHg.,Analyze,Apply,,kaggle
+The independence of external auditors is extremely critical due to their roles in providing true and fair view on a company financial position. Develop THREE (3) safeguards to reduce the threats on external auditors' independence. ,Create,Understand,,kaggle
+Demonstrate the steps involved in setting out of a building foundation and discuss the setting out of purposes. ,Apply,Understand,,kaggle
+GenBank offers a few options for nucleotide sequence submissions. Name TWO available options and when are they used. ,Understand,Remember,,kaggle
+Explain virtual base class and virtual function with example.,Understand,Remember,,kaggle
+What are coordination catalyst explain with the help of wackers process.,Analyze,Remember,,kaggle
+Explain the types of HMI?,Understand,Remember,,kaggle
+There is a relationship between the level of construction activity and a country's stage of development. Discuss.,Analyze,Understand,,kaggle
+What are the advantages and disadvantages of TBT?,Analyze,Remember,,kaggle
+Explain with suitable example Update Anomalies.,Remember,Understand,,kaggle
+Draw and explain the ARM family core architecture.,Remember,Analyze,,kaggle
+Explain the growth of pharmaceutical packaging industry in India.,Remember,Understand,,kaggle
+Elaborate Method overriding and dynamic method dispatch in Java.,Analyze,Understand,,kaggle
+Discuss any three terminology related to psychometric.,Remember,Understand,,kaggle
+With neat circuit diagram explain I to V converter.,Remember,Understand,,kaggle
+Identify FIVE (5) conditions that one needs to meet in order to be an independent director in Malaysian public listed company (PLC).,Remember,Create,,kaggle
+Propose a suitable type of glass that is used to construct a transparent fiat roof for the entrance of the Heritage Hall in Universiti Tunku Abdul Rahman. ,Create,Apply,,kaggle
+With the help of a neat diagram explain the operation of an adjustable voltage regulator using IC LM 317.,Apply,Understand,,kaggle
+Calculate moment at supports for the frame as shown in figure 7 by moment distribution method and draw BMD.,Apply,Analyze,,kaggle
+A boiler evaporates 3.,Apply,Remember,,kaggle
+Draw the circuit diagram of full wave preusion rectifier and Explain.,Remember,Understand,,kaggle
+Explain with neat diagram the external hardware interrupts of PIC18 microcontroller in detail.,Analyze,Understand,,kaggle
+Write any four industrial applications of the DC series and DC shunt motor.,Remember,Apply,,kaggle
+In the model test of a spillway the discharge and velocity of flow over the model were 2.,Apply,Analyze,,kaggle
+Explain any three welding defects with their causes and remedies.,Remember,Understand,,kaggle
+Draw interfacing diagram of LED with Arduino board also write the algorithm to blink the LED.,Analyze,Apply,,kaggle
+Establish with examples why the concept of entropy is essential to explain the direction of spontaneous processes.,Analyze,Understand,,kaggle
+Prove that 242( )(l o g ) () .ba a rba r b rrrï´ïï´ï ïï ï½ ï­ ï´,Analyze,Remember,,kaggle
+Sketch ONE (1) movement to show repetition in shape and color. ,Understand,Apply,,kaggle
+With suitable diagram explain working of LVDT.,Apply,Understand,,kaggle
+Explain any three errors in induction type energy meter in detail.,Understand,Remember,,kaggle
+Construct Minimal spanning tree for the following graphs using prims algorithm.,Create,Apply,,kaggle
+Discuss types of priority queue and how it is different from simple queue.,Remember,Analyze,,kaggle
+Construct A VL tree for following sequence of keys.,Create,Apply,,kaggle
+Is there any difference between throw and throws in exception handling in Java?,Analyze,Remember,,kaggle
+Differentiate between ROM and RAM.,Remember,Analyze,,kaggle
+Draw neat diagram and explin single phase half wave rectifier with pure resistive laod.,Remember,Apply,,kaggle
+Evaluate THREE (3) neurocognitive difficulties that may be experienced by people with suicidal-related behaviors. ,Evaluate,Understand,,kaggle
+Explain the RISC and CISC characteristics.,Remember,Understand,,kaggle
+Second moment 2Î¼ about mean is,Apply,Remember,,kaggle
+Explain the geometry of a single point cutting tool with suitable sketches.,Remember,Understand,,kaggle
+The pair of regression Linens are L1 : 8 x â10y + 66 = 0 and L2 : 40 x â18y = 214,Analyze,Apply,,kaggle
+Compare Zener breakdown with avalanche breakdown in a pn junction and state THREE differences. Name a device that utilizes each breakdown mode. ,Analyze,Remember,,kaggle
+Sate the principle of stadia tacheometry?,Remember,Apply,,kaggle
+"John Watson passed away and left behind a legal child, Mary Watson, as well as two girlfriends, Susan and Petty, who were in their 8 week of gestation. Susan claimed that she bore an illegitimate child of John Watson. Propose and design the most suitable paternity experiment to prove Susan's claim. You may outline your experiment using schematic diagram(s). ",Create,Apply,,kaggle
+Draw and label the typical heat denaturation curves for mesophilic and thermophilic enzymes. ,Understand,Remember,,kaggle
+Draw powerflow diagram of DC motor write the respective expressions of Power and losses involved.,Understand,Remember,,kaggle
+Why starter is required in a DC motor?,Understand,Remember,,kaggle
+"Besides silicon and germanium, name ONE (1) other material which could be used to fabricate transistors. ",Understand,Remember,,kaggle
+The lifetime  of an article has a normal distribution with mean 400 hours and standard deviation 50 hours.,Remember,Apply,,kaggle
+Draw and explain Cluster and Cluster Architectures.,Analyze,Understand,,kaggle
+Is it possible to construct a graph with 12 nodes such that 2 of the nodes have degree 3 and the remaining have degree 4.,Analyze,Apply,,kaggle
+Explain Preliminary Geological Investigations carried out for Tunneling.,Understand,Remember,,kaggle
+Discriminate between Brazing and Soldering.,Analyze,Evaluate,,kaggle
+Illustrate the various IoT communication APIs?,Remember,Understand,,kaggle
+Explain class template using multiple parameters?,Understand,Remember,,kaggle
+Give brief information of Austenite to Pearlite Transformation.,Understand,Remember,,kaggle
+Construct a Radial Drilling Machine and Explain.,Create,Apply,,kaggle
+Derive an expression for the inductance of three phase overhead transmission line when conductors are unsymmetrical spaced buttransposed.,Analyze,Apply,,kaggle
+With suitable example write short note on the fractal lines.,Analyze,Remember,,kaggle
+A rectangular plane surface 3m wide and 4m deep lies in water in such a way that its plane makes an angle of 30Âº with the free surface of water.,Apply,Understand,,kaggle
+Explain with neat diagram how is Lissajous pattern used for phase measurement?,Understand,Remember,,kaggle
+"""The slope has been standing for more than 15 years! So it is safe"" and ""Geological report shows that the slope is safe"". The above statements are the common misconception. Propose FIVE (5) construction controls to ensure the safety of construction of residential building on hill-site in Malaysia. ",Create,Apply,,kaggle
+Draw and explain how CMOS inverter works as amplifier with active load configuration.,Understand,Remember,,kaggle
+Briefly describe the general properties of plastic in terms of strength and durability. Comment also why plastic is not suitable to use as reinforcement bar for concrete structure. ,Evaluate,Understand,,kaggle
+Explain grid connected wind energy conversion system with the help of neat diagram.,Remember,Understand,,kaggle
+Analyze the effect of similarity-dissimilarity on attraction by using TWO (2) theories. ,Analyze,Apply,,kaggle
+"Provide a guideline for effective use of photography of display materials"" in teaching of English language. ",Understand,Apply,,kaggle
+Discuss briefly energy band in conductor and insulator.,Remember,Understand,,kaggle
+With the help of neat diagram explain working of symmetrical schmitt trigger?,Analyze,Understand,,kaggle
+What are the considerations for natural lighting in a residential building?,Apply,Remember,,kaggle
+Design and sketch the layout of a CMOS inverter. ,Create,Apply,,kaggle
+Explain Taylorâs series method for solution of ordinary differential equations.,Remember,Understand,,kaggle
+With neat circuit diagram explain V to I converter.,Remember,Understand,,kaggle
+cohesion.,Apply,Remember,,kaggle
+Describe the elements of machine instructions.,Remember,Understand,,kaggle
+Elaborate on how you will use IoT for remote healthcare.,Remember,Apply,,kaggle
+Describe the SEVEN (7) advantages of radio advertising. ,Remember,Understand,,kaggle
+Evaluate your sketch with ASSURE's model procedure. ,Evaluate,Apply,,kaggle
+Explain in brief exploration methods in production of crude petroleum.,Remember,Understand,,kaggle
+Explain following QC tools.,Remember,Understand,,kaggle
+Discuss types of systems for internal combustion engine.,Analyze,Remember,,kaggle
+Explain Closely Coupled and Loosly Coupled microprocessor systems.,Understand,Remember,,kaggle
+What precautions should be taken for welding high reflective materials using laser welding?,Apply,Create,,kaggle
+What are different methods of speed control for three phase induction motor.,Understand,Remember,,kaggle
+With suitable block diagram explain working of static energy meter.,Understand,Apply,,kaggle
+Write a pseudo code to insert new node in to singly link list.,Apply,Remember,,kaggle
+Describe Inheritance.,Remember,Understand,,kaggle
+Explain how surcharge will affect earth pressure for cohesionless and cohesion soils in active state with pressure diagrams.,Analyze,Understand,,kaggle
+Design a vendor-rating form that represents your comparison of the education offered by universities in which you considered/are considering/have considered enrolling. ,Create,Evaluate,,kaggle
+Explain the compressive strength of concrete. How it is determined in laboratory.,Remember,Understand,,kaggle
+Write a short note on thermocouple.,Understand,Remember,,kaggle
+Teacher-prepared materials are the best form of resources for your English language lesson. State FIVE (5) factors that you would consider when preparing your resources. ,Remember,Understand,,kaggle
+A 3 phase 80 kV transmission line is supported by 3 suspension insulators.,Remember,Apply,,kaggle
+"Based on your knowledge, describe TWO (2) foreign bonds that are well known in the market. ",Remember,Understand,,kaggle
+How O.,Understand,Apply,,kaggle
+Explain the six regimes of the pool boiling curve with the help of a neat diagram.,Understand,Analyze,,kaggle
+With the help of torque speed characteristics explain effect of addition of external resistance in rotor circuit of 3 phase slipring induction motor.,Understand,Remember,,kaggle
+Describe primitive data types.,Understand,Remember,,kaggle
+Explain Project Management software in construction site planning.,Remember,Understand,,kaggle
+A cylindrical pressure vessel 1.,Apply,Remember,,kaggle
+Discuss THREE (3) factors influencing the conflict management process. Support each of your answers with ONE (1) relevant example. ,Evaluate,Understand,,kaggle
+Explain Helmholtz and Gibbs functions.,Remember,Understand,,kaggle
+Find the condition for symmetry and reciprocity of Z parameter.,Analyze,Apply,,kaggle
+Explain the purpose of human communication process. ,Understand,Remember,,kaggle
+"Using a farm animal species of your choice, sketch a graph and describe the scenario that demonstrate a strong genotype by environmental interaction that could influence breeding objectives. ",Apply,Understand,,kaggle
+"FinFET technology is developed to minimize some of the shortcomings in planar MOSFETs. With the aid of diagrams, show the differences between these TWO (2) transistors. ",Apply,Understand,,kaggle
+Discuss the steps in executing interrupts in PIC18 microcontroller.,Analyze,Remember,,kaggle
+Explain the working of an universal motor with help of suitable diagram.,Remember,Understand,,kaggle
+Give THREE (3) examples of common uses of standby letter of credit. ,Understand,Remember,,kaggle
+Explain the drawback of Sequential File Organization.,Understand,Remember,,kaggle
+Write an applications of GIS in civil engg.,Apply,Remember,,kaggle
+Discuss the mechanism of E1 and E2 reaction of alkyl halides.,Apply,Understand,,kaggle
+Write short note on.,Understand,Remember,,kaggle
+Enlist different linear and angular methods of setting out of curves.,Understand,Remember,,kaggle
+Write a short note on Claisen rearrangement.,Understand,Remember,,kaggle
+Draw and label an Eisenthal-Cornish-Bowden direct plot. Explain how kinetic parameters could be determined from this plot. ,Apply,Understand,,kaggle
+Explain the growth of boundary layer over a thin flat plate held parallel to the direction of flow in a real fluid.,Understand,Analyze,,kaggle
+"The technology of VLSI is defined by the feature size. Over the years, the feature size has been reducing. Analyze and explain the reasons for doing so. ",Analyze,Understand,,kaggle
+Give the postfix and prefix expression ï¨ï© ï¨ï© // ab c x y zï«ïª ï«,Apply,Remember,,kaggle
+Explain the golden rules for User Interface Design.,Remember,Understand,,kaggle
+Draw and label the model of Karl Weick's Theory of Organizing. ,Understand,Remember,,kaggle
+With the help of a block diagram explain the fundamental units of a microprocessor.,Analyze,Remember,,kaggle
+Enlist various methods available for concrete mix design and explain the step by step procedure for concrete mix design IS 10262 method.,Understand,Remember,,kaggle
+The news reported that the chicken consumption in Malaysia has fallen by 17.25 percent. Use firm and industry diagrams to explain the short run and long run effects. ,Apply,Understand,,kaggle
+Suppose that a book of 600 pages contains 40 printing mistakes.,Apply,Analyze,,kaggle
+"Evaluate the differences between the common, facing and engineering bricks in characteristics and use. ",Evaluate,Analyze,,kaggle
+Write a LISP program to find the factorial of n numbers using recursion concept.,Remember,Apply,,kaggle
+Draw the energy band diagram of the doped semiconductor at 300 K. ,Understand,Apply,,kaggle
+A committee including 3 boys and 4 girls is to be formed from a group of 10 boys and 12 girls.,Remember,Apply,,kaggle
+Give types and applications of stepper motor.,Understand,Remember,,kaggle
+Explain RTC DS1306 interfacing with PIC18FXX microcontroller.,Analyze,Understand,,kaggle
+Elaborate functional business systen in detail with cross functional enterprise systems.,Remember,Understand,,kaggle
+Define indegree and outdegree of a vertex in graph. Find the indegree and outdegree of following graph.,Remember,Apply,,kaggle
+Draw and Explain WSN architecture?,Analyze,Remember,,kaggle
+With suitable diagram explain working of resistive transducers.,Apply,Understand,,kaggle
+Explain properties of insulating materials which are used in Cables and Transformers.,Remember,Understand,,kaggle
+Give the properties and application of Manganin.,Understand,Remember,,kaggle
+Explain working of radial drilling machine.,Understand,Create,,kaggle
+Discuss all four cases to determine direction of Coriolis components of acceleration when block is sliding on rotating link.,Analyze,Understand,,kaggle
+Discuss types of analysis for fuel.,Analyze,Remember,,kaggle
+Explain single phase fully controlled rectifier fed DC motor drives.,Remember,Understand,,kaggle
+Draw the market demand and supply curve. ,Understand,Apply,,kaggle
+Evaluate TWO (2) strategies that have been implemented by McDonald's Malaysia in handling the crisis. Provide a justification and an example to support your answer for each of the strategies. ,Evaluate,Understand,,kaggle
+Explain the Dining Philosopher problem with the help of pseudo code.,Understand,Remember,,kaggle
+Explain Berkeley and Hartley method for measurement of osmotic pressure.,Remember,Understand,,kaggle
+Write a pseudo code for binary search apply you algorithm on the following no.,Analyze,Apply,,kaggle
+Draw a table indicating purification fold and yield at each step. ,Understand,Apply,,kaggle
+"Suggest your recommendation on the investment of KMK Corporation's common stock, if the stock price is traded at $25 currently. ",Create,Apply,,kaggle
+Describe types of joints and their civil engineering significance.,Remember,Understand,,kaggle
+What are differences between natural convection and forced convection?,Analyze,Remember,,kaggle
+State 'corporate governance' definition as mentioned in Cadbury Report (1992). Explain Malaysian Code on Corporate Governance (MCCG) 2017 âcorporate governance' definition in details. ,Remember,Understand,,kaggle
+With neat block diagram explain PCM transmitter.,Understand,Remember,,kaggle
+Explain in short:,Remember,Understand,,kaggle
+Write note on CLK2 and Internal processor clock.,Understand,Remember,,kaggle
+Explain Selection sort in ascending order using the following array.,Apply,Understand,,kaggle
+What are the various losses which make the operation of actual cycle differ from that of air standard cycle Explain each loss in brief.,Understand,Remember,,kaggle
+Define and contrast digital certificate and digital signature. ,Understand,Remember,,kaggle
+Find the reverse bias saturation current. ,Understand,Apply,,kaggle
+Draw circuit diagram of general AC bridge and derive the equation for the balanced condition of the bridge.,Understand,Analyze,,kaggle
+Derive blending function of Bezier curve.,Remember,Analyze,,kaggle
+"Explain with sketch the fixed hair method of tacheometry, when line of sight is inclined downward (depression) and staff is held vertical?",Understand,Remember,,kaggle
+Explain the QoS parameters in computer network.,Remember,Understand,,kaggle
+Explain along with fig Types of Rolling Contact Bearings.,Understand,Remember,,kaggle
+With a neat block diagram explain overall system of PLC.,Analyze,Remember,,kaggle
+How is Lissajous pattern used for frequency measurement?,Apply,Remember,,kaggle
+Explain final control element in brief and explain gate and needle control valve in detail with neat sketch.,Remember,Understand,,kaggle
+Write an algorithm to insert an element in a binary search tree implemented using linked representation.,Remember,Apply,,kaggle
+Draw and explain frequency response characteristics of ideal and practical low pass filter.,Understand,Remember,,kaggle
+Explain the thread life cycle model in Java.,Analyze,Understand,,kaggle
+How parameterized constructors get executed in multilevel inheritance?,Analyze,Apply,,kaggle
+Find Z parameters of the network shown in figure no.,Analyze,Apply,,kaggle
+Explian the transient response specifications of second order system with neat diagram.,Apply,Remember,,kaggle
+Nitrobenzene  undergoes electrophilic substitution at meta only.,Remember,Apply,,kaggle
+How will you represent facts in propositional logic with an example?,Apply,Understand,,kaggle
+Explain the applications of Bezier curves in robot path planning.,Remember,Understand,,kaggle
+Draw pin diagram of IC 555 and explain working of each pin.,Understand,Remember,,kaggle
+"In a pack of cards, 2cards are drawn simultaneously. What is the probability of getting a Queen and Jack combination.",Apply,Remember,,kaggle
+Draw and explain the method of plotting TTT diagram and what information is obtained from this diagram?,Apply,Understand,,kaggle
+Suppose that Japan and South Korea are trading partners. The exchange rate of Yen for South Korean Won (KRW) is floating freely. Japanese had reduced their imports from South Korea due to lack of demand for Korean products. Explain what will happen to Yen by using an appropriate diagram. Give five reasons why demand for a foreign currency may increase. ,Analyze,Understand,,kaggle
+"""Economists state that both allocative and productive efficiencies are realized in the long-run equilibrium of a monopolistically competitive market"". State whether you agree or disagree with the statement. Graphically illustrate and explain the statement. ",Analyze,Evaluate,,kaggle
+Describe the factors to be considered while selecting hydro power plant.,Remember,Understand,,kaggle
+Vector along the direction of the line.,Analyze,Apply,,kaggle
+Draw and explain the interfacing diagram of strain gauge with Arduino Board showing necessary subsystems.,Understand,Remember,,kaggle
+With the help of neat sketch explain the construction and working of radial drilling machine.,Analyze,Understand,,kaggle
+Discuss EIGRP protocol in detail.,Analyze,Understand,,kaggle
+Write functions for RR and RL rotation with respect to AVL tree.,Apply,Understand,,kaggle
+Evaluate any FIVE (5) power bases. Provide a relevant example for each power base. ,Evaluate,Understand,,kaggle
+Explain on the advantages of switching from a flat-file processing system to a database management system. ,Understand,Remember,,kaggle
+Classify hydro electric power plant based on i) head ii) load,Remember,Understand,,kaggle
+A doubly linked list with numbers to be created.,Apply,Remember,,kaggle
+Draw and explain with neat sketch of simple carburetor.,Understand,Remember,,kaggle
+"Discuss the feasibility of dam site, with dipping and horizontal strata.",Remember,Understand,,kaggle
+Explain in detail Ruling process.,Remember,Understand,,kaggle
+Implement Priority queue using linked representation and mention the time complexity of operations.,Apply,Remember,,kaggle
+With the necessary diagrams explain entering and leaving V86 mode?,Remember,Understand,,kaggle
+Explain Producer and consumer problem in Classical Synchronization.,Understand,Analyze,,kaggle
+Show that the Fermi-Dirac function is a step function at T = 0 K. ,Apply,Analyze,,kaggle
+The total load of the power system is not constant but varies thoughout the day and reaches a different peak value from one day to another.,Remember,Apply,,kaggle
+Write an algorithm to evaluate postfix expression.,Remember,Evaluate,,kaggle
+Consider following Database.,Apply,Remember,,kaggle
+With  suitable program segments describe the usage of âSuperâ Keyword,Remember,Understand,,kaggle
+Describe the major Design Rules of RISC philosophy?,Remember,Understand,,kaggle
+Foundation design is required the study and examination of multiple components which is a highly specialized the function and usually is performed by a structural engineer. Inspect the components which have to include in the designing of a building foundation. ,Analyze,Apply,,kaggle
+Write an algorithm for evaluating  a postfix expressioin using stack.,Understand,Create,,kaggle
+Outline how storage buffers may be deployed in automated production lines.,Understand,Analyze,,kaggle
+Comment on Unconfined Compression test is special case of Triaxial Compression test.,Analyze,Apply,,kaggle
+Draw the energy band diagram of an intrinsic Si and label the band gap energy. ,Understand,Remember,,kaggle
+State 3 advantages and 3 disadvantages of LVDT.,Remember,Analyze,,kaggle
+Define Bank Capital and elaborate the functions of Bank Capital.,Understand,Remember,,kaggle
+Explain in details IEEE Standards for Representing floating point Numbers in following formats.,Understand,Remember,,kaggle
+Write a short note on V to I converter with grounded type load.,Understand,Remember,,kaggle
+A series of five one day matches is to be played between India and Sri Lanka.,Apply,Remember,,kaggle
+Show that for a steady laminar flow through a circular pipe mean velocity of flow occurs at radial distance of 0.,Analyze,Apply,,kaggle
+How will you test transformer oil?,Apply,Understand,,kaggle
+Discuss effect of alloying elements on steel?,Remember,Understand,,kaggle
+Give difference between Hardwired Control Vs Microprogrammed Control.,Analyze,Remember,,kaggle
+Explain scrambling and unscrambling with diagram in detail.,Remember,Understand,,kaggle
+Enlist continuous control modes used in process control system and explain PI and PD control modes with suitable example.,Understand,Remember,,kaggle
+Determine the plastic moment at collapse for the continuous beam ABCD loaded with ultimate load as shown in figure with contant Mp.,Analyze,Apply,,kaggle
+A job is subdivided into five elements.,Apply,Remember,,kaggle
+With neat sketch explain the HGL and TEL.,Remember,Understand,,kaggle
+Write an explanatory note on rotary drum filter.,Analyze,Remember,,kaggle
+Explain LRU page replacement algorithm in detail.,Remember,Understand,,kaggle
+Draw and explain the interfacing of the Accelerometer with Arduino ATmega 328P.,Remember,Understand,,kaggle
+Evaluate your sketch with ADDIE's model procedure. ,Evaluate,Apply,,kaggle
+Elaborate the Postfix evaluation algorithm stepwise.,Remember,Understand,,kaggle
+Explain Linked List class with an example.,Understand,Remember,,kaggle
+Implement CMOS NAND Gate using pMOS and nMOS gates.,Remember,Apply,,kaggle
+Writes a short note on edge preparation in welding.,Understand,Remember,,kaggle
+Draw and explain block diagram of memory devices.,Remember,Understand,,kaggle
+Describe the procedure for Vane Shear Test.,Remember,Understand,,kaggle
+Describe Circumstances under which you would choose to use Embedded SQL than normal SQL or only a general purposeprogramming Language.,Understand,Evaluate,,kaggle
+Explain in brief sulfation of fatty alcohols and sulfonates.,Analyze,Understand,,kaggle
+The open loop transfer function of a unity feedback control system is given by.,Remember,Apply,,kaggle
+Discuss PWM generation and detection in detail.,Remember,Understand,,kaggle
+The crank of IC.,Analyze,Apply,,kaggle
+Check whether given schedule is view serializable.,Apply,Evaluate,,kaggle
+"Describe the common structural features of phosphatidylserine, phosphatidylethanolamine, phosphatidylcholine and phosphatidylinositol. State their general function(s). ",Understand,Remember,,kaggle
+Write short notes on .,Understand,Remember,,kaggle
+Explain the different types of ADCs.,Remember,Understand,,kaggle
+Explain different types of constrained motion with neat sketch.,Understand,Remember,,kaggle
+Name the TWO ways of how molecules bonded to surface. Provide a brief description on the modes of adsorption. ,Understand,Remember,,kaggle
+Develop relation between âZâ parameter and transmission parameter .,Create,Analyze,,kaggle
+Discuss Individualism vs. Collectivism in Hofstede's Dimensions of Culture. ,Understand,Analyze,,kaggle
+G .,Evaluate,Remember,,kaggle
+Explain the classification of Alloy Steel with respect to the relation with carbon.,Remember,Understand,,kaggle
+Explain pulse code modulation and write Differentiate between pulse analog modulation and pulse digital modulation.,Understand,Analyze,,kaggle
+Find the initial and final value of the given function.,Analyze,Apply,,kaggle
+What is Microprogram sequencing? Differentiate between Hardwired control and Microprogrammed control.,Remember,Analyze,,kaggle
+Write short note on Permanent Magnet Stepper Motor.,Understand,Remember,,kaggle
+Explain any two types of resistive transducers.,Understand,Remember,,kaggle
+Explain various features of the 8051 Microcontroller.,Remember,Understand,,kaggle
+Prepare a time-phased product structure. ,Apply,Create,,kaggle
+Mention the ingredients of cathode and anode for following batteries.,Remember,Apply,,kaggle
+Explain with example K dimensional tree.,Understand,Remember,,kaggle
+What are the effects of the following factors on SN1 and SN2 reactions?,Analyze,Remember,,kaggle
+Explain need of operator overloading.,Understand,Remember,,kaggle
+What are the innovation challenges in design thinking.,Analyze,Remember,,kaggle
+Discuss the properties of line codes.,Remember,Understand,,kaggle
+Explain the designation of coated electrode.,Remember,Understand,,kaggle
+Show that vector field,Analyze,Evaluate,,kaggle
+Explain the selection sort with algorithm sort the following no.,Understand,Apply,,kaggle
+Explain with diagram the operation of an adjustable voltage regulater using IC LM 317.,Understand,Apply,,kaggle
+Index 69 division by compound indexing method.,Apply,Remember,,kaggle
+Enlist any six types of doors and explain paneled door with neat sketch.,Apply,Remember,,kaggle
+Predict FIVE (5) impacts of the crisis towards McDonald's Malaysia if they are not handling the crisis properly. ,Analyze,Understand,,kaggle
+Identify FOUR (4) factors that affect the willingness of people to perform prosocial behaviors. ,Remember,Understand,,kaggle
+The velocity and discharge for a 1 50 scale model of a spillway are 0.,Analyze,Apply,,kaggle
+Explain UP Counter and DOWN Counter.,Remember,Understand,,kaggle
+Categorize FIVE (5) advantages of multimedia in primary school education. ,Understand,Analyze,,kaggle
+What do you mean by adjacency matrix and adjacency list.,Understand,Remember,,kaggle
+Explain in details Temperature Control Methods of Furnaces.,Remember,Understand,,kaggle
+Explain Nano materials used in Batteries and Photovoltaic Cells.,Remember,Understand,,kaggle
+What are the applications of Stack.,Understand,Remember,,kaggle
+Write short notes on the structure and functions of polysaccharides by giving relevant example. ,Understand,Remember,,kaggle
+Explain the working of functional block diagram of IC 555 Timer.,Remember,Understand,,kaggle
+Show that average velocity is one half of the maximum velocity for flow of viscous fluid through circular pipe.,Analyze,Apply,,kaggle
+Explain the concept of rotating magnetic field with the help of suitable diagrams.,Remember,Understand,,kaggle
+Explain with suitable example SQL aggretage functions.,Remember,Understand,,kaggle
+Draw the ASM chart for a 2 bit Binary counter having one enable line E such that.,Apply,Remember,,kaggle
+Show that the following graphs are isomorphic.,Remember,Analyze,,kaggle
+Draw neat diagram of I -V converter and derive the equation for output voltage.,Remember,Apply,,kaggle
+Write short note on internal memory organization of 8051.,Understand,Remember,,kaggle
+A piston filled with 0.,Remember,Analyze,,kaggle
+Explain the Gauss Jordan method used for the solution of the linear simultaneous equation.,Remember,Understand,,kaggle
+List and explain the reason why the aggregate demand curve is downward slopping.,Remember,Understand,,kaggle
+Convert the following expression from Infix to Postfix expression.,Remember,Apply,,kaggle
+Discuss causes and remedial measures of Landslides.,Remember,Understand,,kaggle
+Explain on Devices Security and Privacy of IoT cloud.,Remember,Understand,,kaggle
+Illustrates causes and remedial measures of landslide.,Remember,Understand,,kaggle
+Draw block diagram of regulated power supply and explain the function of each block?,Analyze,Remember,,kaggle
+Discuss in detail volcanoes.,Remember,Understand,,kaggle
+Is it possible to estimate software size before coding?,Analyze,Evaluate,,kaggle
+Explain following term related to distributed database system.,Remember,Understand,,kaggle
+Draw and explain circuit for generating 15V supply using IC7815.,Understand,Apply,,kaggle
+Draw compound curve with its components.,Remember,Understand,,kaggle
+Explain 3D position trackers.,Remember,Understand,,kaggle
+Examine FIVE (5) advantages of using video as instructional materials to primary school students. ,Analyze,Apply,,kaggle
+Explain namespace in C++ with example?,Remember,Understand,,kaggle
+Explain any four extrusion process variables with sketch.,Understand,Remember,,kaggle
+Explain process of perlite formation from austenite?,Remember,Understand,,kaggle
+Illustrate with suitable circuit diagram precision half wave rectifier.,Apply,Understand,,kaggle
+Explain sequential file and random access file organization.,Understand,Remember,,kaggle
+The life of army shoes in normally distributed with mean 8 months and standard deviation 2 months.,Apply,Remember,,kaggle
+Briefly describe the formation of disulfide bond. Suggest ONE role of disulfide bond. ,Create,Understand,,kaggle
+Explain Nyquist Stability Criterion.,Remember,Understand,,kaggle
+Explain in brief condensation polymerization and Addition polymerization.,Analyze,Understand,,kaggle
+Obtain the expression for voltage across capacitor in series RC circuit connected to a.,Analyze,Apply,,kaggle
+Give classification of dyes on the basis of application.,Analyze,Remember,,kaggle
+Describe single electron transistor with neat diagram.,Remember,Understand,,kaggle
+Draw and explain the general structure of PLA.,Remember,Understand,,kaggle
+Describe different methods of record blocking with the help of a neat diagram.,Understand,Remember,,kaggle
+Explain the following exceptions in brief.,Analyze,Understand,,kaggle
+With suitable labelled diagram explain constructional details of single phase induction type energy meter.,Understand,Remember,,kaggle
+Criticize the issues in Principal â Agent Theory.,Analyze,Evaluate,,kaggle
+"Following are the details of Project A and B. Using NPV (i=8%), Comment on the following statements:",Analyze,Apply,,kaggle
+Show BFS and DFS for the following graph with starting vertex as 1.,Remember,Apply,,kaggle
+Explain Eulerâs method for the solution of ordinary differential equation.,Remember,Understand,,kaggle
+Define Put-Call Parity and express it in equation. ,Understand,Remember,,kaggle
+"Explain earth pressure at rest, active earth pressure and passive earth pressure w.r.t. wall movement with sketches.",Understand,Analyze,,kaggle
+A combinational circuit defined by the function.,Apply,Understand,,kaggle
+Differentiate primary and secondary reserves of a bank. List THREE (3) examples for each reserve. ,Analyze,Understand,,kaggle
+In the circuit shown in fig.,Analyze,Apply,,kaggle
+Analyse the challenges facing a government in managing the construction economy and suggest the ways to overcome them.,Create,Analyze,,kaggle
+Explain speed control using v/f method.,Remember,Understand,,kaggle
+Describe Cloud of Things.,Remember,Understand,,kaggle
+Write a pseudo code for basic operation of stack.,Apply,Understand,,kaggle
+Draw a neat labeled diagram showing Mobilization of Stored Triacylglycerols by Hormones Trigger.,Remember,Apply,,kaggle
+Explain with the help of neat block diagram Armstrong method of FM generation.,Remember,Understand,,kaggle
+Enlist the factors influencing concrete mix design and explain any one of them.,Understand,Remember,,kaggle
+If ï¨ï©ï¨ï©ï¨ï©1Ë ËË F yzi z x j x ykï½ï« ï«ï« ï«ï«ï² and ï¨ï© ï¨ï© ï¨ï©222 2Ë ËË F x yz i y zx j z xy kï½ï­ ï«ï­ ï«ï­ï² then show that 12FFï´ï²ï² is solenoidal.,Analyze,Apply,,kaggle
+Explain 2D interpolation methods.,Remember,Understand,,kaggle
+A ring foundation is of 3.,Apply,Remember,,kaggle
+Explain Intrusion Detection System with merits and demerits.,Understand,Remember,,kaggle
+"Draw the ""onion model that represents Schein's Model of Organizational Culture. ",Understand,Remember,,kaggle
+Explain the term Rescheduling and Updating.,Remember,Understand,,kaggle
+"Technology has been used in most schools since the 90s, but it still has some interruptions. Validate the top FOUR (4) problematic issues with technology in education today. ",Evaluate,Understand,,kaggle
+The initial tension in a flat belt drive is 1800N.,Apply,Analyze,,kaggle
+Explain two types of rotor construction of a three phase induction motor with the help of suitable diagrams.,Remember,Understand,,kaggle
+Write a short note on Reluctance motor.,Understand,Remember,,kaggle
+In an I.,Analyze,Evaluate,,kaggle
+Prove that ratio  .,Remember,Analyze,,kaggle
+Explain stiffness and flexibility and write elements of displacement matrix for the frame shown in figure 7.,Understand,Remember,,kaggle
+With suitable diagram explain the Armature reaction in Synchronous Machine.,Remember,Understand,,kaggle
+State methods of remediation for soil contamination and explain any two of them.,Remember,Understand,,kaggle
+Explain in details Fajans method for precipitaion titration.,Understand,Remember,,kaggle
+Write  short note on shaded pole induction motor.,Understand,Remember,,kaggle
+Discuss the various scenarios of deleting a node from binary search tree.,Remember,Understand,,kaggle
+Explain in detail vulnerabilities of Internet of Things.,Remember,Understand,,kaggle
+Which class supports character input to the program?,Remember,Apply,,kaggle
+What factors would you change if . . .?,Apply,Evaluate,,kaggle
+"Can you explain the meaning of ""global warming""?",Remember,Understand,,kaggle
+Describe your ideal vacation destination.,Remember,Understand,,kaggle
+Quote a passage from a book that had a profound impact on you.,Remember,Create,,kaggle
+Quote a famous saying about the importance of education.,Remember,Understand,,kaggle
+Describe the features of a Gothic cathedral architecture.,Remember,Understand,,kaggle
+"Can you describe the concept of ""nature vs. nurture"" in psychology?",Remember,Understand,,kaggle
+Can you describe the effects of climate change on ecosystems?,Remember,Understand,,kaggle
+Provide labels for the parts of an electric circuit.,Remember,Apply,,kaggle
+Quote a proverb from a culture other than your own.,Remember,Understand,,kaggle
+Can you explain the concept of gravitational force with accuracy?,Remember,Understand,,kaggle
+Can you describe the process in detail?,Understand,Remember,,kaggle
+In what ways can you contrast those two theories?,Understand,Analyze,,kaggle
+How would you differentiate between those two methods?,Understand,Analyze,,kaggle
+What's your interpretation of that literary work?,Understand,Remember,,kaggle
+Compare and contrast capitalism and socialism.,Understand,Analyze,,kaggle
+"What associations does the term ""freedom"" bring up?",Understand,Remember,,kaggle
+Differentiate between deductive and inductive reasoning.,Understand,Analyze,,kaggle
+Compare and contrast authoritarian and democratic regimes.,Understand,Analyze,,kaggle
+Differentiate between primary and secondary data.,Understand,Analyze,,kaggle
+Compare and contrast nature and nurture influences.,Understand,Analyze,,kaggle
+Compare and contrast realism and surrealism in art.,Understand,Analyze,,kaggle
+Differentiate between deductive and inductive arguments.,Analyze,Understand,,kaggle
+Differentiate between quantitative and qualitative research methods.,Understand,Analyze,,kaggle
+Compare and contrast modern art with traditional art.,Understand,Analyze,,kaggle
+Differentiate between deductive and abductive reasoning.,Understand,Analyze,,kaggle
+Compare and contrast Eastern and Western philosophies.,Understand,Analyze,,kaggle
+Differentiate between primary and secondary sources.,Understand,Analyze,,kaggle
+Compare and contrast classical music and contemporary music.,Understand,Analyze,,kaggle
+What can you infer about the character's motives from the dialogue?,Understand,Analyze,,kaggle
+Infer the motives behind the character's mysterious actions.,Understand,Analyze,,kaggle
+Interpret the financial data to assess the company's performance.,Understand,Evaluate,,kaggle
+Infer the causes of the sudden increase in air pollution levels.,Understand,Analyze,,kaggle
+Examine the data to identify patterns and trends.,Apply,Analyze,,kaggle
+Illustrate the concept of natural selection with examples.,Apply,Understand,,kaggle
+Examine the historical documents to analyze the causes of a historical event.,Apply,Analyze,,kaggle
+Examine the data to identify correlations between variables in a study.,Apply,Analyze,,kaggle
+How do you use historical data to predict future economic trends?,Apply,Create,,kaggle
+Analyze the data to identify patterns and trends.,Analyze,Apply,,kaggle
+Can you create a diagram to illustrate the water cycle?,Analyze,Apply,,kaggle
+Analyze the historical documents to understand the events of the past.,Analyze,Apply,,kaggle
+Select the appropriate statistical tests for hypothesis testing.,Analyze,Evaluate,,kaggle
+Analyze the historical records to understand cultural shifts over time.,Analyze,Apply,,kaggle
+What are the steps to identify missing information in a complex dataset?,Analyze,Remember,,kaggle
+What factors do you consider when making a decision?,Evaluate,Remember,,kaggle
+Can you rank these options based on their importance?,Evaluate,Understand,,kaggle
+Generate innovative ideas for a new product.,Evaluate,Create,,kaggle
+Compare the pros and cons of two programming languages.,Evaluate,Analyze,,kaggle
+Summarize the findings of the market research.,Evaluate,Understand,,kaggle
+Select the appropriate methodology for a research project.,Evaluate,Analyze,,kaggle
+Select the appropriate tools for a software development project.,Evaluate,Analyze,,kaggle
+Summarize the main arguments of an academic paper.,Evaluate,Understand,,kaggle
+Generate solutions for reducing electronic waste.,Evaluate,Apply,,kaggle
+Convince a board of directors to approve a merger.,Evaluate,Create,,kaggle
+Summarize the main arguments of an ethics debate.,Evaluate,Understand,,kaggle
+Compare two innovative solutions to a common problem.,Analyze,Apply,,kaggle
+Explain how definite criteria can improve the evaluation of job applicants.,Evaluate,Understand,,kaggle
+Compare the strengths and weaknesses of two marketing strategies.,Analyze,Evaluate,,kaggle
+Compare the pros and cons of two project management methodologies.,Evaluate,Analyze,,kaggle
+What does it mean to integrate multiple software systems?,Create,Remember,,kaggle
+How can you predict the outcome of a social trend based on historical patterns?,Create,Apply,,kaggle
+Describe the significance of ARP (Address Resolution Protocol) poisoning in network attacks?,Remember,Understand,,kaggle
+phase-locked loops (PLL)?,Remember,Apply,,kaggle
+a cantilever and a simply supported beam in structural systems?,Remember,Apply,,kaggle
+"Match the correct sorting algorithm to its worst-case time complexity (e.g., Quick Sort - O(n^2))?",Remember,Analyze,,kaggle
+Examine the syntax of a lambda function in Python?,Remember,Apply,,kaggle
+"Evaluate the efficiency of various data structures (e.g., arrays, linked lists, trees) in terms of memory usage and access time for different operations.",Analyze,Evaluate,,kaggle
+Identify the differences between TCP/IP and OSI models in terms of their layer representations?,Remember,Understand,,kaggle
+Describe the process of clock recovery in digital communication systems?,Remember,Understand,,kaggle
+"Evaluate the impact of hyperparameter tuning techniques (e.g., grid search, random search, Bayesian optimization) on optimizing the performance of machine learning models.",Analyze,Evaluate,,kaggle
+Describe the significance of a learning rate scheduler in model training?,Remember,Understand,,kaggle
+Analyze the ethical implications of data mining techniques used by social media platforms for targeted advertising and user profiling.,Analyze,Evaluate,,kaggle
+Critically analyze the efficiency and scalability of different modulation techniques for wireless communication systems.,Apply,Analyze,,kaggle
+"Evaluate the impact of data imbalance on the performance of machine learning models, discussing strategies for mitigating bias and improving model fairness.",Analyze,Evaluate,,kaggle
+Evaluate the feasibility of using blockchain technology for secure and transparent supply chain management in the electronics industry.,Apply,Evaluate,,kaggle
+"Match the correct data structure to its time complexity for searching (e.g., Hash Table - O(1))?",Remember,Apply,,kaggle
+Analyze the impact of electromagnetic interference (EMI) on the performance of electronic systems and propose mitigation techniques.,Apply,Analyze,,kaggle
+Describe the significance of jitter in digital communication systems?,Remember,Understand,,kaggle
+Examine the difference between time division multiplexing (TDM) and frequency division multiplexing (FDM) in communication systems?,Remember,Analyze,,kaggle
+"Compare the different types of evaluation metrics used in classification tasks, discussing their strengths and limitations.",Understand,Analyze,,kaggle
+Evaluate the feasibility of using blockchain technology for ensuring the integrity and transparency of government elections.,Evaluate,Apply,,kaggle
+Propose innovative solutions for enhancing the resilience of critical infrastructure to extreme weather events and natural disasters.,Apply,Create,,kaggle
+Evaluate the trade-offs between using shallow and deep learning models for tasks such as feature extraction and pattern recognition in high-dimensional data.,Evaluate,Analyze,,kaggle
+Compare and contrast different routing protocols used in wireless sensor networks and analyze their suitability for various applications.,Analyze,Apply,,kaggle
+Analyze the ethical implications of using facial recognition technology for surveillance in public spaces.,Apply,Evaluate,,kaggle
+Critically analyze the performance of different machine learning algorithms for image classification tasks.,Apply,Analyze,,kaggle
+"Compare the principles of analog and digital modulation techniques, discussing their advantages and applications in communication systems.",Understand,Analyze,,kaggle
+Evaluate the effectiveness of using Geographic Information Systems (GIS) for spatial analysis in urban planning.,Apply,Evaluate,,kaggle
+Evaluate the trade-offs between using a relational database management system (RDBMS) versus a NoSQL database for handling big data applications.,Evaluate,Analyze,,kaggle
+Describe the significance of a captive portal in guest Wi-Fi networks?,Remember,Understand,,kaggle
+"Evaluate the effectiveness of different software design patterns (e.g., singleton, factory, observer) in promoting code reusability and maintainability.",Analyze,Evaluate,,kaggle
+Critically analyze the performance of different heat exchanger designs for maximizing thermal efficiency.,Apply,Analyze,,kaggle
+"Compare the various types of combustion chambers in internal combustion engines, discussing their combustion characteristics.",Understand,Analyze,,kaggle
+"Describe the function of the ""nullptr"" keyword in C++?",Remember,Understand,,kaggle
+"Evaluate the suitability of various design patterns (e.g., singleton, factory method, observer) for addressing common software design challenges.",Evaluate,Analyze,,kaggle
+Evaluate the effectiveness of different machine learning algorithms for sentiment analysis of social media data.,Evaluate,Analyze,,kaggle
+Evaluate the feasibility of using blockchain technology for secure and transparent data sharing in healthcare.,Apply,Evaluate,,kaggle
+Describe the process of soil stabilization using lime treatment?,Remember,Understand,,kaggle
+"A social media platform is implementing content moderation algorithms to identify and remove harmful or offensive content. Analyze the ethical considerations and societal implications of using automated content moderation systems, including issues related to bias, censorship, and freedom of expression.",Analyze,Evaluate,,kaggle
+Here is the text data with the sequences of numbers removed:,Remember,Apply,,kaggle
+Describe the process of memory allocation for a dynamic array in C++?,Remember,Understand,,kaggle
+"Evaluate the effectiveness of different transfer learning techniques (e.g., fine-tuning, feature extraction, domain adaptation) in leveraging pre-trained models for new tasks.",Analyze,Evaluate,,kaggle
+Describe the purpose of a retaining wall in soil mechanics?,Understand,Remember,,kaggle
+Compare the different types of environmental impact mitigation measures in civil engineering projects.,Understand,Analyze,,kaggle
+Analyze the ethical implications of using additive manufacturing (3D printing) for producing military-grade components.,Analyze,Evaluate,,kaggle
+"Differentiate between stack and heap memory allocation mechanisms in programming languages, explaining their implications on program performance.",Understand,Analyze,,kaggle
+Analyze the ethical implications of using eminent domain for public infrastructure projects.,Apply,Analyze,,kaggle
+Describe the significance of a soil nailing system in slope stabilization?,Remember,Understand,,kaggle
+"A cloud-based storage service is planning to implement a new encryption algorithm for data-at-rest protection. Evaluate the security strengths and weaknesses of different encryption algorithms, including AES, RSA, and ECC. Recommend the most suitable encryption algorithm based on factors such as security level, performance overhead, and compatibility with existing systems.",Evaluate,Analyze,,kaggle
+"Compare the various types of kernel functions used in support vector machines, discussing their effects on decision boundaries.",Understand,Analyze,,kaggle
+"Evaluate the security risks associated with different mobile device management (MDM) solutions (e.g., device encryption, remote wipe, containerization) in BYOD environments.",Analyze,Evaluate,,kaggle
+"A security incident has occurred in your organization, and you are tasked with analyzing log data to identify potential security breaches. Evaluate the effectiveness of using Security Information and Event Management (SIEM) solutions such as Splunk versus ELK (Elasticsearch, Logstash, Kibana) Stack for log analysis and threat detection.",Analyze,Apply,,kaggle
+Compare and contrast various cryptographic algorithms for securing communications over the Internet and assess their resistance to attacks.,Analyze,Understand,,kaggle
+"Analyze the trade-offs between using renewable energy sources (e.g., wind, solar) versus fossil fuels for power generation.",Apply,Analyze,,kaggle
+Examine the difference between a cantilever and a simply supported beam in structural systems?,Analyze,Apply,,kaggle
+"Differentiate between TCP and UDP protocols in terms of their reliability, ordering guarantees, and overhead.",Understand,Analyze,,kaggle
+Analyze the ethical implications of using artificial intelligence algorithms for automated decision-making in healthcare.,Apply,Evaluate,,kaggle

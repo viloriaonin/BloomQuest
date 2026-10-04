@@ -19,7 +19,7 @@ dependencies:
   open_filex: ^4.4.0
   fl_chart: ^1.2.0
   flutter_secure_storage: ^10.3.1
-  url_launcher: ^6.2.0
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

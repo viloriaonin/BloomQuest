@@ -15,7 +15,7 @@ from database import engine, get_db, SessionLocal
 from file_extractor import extract_text
 from ai_service import GeminiUsageTracker, generate_questions_from_tos, build_preview, prepare_database_rows, statistics, parse_syllabus_text_with_ai
 from routers.tos_utils import compute_tos, generate_tos_from_excel_template
-from classifier import classify_question
+from classifier import classify_question, classify_question_ml
 import models
 from datetime import date, datetime, timedelta, timezone
 import logging
@@ -38,6 +38,7 @@ from routers.questions import _resolve_department_leadership
 from routers.assessment import build_assessment_docx, cleanup_file, convert_docx_to_pdf
 from routers import activity
 from security import get_current_user, get_optional_current_user, require_admin, require_campus_admin, require_super_admin, assert_campus_access, visible_campus_id, user_campus_id, subject_campus_id, assert_user_subject_campus_access
+from routers import analytics
 import smtplib
 import string
 from email.mime.multipart import MIMEMultipart
@@ -3929,6 +3930,8 @@ def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Sessio
     )
     usage_tracker = GeminiUsageTracker()
     bloom_level = classify_question(normalized_question, usage_tracker=usage_tracker)
+    if usage_tracker.failure_count or usage_tracker.api_call_count == 0:
+        bloom_level = classify_question_ml(normalized_question)
     questions.finish_ai_usage(
         db,
         usage_id,
@@ -3937,7 +3940,6 @@ def classify_and_save_manual_question(payload: ManualQuestionRequest, db: Sessio
         request_started_at,
         usage_tracker.last_error_type,
     )
-
     new_question = models.GeneratedQuestion(
         subject_id=payload.subject_id,
         user_id=current_user.id,
@@ -5071,3 +5073,4 @@ app.include_router(questions.router)
 app.include_router(assessment.router)
 app.include_router(assessment.export_router)
 app.include_router(activity.router)
+app.include_router(analytics.router)
