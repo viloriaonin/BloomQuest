@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { UploadCloud, FileText, FileSpreadsheet, Presentation, X, CheckCircle2, AlertCircle, Sparkles, PencilLine, FolderUp, RotateCcw, RefreshCw, Tags } from 'lucide-react';
 import { usePopup } from '../../components/PopupProvider';
+import { API_URL } from '../../config/api';
 
-const API_URL = '/api';
 const MAX_QUESTIONS_PER_GENERATION = 200;
 const EXAM_TYPE_OPTIONS = ['Midterm Exam', 'Preliminary Exam', 'Final Exam', 'Quiz', 'Long Quiz'];
 const SEMESTER_OPTIONS = ['First Semester', 'Second Semester', 'Midterm Class'];

@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
-
-// Adjust this if your backend runs on a different host/port
-const API_URL = "/api/history";
+import { API_URL } from '../../config/api';
 
 // Converts an ISO date string from the backend into a friendly display format
 const formatDate = (isoString) => {
@@ -106,7 +104,7 @@ const History = () => {
         const userId = localStorage.getItem('user_id');
         const email = localStorage.getItem('email');
         const query = userId ? `user_id=${encodeURIComponent(userId)}` : `email=${encodeURIComponent(email || '')}`;
-        const res = await fetch(`${API_URL}?${query}`);
+        const res = await fetch(`${API_URL}/history?${query}`);
         if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
         const data = await res.json();
         const formatted = data.map((item) => ({

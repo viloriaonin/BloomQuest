@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ArchiveRestore, Download, FileQuestion, FolderArchive, Trash2 } from "lucide-react";
 import { usePopup } from "../../components/PopupProvider";
+import { API_URL } from "../../config/api";
 
-const API_URL = "/api";
 const RECYCLE_TABS = [
   { id: "subject", label: "Subjects", icon: FolderArchive },
   { id: "question", label: "Questions", icon: FileQuestion },

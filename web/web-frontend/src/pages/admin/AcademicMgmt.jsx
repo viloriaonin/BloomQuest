@@ -11,8 +11,9 @@ import {
   Users,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
+import { API_URL } from "../../config/api";
 
-const ACADEMIC_API = "/api";
+const ACADEMIC_API = API_URL;
 
 const pluralize = (count, singular, plural = `${singular}s`) =>
   `${count} ${count === 1 ? singular : plural}`;

@@ -2,8 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Archive, ArrowRight, Bell, BookOpen, CheckCircle2, Download, FileQuestion, FileSpreadsheet, Search, Server, ShieldCheck, Trash2, Wifi } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { usePopup } from "../../components/PopupProvider";
-
-const API_URL = "/api";
+import { API_URL } from "../../config/api";
 
 const CONFIG = {
   assessments: { eyebrow: "Assessment workspace", title: "Assessments", description: "Track generated assessment sets and continue unfinished review work." },

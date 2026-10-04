@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Menu, ShieldCheck } from "lucide-react";
 import { useLocation } from "react-router-dom";
+import { API_URL } from "../config/api";
 
 const bg = "#F5F7FB";
 const border = "rgba(15, 23, 42, 0.08)";
@@ -55,7 +56,7 @@ const TopBar = ({ onToggleSidebar }) => {
       const role = (localStorage.getItem("role") || "").toLowerCase();
       if (!['faculty', 'student'].includes(role)) return;
       try {
-        const response = await fetch("/api/user/profile");
+        const response = await fetch(`${API_URL}/user/profile`);
         if (!response.ok) return;
         const data = await response.json();
         const program = (data.programs || []).find((item) => String(item.id) === String(data.program_id));

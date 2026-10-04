@@ -71,7 +71,7 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
     let active = true;
     setProfileLoading(true);
     setProfileError("");
-    fetch("/api/user/profile")
+    fetch(`${API_URL}/user/profile`)
       .then(async (response) => {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.detail || "Could not load your profile.");
@@ -157,7 +157,7 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
     setProfileSaving(true);
     setProfileError("");
     try {
-      const response = await fetch("/api/user/profile", {
+      const response = await fetch(`${API_URL}/user/profile`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

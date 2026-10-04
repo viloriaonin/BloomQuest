@@ -7,10 +7,10 @@ import LogoutBtn from "./Logout";
 import { AcademicMgmtContent } from "./AcademicMgmt";
 import { QuestionBankContent } from "./QuestionBank";
 import { ReportsContent } from "./Reports";
+import { API_URL } from "../../config/api";
 
 ChartJS.register(ArcElement, BarElement, CategoryScale, Legend, LinearScale, Tooltip);
 
-const API = "/api";
 const NAV_ITEMS = [
   ["dashboard", "Dashboard", LayoutDashboard],
   ["campuses", "Campus Management", Building2],
@@ -23,7 +23,7 @@ const NAV_ITEMS = [
 ];
 
 async function requestJson(url, options = {}) {
-  const response = await fetch(`${API}${url}`, {
+  const response = await fetch(`${API_URL}${url}`, {
     ...options,
     headers: {
       Authorization: `Bearer ${localStorage.getItem("token") || ""}`,

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
+import { API_URL } from "../../config/api";
 import Sidebar from "./Sidebar";
 import { AcademicMgmtContent } from "./AcademicMgmt";
 import { UserMgmtContent } from "./UserMgmt";
@@ -108,11 +109,11 @@ const AdminDashboard = () => {
       try {
         const headers = { Authorization: `Bearer ${localStorage.getItem("token") || ""}` };
         const [questionsRes, logsRes, usersRes, insightsRes, departmentsRes] = await Promise.all([
-          fetch("/api/questions", { headers }),
-          fetch("/api/activity-logs", { headers }),
-          fetch("/api/contact-admin/users", { headers }),
-          fetch("/api/admin/insights", { headers }),
-          fetch("/api/departments", { headers }),
+          fetch(`${API_URL}/questions`, { headers }),
+          fetch(`${API_URL}/activity-logs`, { headers }),
+          fetch(`${API_URL}/contact-admin/users`, { headers }),
+          fetch(`${API_URL}/admin/insights`, { headers }),
+          fetch(`${API_URL}/departments`, { headers }),
         ]);
         const questions = questionsRes.ok ? await questionsRes.json() : [];
         const logs = logsRes.ok ? await logsRes.json() : [];

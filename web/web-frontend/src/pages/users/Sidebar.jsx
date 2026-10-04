@@ -1,5 +1,6 @@
 import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { API_URL } from "../../config/api";
 import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
 import {
   BookOpen,
@@ -49,7 +50,7 @@ const Sidebar = ({ collapsed, mobileOpen, onToggleCollapsed, onNavigate }) => {
   };
 
   const handleLogout = async () => {
-    await fetch("/api/logout", { method: "POST" }).catch(() => {});
+    await fetch(`${API_URL}/logout`, { method: "POST" }).catch(() => {});
     localStorage.removeItem("token");
     navigate("/");
   };

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { CheckCircle2, LockKeyhole, Save, UserRound } from "lucide-react";
 import { createPortal } from "react-dom";
 import { usePopup } from "../../components/PopupProvider";
+import { API_URL } from "../../config/api";
 
 const AdminSettings = ({ theme, onThemeChange }) => {
   const { showAlert, showConfirm } = usePopup();
@@ -61,7 +62,7 @@ const AdminSettings = ({ theme, onThemeChange }) => {
     setPasswordLoading(true);
     setPasswordError("");
     try {
-      const response = await fetch("/api/user/change-password/update", {
+      const response = await fetch(`${API_URL}/user/change-password/update`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, current_password: passwords.current, new_password: passwords.next }),

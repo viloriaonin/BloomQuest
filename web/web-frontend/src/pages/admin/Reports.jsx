@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { API_URL } from "../../config/api";
 
 // ---------------------------------------------------------------------------
 // API CONFIG — point this at your real backend.
@@ -20,8 +21,7 @@ import React, { useEffect, useMemo, useState } from "react";
 // period/department/faculty straight through instead of filtering client-side
 // (see the commented-out query-string version in fetchActivityLog below).
 // ---------------------------------------------------------------------------
-const API_BASE_URL = "/api"; // <-- replace with your backend's base URL
-const ACTIVITY_ENDPOINT = `${API_BASE_URL}/activity-logs`;
+const ACTIVITY_ENDPOINT = `${API_URL}/activity-logs`;
 
 async function fetchActivityLog() {
   const res = await fetch(ACTIVITY_ENDPOINT, {
@@ -106,7 +106,7 @@ export const ReportsContent = ({ showCampusFilter = false }) => {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${API_BASE_URL}/academic-hierarchy`, {
+    fetch(`${API_URL}/academic-hierarchy`, {
       headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
     }).then(async (response) => {
       if (!response.ok) throw new Error("Could not load campus departments.");
