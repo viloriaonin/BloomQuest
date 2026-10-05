@@ -80,33 +80,55 @@ class FakeSession:
         return None
 
 
-def test_forgot_password_queues_email_without_returning_demo_code(monkeypatch):
+def test_forgot_password_sends_email_before_reporting_success(monkeypatch):
     user = SimpleNamespace(id=7, email="faculty@example.com")
     db = FakeSession(user_results=[user])
-    background_tasks = BackgroundTasks()
+    sent_emails = []
     monkeypatch.setattr(main, "SENDER_EMAIL", "noreply@example.com")
     monkeypatch.setattr(main, "SENDER_PASSWORD", "smtp-secret")
+    monkeypatch.setattr(
+        main,
+        "send_password_reset_email",
+        lambda email, code: sent_emails.append((email, code)) or True,
+    )
     monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
 
     result = main.send_otp(
         main.ForgotPasswordRequest(email="FACULTY@example.com"),
-        background_tasks,
         db,
     )
 
-    assert result["message"] == "Your password reset code is being sent. Check your email shortly."
+    assert result["message"] == "A password reset code has been sent to your email address."
     assert "demo_code" not in result
-    assert len(background_tasks.tasks) == 1
-    assert background_tasks.tasks[0].func is main.send_password_reset_email
-    assert background_tasks.tasks[0].args[0] == "faculty@example.com"
+    assert len(sent_emails) == 1
+    assert sent_emails[0][0] == "faculty@example.com"
+    assert main.otp_store["faculty@example.com"]["otp"] == sent_emails[0][1]
 
 
-def test_contact_admin_otp_queues_email_without_returning_demo_code(monkeypatch):
+def test_forgot_password_does_not_report_success_when_email_fails(monkeypatch):
+    db = FakeSession(user_results=[SimpleNamespace(id=7, email="faculty@example.com")])
+    monkeypatch.setattr(main, "SENDER_EMAIL", "noreply@example.com")
+    monkeypatch.setattr(main, "SENDER_PASSWORD", "smtp-secret")
+    monkeypatch.setattr(main, "send_password_reset_email", lambda *args: False)
+
+    with pytest.raises(HTTPException) as error:
+        main.send_otp(main.ForgotPasswordRequest(email="faculty@example.com"), db)
+
+    assert error.value.status_code == 503
+    assert "faculty@example.com" not in main.otp_store
+
+
+def test_contact_admin_otp_sends_email_before_reporting_success(monkeypatch):
     db = FakeSession()
-    background_tasks = BackgroundTasks()
+    sent_emails = []
     monkeypatch.setattr(main, "SENDER_EMAIL", "noreply@example.com")
     monkeypatch.setattr(main, "SENDER_PASSWORD", "smtp-secret")
     monkeypatch.setattr(main, "validate_account_request_scope", lambda *args: None)
+    monkeypatch.setattr(
+        main,
+        "send_contact_admin_otp_email",
+        lambda email, code: sent_emails.append((email, code)) or True,
+    )
 
     result = main.request_contact_admin_otp(
         main.ContactAdminOtpRequest(
@@ -116,15 +138,40 @@ def test_contact_admin_otp_queues_email_without_returning_demo_code(monkeypatch)
             program_id=1,
             email="avery@example.com",
         ),
-        background_tasks,
+        BackgroundTasks(),
         db,
     )
 
     assert result["status"] == "otp-sent"
     assert "demo_code" not in result
-    assert len(background_tasks.tasks) == 1
-    assert background_tasks.tasks[0].func is main.send_contact_admin_otp_email
-    assert background_tasks.tasks[0].args[0] == "avery@example.com"
+    assert len(sent_emails) == 1
+    assert sent_emails[0][0] == "avery@example.com"
+    assert main.contact_admin_otp_store["avery@example.com"]["otp"] == sent_emails[0][1]
+
+
+def test_contact_admin_otp_clears_pending_code_when_email_fails(monkeypatch):
+    db = FakeSession()
+    monkeypatch.setattr(main, "SENDER_EMAIL", "noreply@example.com")
+    monkeypatch.setattr(main, "SENDER_PASSWORD", "smtp-secret")
+    monkeypatch.setattr(main, "validate_account_request_scope", lambda *args: None)
+    monkeypatch.setattr(main, "send_contact_admin_otp_email", lambda *args: False)
+
+    with pytest.raises(HTTPException) as error:
+        main.request_contact_admin_otp(
+            main.ContactAdminOtpRequest(
+                full_name="Avery Faculty",
+                campus_id=1,
+                department="Informatics",
+                program_id=1,
+                email="failed@example.com",
+            ),
+            BackgroundTasks(),
+            db,
+        )
+
+    assert error.value.status_code == 503
+    assert "failed@example.com" not in main.contact_admin_otp_store
+    assert "failed@example.com" not in main.contact_admin_pending_requests
 
 
 @pytest.mark.asyncio

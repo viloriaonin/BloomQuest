@@ -331,7 +331,7 @@ const ForgotPassword = () => {
         <h2 className="bq-headline text-4xl" style={{ color: textPrimary }}>Check your email</h2>
         <div style={{ width: '36px', height: '2px', backgroundColor: accent, marginTop: '14px', marginBottom: '14px' }} />
         <p className="text-base" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
-          We're sending a 6-digit code to <span style={{ color: textPrimary, fontWeight: 600 }}>{email}</span>
+          We sent a 6-digit code to <span style={{ color: textPrimary, fontWeight: 600 }}>{email}</span>. Check your inbox and spam folder.
         </p>
       </div>
 

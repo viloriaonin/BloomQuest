@@ -474,7 +474,7 @@ const ContactAdmin = () => {
 
           {otpSent && (
             <div className="mb-4 border border-[#D9E1EC] bg-[#F5F8FC] px-4 py-3 text-sm" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
-              <p>A six-digit verification code is being sent to your email. Check your inbox and spam folder, then enter it below to submit your request.</p>
+              <p>A six-digit verification code was sent to your email. Check your inbox and spam folder, then enter it below to submit your request.</p>
             </div>
           )}
 

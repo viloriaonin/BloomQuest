@@ -1256,7 +1256,7 @@ def send_contact_admin_otp_email(recipient_email: str, otp_code: str) -> bool:
     msg.attach(MIMEText(html_body, "html"))
 
     try:
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=15) as server:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
             server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
@@ -1296,7 +1296,7 @@ def send_password_reset_email(recipient_email: str, otp_code: str) -> bool:
     msg.attach(MIMEText(html_body, "html"))
 
     try:
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=15) as server:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
             server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
@@ -1320,7 +1320,7 @@ def _cleanup_change_password_otp(email: str):
 
 
 @app.post("/api/forgot-password/send-otp")
-def send_otp(data: ForgotPasswordRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def send_otp(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
     enforce_rate_limit("otp", data.email)
     user = db.query(models.User).filter(func.lower(models.User.email) == data.email).first()
     if not user:
@@ -1333,10 +1333,16 @@ def send_otp(data: ForgotPasswordRequest, background_tasks: BackgroundTasks, db:
         "expires_at": utc_now() + timedelta(minutes=10),
     }
     logger.info("[OTP] Generated password reset code for %s", data.email)
-    background_tasks.add_task(send_password_reset_email, data.email, code)
-    log_activity(db, "Password Reset Code Requested", f"Queued a reset code email for {data.email}.", "security")
+    if not send_password_reset_email(data.email, code):
+        otp_store.pop(data.email, None)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="We couldn't send the verification email. Please try again shortly.",
+        )
+
+    log_activity(db, "Password Reset Code Sent", f"Sent a reset code for {data.email}.", "security")
     return {
-        "message": "Your password reset code is being sent. Check your email shortly.",
+        "message": "A password reset code has been sent to your email address.",
     }
 
 @app.post("/api/forgot-password/verify-otp")
@@ -1373,7 +1379,6 @@ def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
 @app.post("/api/user/change-password/request-otp")
 def request_user_change_password_otp(
     data: ChangePasswordOtpRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     enforce_rate_limit("change-password-otp", data.email)
@@ -1393,9 +1398,15 @@ def request_user_change_password_otp(
         "expires_at": utc_now() + timedelta(minutes=10),
     }
 
-    background_tasks.add_task(send_password_reset_email, normalized_email, code)
-    log_activity(db, "Password Change OTP Requested", f"Queued a password change verification code for {normalized_email}.", "security", user_id=user.id)
-    return {"message": "Your verification code is being sent. Check your email shortly."}
+    if not send_password_reset_email(normalized_email, code):
+        change_password_otp_store.pop(normalized_email, None)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="We couldn't send the verification email. Please try again shortly.",
+        )
+
+    log_activity(db, "Password Change OTP Sent", f"Sent a password change verification code for {normalized_email}.", "security", user_id=user.id)
+    return {"message": "A verification code has been sent to your email address."}
 
 
 @app.post("/api/user/change-password/verify-otp")
@@ -2135,9 +2146,16 @@ def request_contact_admin_otp(payload: ContactAdminOtpRequest, background_tasks:
         "expires_at": utc_now() + timedelta(minutes=10),
     }
     logger.info("[OTP] Generated contact-admin verification code for %s", normalized_email)
-    background_tasks.add_task(send_contact_admin_otp_email, normalized_email, code)
+    if not send_contact_admin_otp_email(normalized_email, code):
+        contact_admin_otp_store.pop(normalized_email, None)
+        contact_admin_pending_requests.pop(normalized_email, None)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="We couldn't send the verification email. Please try again shortly.",
+        )
+
     return {
-        "message": "Your verification code is being sent. Check your email shortly.",
+        "message": "OTP sent successfully. Please verify the code to continue.",
         "status": "otp-sent",
     }
 
