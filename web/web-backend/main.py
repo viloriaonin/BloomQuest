@@ -1577,20 +1577,31 @@ def list_user_change_requests(status: str | None = None, db: Session = Depends(g
     rows = query.order_by(models.UserChangeRequest.created_at.desc()).all()
     users = {user.id: user for user in db.query(models.User).all()}
     reviewers = {user.id: user for user in db.query(models.User).all()}
-    return [{
-        "id": row.id,
-        "user_id": row.user_id,
-        "user_name": users[row.user_id].name if row.user_id in users else "Unknown user",
-        "email": users[row.user_id].email if row.user_id in users else None,
-        "request_type": row.request_type,
-        "current_value": row.current_value,
-        "requested_value": row.requested_value,
-        "status": row.status,
-        "created_at": row.created_at.isoformat() if row.created_at else None,
-        "reviewed_at": row.reviewed_at.isoformat() if row.reviewed_at else None,
-        "reviewed_by": row.reviewed_by,
-        "reviewer_name": reviewers[row.reviewed_by].name if row.reviewed_by in reviewers else None,
-    } for row in rows]
+    programs = {program.id: program for program in db.query(models.Program).all()}
+    departments = {department.id: department for department in db.query(models.Department).all()}
+    results = []
+    for row in rows:
+        requested_display = row.requested_value
+        if row.request_type == "program" and str(row.requested_value).isdigit():
+            program = programs.get(int(row.requested_value))
+            department = departments.get(program.department_id) if program else None
+            if program:
+                requested_display = f"{program.name} / {department.name}" if department else program.name
+        results.append({
+            "id": row.id,
+            "user_id": row.user_id,
+            "user_name": users[row.user_id].name if row.user_id in users else "Unknown user",
+            "email": users[row.user_id].email if row.user_id in users else None,
+            "request_type": row.request_type,
+            "current_value": row.current_value,
+            "requested_value": requested_display,
+            "status": row.status,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "reviewed_at": row.reviewed_at.isoformat() if row.reviewed_at else None,
+            "reviewed_by": row.reviewed_by,
+            "reviewer_name": reviewers[row.reviewed_by].name if row.reviewed_by in reviewers else None,
+        })
+    return results
 
 @app.post("/api/user-change-requests")
 def create_user_change_request(payload: UserChangeRequestPayload, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
@@ -1617,6 +1628,7 @@ def create_user_change_request(payload: UserChangeRequestPayload, db: Session = 
         if not program:
             raise HTTPException(status_code=400, detail="Please select a valid program.")
         requested_display = program.name
+        requested_value = str(program.id)
         current_value = db.query(models.Program).filter(models.Program.id == user.program_id).first().name if user.program_id else user.department
         label = "Program Change Requested"
 
@@ -1632,7 +1644,7 @@ def create_user_change_request(payload: UserChangeRequestPayload, db: Session = 
         user_id=user.id,
         request_type=payload.request_type,
         current_value=current_value,
-        requested_value=requested_display,
+        requested_value=requested_value if payload.request_type == "program" else requested_display,
     )
     row.status = "pending"
     db.add(row)
@@ -1647,12 +1659,12 @@ def review_user_change_request(request_id: int, payload: UserChangeReviewPayload
     if not row or row.status != "pending":
         raise HTTPException(status_code=404, detail="Pending change request not found.")
 
+    program = None
     if row.request_type == "department":
         department = db.query(models.Department).filter(func.lower(models.Department.name) == str(row.requested_value).strip().lower()).first()
         if not department:
             raise HTTPException(status_code=400, detail="The requested department no longer exists. The request cannot be approved.")
     elif row.request_type == "program":
-        program = None
         requested_value = str(row.requested_value).strip()
         if requested_value.isdigit():
             program = db.query(models.Program).filter(models.Program.id == int(requested_value)).first()
@@ -1671,7 +1683,6 @@ def review_user_change_request(request_id: int, payload: UserChangeReviewPayload
                 user.department = row.requested_value
                 user.program_id = None
             elif row.request_type == "program":
-                program = db.query(models.Program).filter(func.lower(models.Program.name) == str(row.requested_value).strip().lower()).first()
                 if program:
                     user.program_id = program.id
                     if program.department_id:
@@ -2524,7 +2535,7 @@ class FacultyAssignmentRequest(BaseModel):
 
 class UserProfileUpdateRequest(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=100)
-    program_id: int = Field(..., gt=0)
+    program_id: int | None = Field(default=None, gt=0)
 
     @field_validator("full_name")
     @classmethod
@@ -3348,10 +3359,13 @@ def serialize_user_profile(db: Session, user: models.User):
         models.Program.department_id == department.id,
     ).order_by(models.Program.name.asc()).all() if department else []
     program_ids = {program.id for program in programs}
+    current_program = next((program for program in programs if program.id == user.program_id), None)
     return {
         "full_name": user.name or "",
         "department": department.name if department else user.department or "",
         "program_id": user.program_id if user.program_id in program_ids else None,
+        "program_name": current_program.name if current_program else "",
+        "role": user.role or "",
         "programs": [
             {"id": program.id, "name": program.name, "code": program.code}
             for program in programs
@@ -3368,12 +3382,28 @@ def get_user_profile(db: Session = Depends(get_db), current_user: models.User = 
 
 @app.put("/api/user/profile")
 def update_user_profile(payload: UserProfileUpdateRequest, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    if str(current_user.role).lower() not in {"faculty", "student"}:
+    role = str(current_user.role).lower()
+    if role not in {"faculty", "student"}:
         raise HTTPException(status_code=403, detail="Profile program settings are not available for this role.")
+
+    if role == "faculty":
+        if payload.program_id is not None and payload.program_id != current_user.program_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Faculty program changes require administrator approval. Submit a department or program change request.",
+            )
+        current_user.name = payload.full_name
+        db.commit()
+        db.refresh(current_user)
+        log_activity(db, "User Profile Updated", f"User {current_user.id} updated their profile details.", "account", user_id=current_user.id)
+        return serialize_user_profile(db, current_user)
+
     department = get_user_program_department(db, current_user)
     if not department:
         raise HTTPException(status_code=422, detail="Your account must have a department assigned before selecting a program.")
 
+    if payload.program_id is None:
+        raise HTTPException(status_code=422, detail="Select a program from your department.")
     program = db.query(models.Program).filter(
         models.Program.id == payload.program_id,
         models.Program.department_id == department.id,

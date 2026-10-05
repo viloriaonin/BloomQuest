@@ -268,6 +268,8 @@ def test_create_program_change_request_requires_matching_session_user():
     payload_for_self = main.UserChangeRequestPayload(user_id=7, request_type="program", requested_value="BSIT")
     result = main.create_user_change_request(payload_for_self, db, current_user=user)
     assert result["status"] == "pending"
+    request = next(item for item in db.added if isinstance(item, models.UserChangeRequest))
+    assert request.requested_value == str(program.id)
 
 
 def test_review_program_change_request_updates_user_program(monkeypatch):

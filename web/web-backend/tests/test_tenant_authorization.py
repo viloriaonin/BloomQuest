@@ -153,7 +153,7 @@ def test_faculty_removal_hides_shared_subject_only_for_that_user(db_session):
     assert db_session.query(models.Subject).filter(models.Subject.id == subject.id).one().archived is False
 
 
-def test_user_profile_program_options_and_updates_stay_in_department(db_session):
+def test_faculty_profile_updates_cannot_change_program_directly(db_session):
     from main import UserProfileUpdateRequest, get_user_profile, update_user_profile
 
     campus = models.Campus(name="Profile Settings Campus", code="PROFILE-SETTINGS")
@@ -186,25 +186,87 @@ def test_user_profile_program_options_and_updates_stay_in_department(db_session)
 
     assert profile["department"] == department.name
     assert profile["program_id"] == current_program.id
+    assert profile["program_name"] == current_program.name
+    assert profile["role"] == "faculty"
     assert {program["id"] for program in profile["programs"]} == {current_program.id, next_program.id}
 
     updated = update_user_profile(
-        UserProfileUpdateRequest(full_name="Updated Faculty", program_id=next_program.id),
+        UserProfileUpdateRequest(full_name="Updated Faculty"),
         db=db_session,
         current_user=faculty,
     )
 
     assert updated["full_name"] == "Updated Faculty"
-    assert updated["program_id"] == next_program.id
-    assert faculty.department == department.name
+    assert updated["program_id"] == current_program.id
+    assert faculty.department == "Stale Department Label"
     with pytest.raises(HTTPException) as error:
         update_user_profile(
             UserProfileUpdateRequest(full_name="Updated Faculty", program_id=other_program.id),
             db=db_session,
             current_user=faculty,
         )
-    assert error.value.status_code == 422
-    assert faculty.program_id == next_program.id
+    assert error.value.status_code == 403
+    assert faculty.program_id == current_program.id
+
+
+def test_faculty_program_change_request_keeps_exact_target_until_admin_approval(db_session):
+    from main import (
+        UserChangeRequestPayload,
+        UserChangeReviewPayload,
+        create_user_change_request,
+        list_user_change_requests,
+        review_user_change_request,
+    )
+
+    campus = models.Campus(name="Change Request Campus", code="CHANGE-REQUEST")
+    db_session.add(campus)
+    db_session.flush()
+    current_department = models.Department(name="Current Department", campus_id=campus.id)
+    target_department = models.Department(name="Target Department", campus_id=campus.id)
+    db_session.add_all([current_department, target_department])
+    db_session.flush()
+    current_program = models.Program(name="Shared Program Name", department_id=current_department.id)
+    target_program = models.Program(name="Shared Program Name", department_id=target_department.id)
+    db_session.add_all([current_program, target_program])
+    db_session.flush()
+    faculty = models.User(
+        email="change_request_faculty@example.com",
+        password="not-used",
+        role="faculty",
+        department=current_department.name,
+        campus_id=campus.id,
+        program_id=current_program.id,
+    )
+    admin = models.User(email="change_request_admin@example.com", password="not-used", role="super_admin")
+    db_session.add_all([faculty, admin])
+    db_session.commit()
+
+    result = create_user_change_request(
+        UserChangeRequestPayload(
+            user_id=faculty.id,
+            request_type="program",
+            requested_value=str(target_program.id),
+        ),
+        db=db_session,
+        current_user=faculty,
+    )
+    request = db_session.query(models.UserChangeRequest).filter(
+        models.UserChangeRequest.id == result["id"]
+    ).one()
+    assert faculty.program_id == current_program.id
+    assert request.requested_value == str(target_program.id)
+
+    listed = list_user_change_requests(status="pending", db=db_session, _admin=admin)
+    assert listed[0]["requested_value"] == "Shared Program Name / Target Department"
+
+    review_user_change_request(
+        request.id,
+        UserChangeReviewPayload(action="approve"),
+        db=db_session,
+        admin=admin,
+    )
+    assert faculty.program_id == target_program.id
+    assert faculty.department == target_department.name
 
 
 def test_question_access_resolves_campus_through_academic_hierarchy(db_session):

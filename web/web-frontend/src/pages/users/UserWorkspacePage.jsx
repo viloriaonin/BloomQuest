@@ -47,6 +47,7 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
   const [requestedDepartment, setRequestedDepartment] = useState("");
   const [requestedProgram, setRequestedProgram] = useState("");
   const [changeRequestMessage, setChangeRequestMessage] = useState("");
+  const [changeRequestSubmitting, setChangeRequestSubmitting] = useState(false);
   const userId = localStorage.getItem("user_id");
 
   const [settings, setSettings] = useState(() => {
@@ -55,10 +56,11 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
         fullName: localStorage.getItem("name") || "Dr. Reyes",
         department: localStorage.getItem("department") || "Faculty",
         programId: localStorage.getItem("program_id") || "",
+        programName: localStorage.getItem("program_name") || "",
         role: localStorage.getItem("role") || "Faculty",
       };
     } catch {
-      return { fullName: "Dr. Reyes", department: "Faculty", programId: "", role: "Faculty" };
+      return { fullName: "Dr. Reyes", department: "Faculty", programId: "", programName: "", role: "Faculty" };
     }
   });
   const [profilePrograms, setProfilePrograms] = useState([]);
@@ -84,6 +86,8 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
           fullName: data.full_name || "",
           department: data.department || "",
           programId: data.program_id ? String(data.program_id) : "",
+          programName: data.program_name || "",
+          role: data.role || current.role,
         }));
         const programs = Array.isArray(data.programs) ? data.programs : [];
         const selectedProgram = programs.find((program) => String(program.id) === String(data.program_id));
@@ -109,6 +113,8 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
     setProfileError("");
   };
 
+  const isFaculty = String(settings.role).toLowerCase() === "faculty";
+
   const handleSaveClick = () => {
     setConfirmSaveOpen(true);
   };
@@ -131,15 +137,24 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
 
     const selectedProgram = departments
       .flatMap((department) => (department.programs || []).map((program) => ({ ...program, department: department.name })))
-      .find((program) => program.name === requestedProgram);
+      .find((program) => String(program.id) === requestedProgram);
 
     const payload = requestedProgram && selectedProgram
-      ? { user_id: Number(userId), request_type: "program", requested_value: selectedProgram.name }
+      ? { user_id: Number(userId), request_type: "program", requested_value: String(selectedProgram.id) }
       : { user_id: Number(userId), request_type: "department", requested_value: requestedDepartment };
 
-    const response = await fetch(`${API_URL}/user-change-requests`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    const data = await response.json().catch(() => ({}));
-    setChangeRequestMessage(response.ok ? `Request submitted for administrator review (${payload.request_type}).` : (data.detail || "Could not submit the request."));
+    setChangeRequestSubmitting(true);
+    setChangeRequestMessage("");
+    try {
+      const response = await fetch(`${API_URL}/user-change-requests`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Could not submit the request.");
+      setChangeRequestMessage(`Request submitted for administrator review (${payload.request_type}).`);
+    } catch (error) {
+      setChangeRequestMessage(error.message || "Could not submit the request.");
+    } finally {
+      setChangeRequestSubmitting(false);
+    }
   };
 
   const confirmSaveSettings = async () => {
@@ -148,7 +163,7 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
       setConfirmSaveOpen(false);
       return;
     }
-    if (!settings.programId) {
+    if (!isFaculty && !settings.programId) {
       setSaveResult({ type: "error", message: "Please select a program before saving." });
       setConfirmSaveOpen(false);
       return;
@@ -157,13 +172,12 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
     setProfileSaving(true);
     setProfileError("");
     try {
+      const profilePayload = { full_name: settings.fullName.trim() };
+      if (!isFaculty) profilePayload.program_id = Number(settings.programId);
       const response = await fetch(`${API_URL}/user/profile`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          full_name: settings.fullName.trim(),
-          program_id: Number(settings.programId),
-        }),
+        body: JSON.stringify(profilePayload),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || "Could not save your profile.");
@@ -174,7 +188,8 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
         ...settings,
         fullName: data.full_name,
         department: data.department,
-        programId: String(data.program_id),
+        programId: data.program_id ? String(data.program_id) : "",
+        programName: data.program_name || selectedProgram?.name || "",
       };
       setSettings(nextSettings);
       setProfilePrograms(programs);
@@ -427,30 +442,39 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
 
                   <label className="text-sm font-semibold" style={{ color: "#0F172A" }}>
                     Program
-                    <select
-                      value={settings.programId}
-                      onChange={(event) => updateField("programId", event.target.value)}
-                      disabled={profileLoading || profileSaving || profilePrograms.length === 0}
-                      required
-                      className="mt-2 w-full rounded-lg border bg-white px-3 py-2 text-sm font-normal outline-none transition focus:border-[#B4454A] disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
-                      style={{ borderColor: "rgba(15,23,42,0.12)", color: "#0F172A" }}
-                    >
-                      <option value="" disabled hidden>
-                        {profileLoading ? "Loading programs..." : profilePrograms.length ? "Select a program" : "No programs available"}
-                      </option>
-                      {profilePrograms.map((program) => (
-                        <option key={program.id} value={program.id}>
-                          {program.name}{program.code ? ` (${program.code})` : ""}
+                    {isFaculty ? (
+                      <input
+                        value={settings.programName || (profileLoading ? "Loading..." : "Not assigned")}
+                        readOnly
+                        className="mt-2 w-full rounded-lg border bg-slate-50 px-3 py-2 text-sm font-normal text-slate-600 outline-none"
+                        style={{ borderColor: "rgba(15,23,42,0.12)" }}
+                      />
+                    ) : (
+                      <select
+                        value={settings.programId}
+                        onChange={(event) => updateField("programId", event.target.value)}
+                        disabled={profileLoading || profileSaving || profilePrograms.length === 0}
+                        required
+                        className="mt-2 w-full rounded-lg border bg-white px-3 py-2 text-sm font-normal outline-none transition focus:border-[#B4454A] disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
+                        style={{ borderColor: "rgba(15,23,42,0.12)", color: "#0F172A" }}
+                      >
+                        <option value="" disabled hidden>
+                          {profileLoading ? "Loading programs..." : profilePrograms.length ? "Select a program" : "No programs available"}
                         </option>
-                      ))}
-                    </select>
+                        {profilePrograms.map((program) => (
+                          <option key={program.id} value={program.id}>
+                            {program.name}{program.code ? ` (${program.code})` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </label>
                 </div>
 
                 {profileError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{profileError}</div>}
 
                 <div className="flex justify-end pt-1">
-                  <button type="button" onClick={handleSaveClick} disabled={profileLoading || profileSaving || profilePrograms.length === 0} className="bq-primary-button disabled:cursor-not-allowed disabled:opacity-60"><Save size={15} /> {profileSaving ? "Saving..." : saved ? "Saved" : "Save changes"}</button>
+                  <button type="button" onClick={handleSaveClick} disabled={profileLoading || profileSaving || (!isFaculty && profilePrograms.length === 0)} className="bq-primary-button disabled:cursor-not-allowed disabled:opacity-60"><Save size={15} /> {profileSaving ? "Saving..." : saved ? "Saved" : "Save changes"}</button>
                 </div>
 
                 {saveMessage && (
@@ -458,24 +482,24 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
                     {saveMessage}
                   </div>
                 )}
-                <div className="border-t pt-4" style={{ borderColor: "rgba(15,23,42,0.08)" }}>
+                {isFaculty && <div className="border-t pt-4" style={{ borderColor: "rgba(15,23,42,0.08)" }}>
                   <p className="text-sm font-semibold" style={{ color: "#0F172A" }}>Request a department or program change</p>
                   <p className="mt-1 text-xs" style={{ color: "#64748B" }}>Your current assignment stays in place until an administrator approves the request.</p>
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    <select value={requestedDepartment} onChange={(event) => { setRequestedDepartment(event.target.value); if (event.target.value) setRequestedProgram(""); }} className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "rgba(15,23,42,0.12)" }}>
+                    <select aria-label="Requested department" value={requestedDepartment} onChange={(event) => { setRequestedDepartment(event.target.value); if (event.target.value) setRequestedProgram(""); setChangeRequestMessage(""); }} className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "rgba(15,23,42,0.12)" }}>
                       <option value="">Select a department</option>
                       {departments.map((department) => <option key={department.id} value={department.name}>{department.name}</option>)}
                     </select>
-                    <select value={requestedProgram} onChange={(event) => { setRequestedProgram(event.target.value); if (event.target.value) setRequestedDepartment(""); }} className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "rgba(15,23,42,0.12)" }}>
+                    <select aria-label="Requested program" value={requestedProgram} onChange={(event) => { setRequestedProgram(event.target.value); if (event.target.value) setRequestedDepartment(""); setChangeRequestMessage(""); }} className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "rgba(15,23,42,0.12)" }}>
                       <option value="">Select a program</option>
                       {departments.flatMap((department) => (department.programs || []).map((program) => (
-                        <option key={program.id} value={program.name}>{department.name} / {program.name}</option>
+                        <option key={program.id} value={String(program.id)}>{department.name} / {program.name}</option>
                       )))}
                     </select>
                   </div>
-                  <div className="mt-3"><button type="button" onClick={requestDepartmentChange} className="bq-secondary-button">Submit request</button></div>
-                  {changeRequestMessage && <p className="mt-2 text-xs" style={{ color: "#64748B" }}>{changeRequestMessage}</p>}
-                </div>
+                  <div className="mt-3"><button type="button" onClick={requestDepartmentChange} disabled={changeRequestSubmitting} className="bq-secondary-button disabled:cursor-not-allowed disabled:opacity-60">{changeRequestSubmitting ? "Submitting..." : "Submit request"}</button></div>
+                  {changeRequestMessage && <p role="status" className="mt-2 text-xs" style={{ color: changeRequestMessage.startsWith("Request submitted") ? "#166534" : "#B91C1C" }}>{changeRequestMessage}</p>}
+                </div>}
               </div>
             </div>
 
