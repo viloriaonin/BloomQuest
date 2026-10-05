@@ -20,7 +20,7 @@ const pageTitles = {
 const pageDescriptions = {
   "/dashboard": "Overview of your question pool and assessment activity.",
   "/input": "Create questions from your course materials.",
-  "/question-bank": "Review, organize, and prepare your questions.",
+  "/question-bank": "Manage, organize, and prepare your questions.",
   "/history": "Review your recent workspace activity.",
   "/settings": "Manage your workspace and account preferences.",
   "/favorites": "Retrieve files generated from your assessments.",

@@ -5,7 +5,7 @@ import { usePopup } from "../../components/PopupProvider";
 import { API_URL } from "../../config/api";
 
 const CONFIG = {
-  assessments: { eyebrow: "Assessment workspace", title: "Assessments", description: "Track generated assessment sets and continue unfinished review work." },
+  assessments: { eyebrow: "Assessment workspace", title: "Assessments", description: "Track generated assessment sets and continue unfinished assessment work." },
   favorites: { eyebrow: "File library", title: "Downloads", description: "Find every test and Table of Specifications you have downloaded." },
   subjects: { eyebrow: "Course structure", title: "Subjects & Topics", description: "Browse the subjects and topic areas available to your workspace." },
   notifications: { eyebrow: "Workspace updates", title: "Notifications", description: "Review important analysis, export, and account updates." },
@@ -182,7 +182,7 @@ const UserToolsPage = ({ section }) => {
   const cards = {
     assessments: [
       ["Continue analysis", "Return to an unfinished upload or blueprint.", "/input", "Open New Analysis"],
-      ["Question Bank", "Select reviewed questions and prepare an assessment.", "/question-bank", "Open Question Bank"],
+      ["Question Bank", "Select questions and prepare an assessment.", "/question-bank", "Open Question Bank"],
       ["Activity history", "Review completed generations and exports.", "/history", "View History"],
     ],
     imports: [

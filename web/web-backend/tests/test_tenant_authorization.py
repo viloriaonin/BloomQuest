@@ -19,6 +19,7 @@ import models
 from database import Base
 from database import get_db
 from main import app, assert_question_access, validate_account_request_scope, create_department, create_subject_manually, update_user_department, get_admin_user_overview, DepartmentCreateRequest, UserDepartmentUpdateRequest, SubjectCreateRequest, get_subjects, get_faculty_program_subjects, get_questions, get_super_admin_overview, get_super_admin_ai_usage, get_question_sets, export_question_bank_tos, upload_files
+from main import get_question_versions
 from routers.questions import _assert_upload_access, _resolve_department_leadership, export_institutional_tos, upload_and_analyze_syllabus
 from routers.activity import get_activity_logs
 from security import assert_campus_access, assert_user_subject_campus_access, get_current_user, require_admin, require_campus_admin, require_super_admin, visible_campus_id
@@ -500,6 +501,31 @@ def test_campus_admin_can_load_user_profile_within_campus(db_session):
         "Legacy question with ownership recorded by its upload",
     }
     assert all("correct_answer" not in question for question in result["subjects"][0]["questions"])
+    assert all("review_status" not in question for question in result["subjects"][0]["questions"])
+    assert all("lifecycle_status" not in question for question in result["subjects"][0]["questions"])
+
+
+def test_question_version_history_hides_legacy_review_metadata(db_session):
+    question = models.GeneratedQuestion(question="Question with a legacy status")
+    db_session.add(question)
+    db_session.flush()
+    db_session.add(models.QuestionVersion(
+        question_id=question.id,
+        snapshot={
+            "question": question.question,
+            "review_status": "approved",
+            "lifecycle_status": "published",
+        },
+    ))
+    db_session.commit()
+
+    versions = get_question_versions(
+        question.id,
+        db_session,
+        SimpleNamespace(role="super_admin"),
+    )
+
+    assert versions[0]["snapshot"] == {"question": question.question}
 
 
 def test_activity_logs_include_campus_from_target_user(db_session):

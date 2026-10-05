@@ -35,49 +35,6 @@ def _empty_bloom_counts():
     return {level: 0 for level in BLOOM_LEVELS}
 
 
-@router.get("/data-health-check")
-def data_health_check(db: Session = Depends(get_db)):
-    """Diagnostic only -- NOT part of the final feature.
-
-    Shows the real distribution of lifecycle_status / review_status /
-    edit-history across every question in the actual database, so we
-    confirm with real numbers whether these fields carry any usable
-    signal before building anything on top of them.
-    """
-    from sqlalchemy import func as sa_func
-
-    total_questions = db.query(models.GeneratedQuestion).filter(
-        models.GeneratedQuestion.archived.is_(False)
-    ).count()
-
-    lifecycle_counts = dict(
-        db.query(models.GeneratedQuestion.lifecycle_status, sa_func.count())
-        .filter(models.GeneratedQuestion.archived.is_(False))
-        .group_by(models.GeneratedQuestion.lifecycle_status)
-        .all()
-    )
-    review_counts = dict(
-        db.query(models.GeneratedQuestion.review_status, sa_func.count())
-        .filter(models.GeneratedQuestion.archived.is_(False))
-        .group_by(models.GeneratedQuestion.review_status)
-        .all()
-    )
-    questions_with_versions = (
-        db.query(models.QuestionVersion.question_id)
-        .distinct()
-        .count()
-    )
-    total_version_rows = db.query(models.QuestionVersion).count()
-
-    return {
-        "total_active_questions": total_questions,
-        "lifecycle_status_distribution": lifecycle_counts,
-        "review_status_distribution": review_counts,
-        "questions_with_at_least_one_edit": questions_with_versions,
-        "total_version_rows_logged": total_version_rows,
-    }
-
-
 @router.get("/tos-list")
 def list_tos_records(db: Session = Depends(get_db)):
     """Quick lookup helper: lists every TOS record's id alongside enough
@@ -275,10 +232,7 @@ def get_reuse_suggestions(tos_id: int, db: Session = Depends(get_db)):
 
     # Candidate pool: non-archived (i.e. not deleted) questions from OTHER
     # TOS records (reusing a question already in this exam doesn't make
-    # sense). review_status / lifecycle_status are NOT used as a filter
-    # here since your team confirmed those approval fields aren't actually
-    # used in practice -- "archived == False" is the only status signal
-    # that's real in this system today.
+    # sense). Archived questions are excluded from the candidate pool.
     candidates = db.query(models.GeneratedQuestion).filter(
         models.GeneratedQuestion.archived.is_(False),
         models.GeneratedQuestion.tos_id != tos_id,

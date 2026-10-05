@@ -393,7 +393,7 @@ const UserDetailPage = () => {
                         <li key={question.id} className="rounded-lg border border-gray-200 bg-white p-3">
                           <p className="text-sm leading-6 text-gray-800">{index + 1}. {question.question}</p>
                           <p className="mt-2 text-xs text-gray-500">
-                            {[question.question_type, question.bloom_level, question.review_status?.replaceAll("_", " ")]
+                            {[question.question_type, question.bloom_level]
                               .filter(Boolean)
                               .join(" · ")}
                           </p>

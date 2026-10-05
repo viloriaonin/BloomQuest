@@ -262,8 +262,6 @@ def serialize_question(question):
         "options": options,
         "correct_answer": question.correct_answer,
         "explanation": question.explanation,
-        "review_status": question.review_status,
-        "lifecycle_status": "archived" if question.archived else (question.lifecycle_status or "draft"),
         "difficulty": question.difficulty,
         "created_at": question.created_at,
     }
@@ -288,11 +286,8 @@ with engine.begin() as conn:
     conn.execute(text("ALTER TABLE departments ADD COLUMN IF NOT EXISTS campus_id INTEGER"))
     conn.execute(text("ALTER TABLE departments ADD COLUMN IF NOT EXISTS dean_id INTEGER"))
     conn.execute(text("ALTER TABLE programs ADD COLUMN IF NOT EXISTS chair_id INTEGER"))
-    conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS review_status VARCHAR(32) NOT NULL DEFAULT 'needs_review'"))
     conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS difficulty VARCHAR(32) NOT NULL DEFAULT 'moderate'"))
     conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"))
-    conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS lifecycle_status VARCHAR(32) NOT NULL DEFAULT 'draft'"))
-    conn.execute(text("UPDATE generated_questions SET lifecycle_status = CASE review_status WHEN 'approved' THEN 'approved' WHEN 'in_review' THEN 'review' ELSE 'draft' END WHERE lifecycle_status IS NULL OR lifecycle_status = 'draft'"))
     conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS user_id INTEGER"))
     conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS points FLOAT"))
     conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS exam_title VARCHAR(255)"))
@@ -392,7 +387,6 @@ def question_quality_score(question):
         "explanation_present": bool((question.explanation or "").strip()),
         "bloom_classified": bool((question.bloom_level or "").strip()),
         "difficulty_set": question.difficulty in {"easy", "moderate", "hard"},
-        "reviewed": (question.lifecycle_status or "draft") in {"approved", "published"},
     }
     return round(sum(checks.values()) / len(checks) * 100), checks
 
@@ -631,10 +625,6 @@ def get_admin_insights(db: Session = Depends(get_db), _admin: models.User = Depe
             "questions_contributed": len(owned),
             "active_questions": len(active),
             "archived_questions": len(owned) - len(active),
-            "published_questions": sum((question.lifecycle_status or "draft") == "published" for question in active),
-            "approved_questions": sum((question.lifecycle_status or "draft") == "approved" for question in active),
-            "draft_questions": sum((question.lifecycle_status or "draft") in {"draft", "review"} for question in active),
-            "deprecated_questions": sum((question.lifecycle_status or "draft") == "deprecated" for question in active),
             "content_quality_score": round(sum(scores) / len(scores)) if scores else 0,
         })
     all_active = [question for question in questions if not question.archived]
@@ -642,10 +632,10 @@ def get_admin_insights(db: Session = Depends(get_db), _admin: models.User = Depe
     department_metrics = {}
     for item in metrics:
         department = item["department"]
-        bucket = department_metrics.setdefault(department, {"department": department, "faculty": 0, "questions_contributed": 0, "published_questions": 0, "activity": 0, "quality_scores": []})
+        bucket = department_metrics.setdefault(department, {"department": department, "faculty": 0, "questions_contributed": 0, "active_questions": 0, "activity": 0, "quality_scores": []})
         bucket["faculty"] += 1
         bucket["questions_contributed"] += item["questions_contributed"]
-        bucket["published_questions"] += item["published_questions"]
+        bucket["active_questions"] += item["active_questions"]
         bucket["quality_scores"].append(item["content_quality_score"])
         bucket["activity"] += sum(1 for entry in db.query(models.ActivityLog).filter(models.ActivityLog.user_id == item["faculty_id"]).all())
     departments = []
@@ -663,7 +653,6 @@ def get_admin_insights(db: Session = Depends(get_db), _admin: models.User = Depe
             models.Department, models.Department.id == models.Program.department_id
         ).filter(models.Department.campus_id == campus_id)
     pending_count = request_query.count()
-    review_count = sum(1 for question in all_active if (question.lifecycle_status or "draft") in {"draft", "review"})
     activity_query = db.query(models.ActivityLog).filter(models.ActivityLog.status == "error")
     if campus_id is not None:
         activity_query = activity_query.filter(models.ActivityLog.user_id.in_(visible_user_ids))
@@ -675,7 +664,6 @@ def get_admin_insights(db: Session = Depends(get_db), _admin: models.User = Depe
         "quality_scope": "Content completeness and governance checks; not learner performance.",
         "notifications": [
             {"type": "account", "title": "New account requests", "count": pending_count} if pending_count else None,
-            {"type": "review", "title": "Questions awaiting review", "count": review_count} if review_count else None,
             {"type": "error", "title": "Failed system actions", "count": failed_count} if failed_count else None,
             {"type": "inactive", "title": "Inactive faculty", "count": sum(1 for item in metrics if item["questions_contributed"] == 0)},
         ],
@@ -1794,7 +1782,6 @@ def get_admin_user_overview(user_id: int, db: Session = Depends(get_db), _admin:
         models.GeneratedQuestion.question,
         models.GeneratedQuestion.question_type,
         models.GeneratedQuestion.bloom_level,
-        models.GeneratedQuestion.review_status,
         models.GeneratedQuestion.created_at,
     ).order_by(
         models.GeneratedQuestion.created_at.desc(),
@@ -1836,7 +1823,6 @@ def get_admin_user_overview(user_id: int, db: Session = Depends(get_db), _admin:
                 "question": question.question,
                 "question_type": question.question_type,
                 "bloom_level": question.bloom_level,
-                "review_status": question.review_status,
                 "created_at": question.created_at.isoformat() if question.created_at else None,
             } for question in generated_questions if question.subject_id == subject.id],
         } for subject in subjects],
@@ -4837,9 +4823,7 @@ async def update_question(
     question: str = Form(...),
     correct_answer: str = Form(...),
     explanation: str = Form(...),
-    review_status: str = Form("needs_review"),
     difficulty: str = Form("moderate"),
-    lifecycle_status: str = Form(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -4849,29 +4833,20 @@ async def update_question(
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
     assert_question_access(db, current_user, q)
-    if lifecycle_status is not None and lifecycle_status not in {"draft", "review", "approved", "published", "deprecated"}:
-        raise HTTPException(status_code=400, detail="Invalid lifecycle status")
     db.add(models.QuestionVersion(snapshot={
         "question": q.question,
         "correct_answer": q.correct_answer,
         "explanation": q.explanation,
-        "review_status": q.review_status,
         "difficulty": q.difficulty,
-        "lifecycle_status": q.lifecycle_status,
     }, question_id=q.id))
     q.question = question
     q.correct_answer = correct_answer
     q.explanation = explanation
-    if review_status not in {"needs_review", "in_review", "approved"}:
-        raise HTTPException(status_code=400, detail="Invalid review status")
     if difficulty not in {"easy", "moderate", "hard"}:
         raise HTTPException(status_code=400, detail="Invalid difficulty")
-    q.review_status = review_status
     q.difficulty = difficulty
-    if lifecycle_status is not None:
-        q.lifecycle_status = lifecycle_status
     db.commit()
-    log_activity(db, "Question Updated", f"Updated question #{question_id} and review metadata.", "question", user_id=current_user.id)
+    log_activity(db, "Question Updated", f"Updated question #{question_id}.", "question", user_id=current_user.id)
     return {"message": "Question updated successfully"}
 
 
@@ -4882,7 +4857,15 @@ def get_question_versions(question_id: int, db: Session = Depends(get_db), curre
         raise HTTPException(status_code=404, detail="Question not found")
     assert_question_access(db, current_user, question)
     return [
-        {"id": version.id, "snapshot": version.snapshot, "created_at": version.created_at.isoformat() if version.created_at else None}
+        {
+            "id": version.id,
+            "snapshot": {
+                key: value
+                for key, value in version.snapshot.items()
+                if key not in {"review_status", "lifecycle_status"}
+            },
+            "created_at": version.created_at.isoformat() if version.created_at else None,
+        }
         for version in db.query(models.QuestionVersion).filter(models.QuestionVersion.question_id == question_id).order_by(models.QuestionVersion.created_at.desc()).all()
     ]
 
@@ -4898,14 +4881,10 @@ def restore_question_version(question_id: int, version_id: int, db: Session = De
         "question": question.question,
         "correct_answer": question.correct_answer,
         "explanation": question.explanation,
-        "review_status": question.review_status,
         "difficulty": question.difficulty,
-        "lifecycle_status": question.lifecycle_status,
     }, question_id=question.id))
-    for field in ("question", "correct_answer", "explanation", "review_status", "difficulty"):
+    for field in ("question", "correct_answer", "explanation", "difficulty"):
         setattr(question, field, version.snapshot.get(field))
-    if "lifecycle_status" in version.snapshot:
-        question.lifecycle_status = version.snapshot.get("lifecycle_status") or "draft"
     db.commit()
     log_activity(db, "Question Version Restored", f"Restored version {version_id} for question #{question_id}.", "question", user_id=current_user.id)
     return {"message": "Question version restored"}
@@ -4914,35 +4893,25 @@ def restore_question_version(question_id: int, version_id: int, db: Session = De
 @app.put("/api/questions/bulk")
 def bulk_update_questions(
     question_ids: str = Form(...),
-    review_status: str = Form(None),
     difficulty: str = Form(None),
-    lifecycle_status: str = Form(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
     selected_ids = [int(item.strip()) for item in (question_ids or "").split(",") if item.strip().isdigit()]
     if not selected_ids:
         raise HTTPException(status_code=400, detail="No valid question IDs were provided")
-    if review_status is not None and review_status not in {"needs_review", "in_review", "approved"}:
-        raise HTTPException(status_code=400, detail="Invalid review status")
     if difficulty is not None and difficulty not in {"easy", "moderate", "hard"}:
         raise HTTPException(status_code=400, detail="Invalid difficulty")
-    if lifecycle_status is not None and lifecycle_status not in {"draft", "review", "approved", "published", "deprecated"}:
-        raise HTTPException(status_code=400, detail="Invalid lifecycle status")
     questions = db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.id.in_(selected_ids)).all()
     if not questions:
         raise HTTPException(status_code=404, detail="No matching questions found")
     for question in questions:
         assert_question_access(db, current_user, question)
     for question in questions:
-        if review_status is not None:
-            question.review_status = review_status
         if difficulty is not None:
             question.difficulty = difficulty
-        if lifecycle_status is not None:
-            question.lifecycle_status = lifecycle_status
     db.commit()
-    log_activity(db, "Updated Questions", f"Bulk updated {len(questions)} question review records.", "review", user_id=current_user.id)
+    log_activity(db, "Updated Questions", f"Bulk updated {len(questions)} questions.", "question", user_id=current_user.id)
     return {"updated": len(questions)}
 
 

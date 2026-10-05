@@ -141,7 +141,6 @@ const AdminDashboard = () => {
             faculty: department.faculty_count ?? metrics.faculty ?? 0,
             active_questions: Number(metrics.active_questions ?? metrics.questions_contributed ?? 0),
             questions_contributed: Number(metrics.questions_contributed || 0),
-            published_questions: Number(metrics.published_questions || 0),
             quality_score: Number(metrics.quality_score || 0),
             activity: Number(metrics.activity || 0),
           };
@@ -188,7 +187,7 @@ const AdminDashboard = () => {
         {
           title: "Department comparison",
           subtitle: `Quality is a content completeness/governance score, not learner performance. Scope: ${selectedDepartment}.`,
-          columns: [{ key: "department", label: "Department" }, { key: "faculty", label: "Faculty" }, { key: "active_questions", label: "Active questions" }, { key: "questions_contributed", label: "Questions contributed" }, { key: "published_questions", label: "Published questions" }, { key: "quality_score", label: "Quality score (%)" }, { key: "activity", label: "Activity events" }],
+          columns: [{ key: "department", label: "Department" }, { key: "faculty", label: "Faculty" }, { key: "active_questions", label: "Active questions" }, { key: "questions_contributed", label: "Questions contributed" }, { key: "quality_score", label: "Quality score (%)" }, { key: "activity", label: "Activity events" }],
           rows: scoped.departments,
           emptyMessage: `No department metrics are available for ${selectedDepartment}.`,
         },
@@ -228,7 +227,7 @@ const AdminDashboard = () => {
     const recommendation = inactiveFaculty
       ? `${inactiveFaculty} faculty members in ${selectedDepartment} have not contributed questions yet.`
       : lowestQuality
-        ? `${lowestQuality.department} has a ${lowestQuality.quality_score}% content quality score. Review its question completeness.`
+        ? `${lowestQuality.department} has a ${lowestQuality.quality_score}% content quality score. Check its question completeness.`
         : `No contribution gaps are currently available for ${selectedDepartment}.`;
     const departmentOptions = ["All Departments", ...dashboardData.departments.map((item) => item.department)];
     const activityMix = [reportData.questions, reportData.assessments, reportData.activeAccounts];

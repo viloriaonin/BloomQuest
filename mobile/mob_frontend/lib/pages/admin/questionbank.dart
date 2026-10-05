@@ -858,8 +858,8 @@ class _AdminQuestionBankPageState extends State<AdminQuestionBankPage>
                           const SizedBox(width: 12),
                           Expanded(
                             child: _AnalyticsCard(
-                              icon: Icons.pending_actions_rounded,
-                              label: 'Ready for review',
+                              icon: Icons.description_outlined,
+                              label: 'Missing explanation',
                               value: _selectedSubjectId != null
                                   ? '${_questions.where((q) => (q['explanation']?.toString() ?? '').trim().isEmpty).length}'
                                   : '—',

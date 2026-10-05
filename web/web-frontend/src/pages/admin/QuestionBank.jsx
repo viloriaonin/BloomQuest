@@ -28,14 +28,6 @@ const QUESTION_TYPE_OPTIONS = [
   { label: "Essay", value: "Essay" },
   { label: "Situational", value: "Situational" },
 ];
-const LIFECYCLE_OPTIONS = [
-  ["draft", "Draft"],
-  ["review", "Review"],
-  ["approved", "Approved"],
-  ["published", "Published"],
-  ["deprecated", "Deprecated"],
-];
-
 const LegacyQuestionBankContent = () => {
   const { showConfirm, showAlert } = usePopup();
   const navigate = useNavigate();
@@ -174,7 +166,6 @@ const LegacyQuestionBankContent = () => {
       question: q.question,
       correct_answer: q.correct_answer || "",
       explanation: q.explanation || "",
-      lifecycle_status: q.lifecycle_status || "draft",
     });
   };
 
@@ -184,7 +175,6 @@ const LegacyQuestionBankContent = () => {
       formData.append("question", editForm.question);
       formData.append("correct_answer", editForm.correct_answer);
       formData.append("explanation", editForm.explanation);
-      formData.append("lifecycle_status", editForm.lifecycle_status || "draft");
       const res = await fetch(`${API_URL}/questions/${editingQuestion}`, {
         method: "PUT",
         body: formData,
@@ -769,22 +759,6 @@ const LegacyQuestionBankContent = () => {
                           }))
                         }
                       />
-                      <select
-                        className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-red-400"
-                        value={editForm.lifecycle_status}
-                        onChange={(e) =>
-                          setEditForm((prev) => ({
-                            ...prev,
-                            lifecycle_status: e.target.value,
-                          }))
-                        }
-                      >
-                        {LIFECYCLE_OPTIONS.map(([value, label]) => (
-                          <option key={value} value={value}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
                       <div className="flex gap-2">
                         <button
                           onClick={handleEditSave}
@@ -854,9 +828,6 @@ const LegacyQuestionBankContent = () => {
                           <div className="flex flex-wrap gap-2 text-xs font-medium">
                             <span className="bg-red-100 text-red-700 px-3 py-1 rounded-md">
                               {q.bloom_level}
-                            </span>
-                            <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-md">
-                              {q.lifecycle_status || "draft"}
                             </span>
                             <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-md">
                               {q.question_type}

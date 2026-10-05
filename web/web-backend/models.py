@@ -119,8 +119,6 @@ class GeneratedQuestion(Base):
     correct_answer = Column(Text)
     explanation = Column(Text)
     topic_name = Column(String, nullable=True)  # 🌟 Added column to record topic origin metadata
-    review_status = Column(String(32), nullable=False, default="needs_review", server_default="needs_review")
-    lifecycle_status = Column(String(32), nullable=False, default="draft", server_default="draft")
     difficulty = Column(String(32), nullable=False, default="moderate", server_default="moderate")
     archived = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime, server_default=func.now())
