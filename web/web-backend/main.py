@@ -41,6 +41,8 @@ from security import get_current_user, get_optional_current_user, require_admin,
 from routers import analytics
 import smtplib
 import string
+import urllib.error
+import urllib.request
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -967,14 +969,93 @@ SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SENDER_EMAIL = os.getenv("SENDER_EMAIL", "")
 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
+EMAIL_FROM = os.getenv("EMAIL_FROM", "").strip()
 
 
 def require_email_delivery_configured() -> None:
-    if not SENDER_EMAIL or not SENDER_PASSWORD:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Email delivery is temporarily unavailable. Please try again later.",
+    if RESEND_API_KEY:
+        if not EMAIL_FROM:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Email delivery is not fully configured. Please contact the administrator.",
+            )
+        return
+
+    if SENDER_EMAIL and SENDER_PASSWORD:
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Email delivery is not configured. Please contact the administrator.",
+    )
+
+
+def send_email(recipient_email: str, subject: str, html_body: str) -> bool:
+    if RESEND_API_KEY:
+        request_body = json.dumps({
+            "from": EMAIL_FROM,
+            "to": [recipient_email],
+            "subject": subject,
+            "html": html_body,
+        }).encode("utf-8")
+        request = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=request_body,
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
         )
+
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                if not 200 <= response.status < 300:
+                    logger.error(
+                        "[Email] Resend rejected message to %s with HTTP status %s",
+                        recipient_email,
+                        response.status,
+                    )
+                    return False
+            logger.info("[Email] Message accepted by Resend for %s", recipient_email)
+            return True
+        except urllib.error.HTTPError as exc:
+            provider_error = exc.read(500).decode("utf-8", errors="replace")
+            logger.error(
+                "[Email] Resend rejected message to %s with HTTP status %s: %s",
+                recipient_email,
+                exc.code,
+                provider_error,
+            )
+            return False
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            logger.error("[Email] Resend request failed for %s: %s", recipient_email, exc)
+            return False
+
+    if not SENDER_EMAIL or not SENDER_PASSWORD:
+        logger.error("[Email] Neither Resend nor SMTP email delivery is configured")
+        return False
+
+    message = MIMEMultipart()
+    message["From"] = SENDER_EMAIL
+    message["To"] = recipient_email
+    message["Subject"] = subject
+    message.attach(MIMEText(html_body, "html"))
+
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
+            server.starttls()
+            server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            refused = server.send_message(message)
+        if refused:
+            logger.error("[Email] SMTP server refused delivery to %s: %s", recipient_email, refused)
+            return False
+        logger.info("[Email] Message accepted by SMTP server for %s", recipient_email)
+        return True
+    except Exception as exc:
+        logger.error("[Email] SMTP delivery failed for %s: %s", recipient_email, exc, exc_info=True)
+        return False
 
 
 def normalize_email(value: str) -> str:
@@ -1228,10 +1309,6 @@ def send_request_submission_email(recipient_email: str, full_name: str = None, d
 
 
 def send_contact_admin_otp_email(recipient_email: str, otp_code: str) -> bool:
-    if not SENDER_EMAIL or not SENDER_PASSWORD:
-        logger.warning("[Email] SMTP credentials are not configured; skipping contact-admin OTP email for %s", recipient_email)
-        return False
-
     subject = "Your BloomQuest account request verification code"
     html_body = f"""
     <html>
@@ -1249,29 +1326,13 @@ def send_contact_admin_otp_email(recipient_email: str, otp_code: str) -> bool:
     </html>
     """
 
-    msg = MIMEMultipart()
-    msg["From"] = SENDER_EMAIL
-    msg["To"] = recipient_email
-    msg["Subject"] = subject
-    msg.attach(MIMEText(html_body, "html"))
-
-    try:
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
-            server.starttls()
-            server.login(SENDER_EMAIL, SENDER_PASSWORD)
-            server.send_message(msg)
-        logger.info("[Email] Contact-admin OTP email sent to %s", recipient_email)
-        return True
-    except Exception as exc:
-        logger.error("[Email] Contact-admin OTP delivery failed for %s: %s", recipient_email, exc, exc_info=True)
+    if not send_email(recipient_email, subject, html_body):
         return False
+    logger.info("[Email] Contact-admin OTP email sent to %s", recipient_email)
+    return True
 
 
 def send_password_reset_email(recipient_email: str, otp_code: str) -> bool:
-    if not SENDER_EMAIL or not SENDER_PASSWORD:
-        logger.warning("[Email] SMTP credentials are not configured; skipping password reset email for %s", recipient_email)
-        return False
-
     subject = "Your BloomQuest password reset code"
     html_body = f"""
     <html>
@@ -1289,22 +1350,10 @@ def send_password_reset_email(recipient_email: str, otp_code: str) -> bool:
     </html>
     """
 
-    msg = MIMEMultipart()
-    msg["From"] = SENDER_EMAIL
-    msg["To"] = recipient_email
-    msg["Subject"] = subject
-    msg.attach(MIMEText(html_body, "html"))
-
-    try:
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
-            server.starttls()
-            server.login(SENDER_EMAIL, SENDER_PASSWORD)
-            server.send_message(msg)
-        logger.info("[Email] Password reset email sent to %s", recipient_email)
-        return True
-    except Exception as exc:
-        logger.error("[Email] Password reset delivery failed for %s: %s", recipient_email, exc, exc_info=True)
+    if not send_email(recipient_email, subject, html_body):
         return False
+    logger.info("[Email] Password reset email sent to %s", recipient_email)
+    return True
 
 
 def _cleanup_otp(email: str):

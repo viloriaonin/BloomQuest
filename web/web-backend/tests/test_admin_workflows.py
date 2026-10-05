@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -84,6 +85,7 @@ def test_forgot_password_sends_email_before_reporting_success(monkeypatch):
     user = SimpleNamespace(id=7, email="faculty@example.com")
     db = FakeSession(user_results=[user])
     sent_emails = []
+    monkeypatch.setattr(main, "RESEND_API_KEY", "")
     monkeypatch.setattr(main, "SENDER_EMAIL", "noreply@example.com")
     monkeypatch.setattr(main, "SENDER_PASSWORD", "smtp-secret")
     monkeypatch.setattr(
@@ -107,6 +109,7 @@ def test_forgot_password_sends_email_before_reporting_success(monkeypatch):
 
 def test_forgot_password_does_not_report_success_when_email_fails(monkeypatch):
     db = FakeSession(user_results=[SimpleNamespace(id=7, email="faculty@example.com")])
+    monkeypatch.setattr(main, "RESEND_API_KEY", "")
     monkeypatch.setattr(main, "SENDER_EMAIL", "noreply@example.com")
     monkeypatch.setattr(main, "SENDER_PASSWORD", "smtp-secret")
     monkeypatch.setattr(main, "send_password_reset_email", lambda *args: False)
@@ -118,9 +121,46 @@ def test_forgot_password_does_not_report_success_when_email_fails(monkeypatch):
     assert "faculty@example.com" not in main.otp_store
 
 
+def test_send_email_uses_resend_https_api(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(main, "RESEND_API_KEY", "resend-test-key")
+    monkeypatch.setattr(main, "EMAIL_FROM", "BloomQuest <no-reply@example.com>")
+    monkeypatch.setattr(main.urllib.request, "urlopen", fake_urlopen)
+
+    assert main.send_email("student@example.com", "Test subject", "<p>Code</p>")
+
+    request = captured["request"]
+    body = json.loads(request.data.decode("utf-8"))
+    assert request.full_url == "https://api.resend.com/emails"
+    assert request.get_header("Authorization") == "Bearer resend-test-key"
+    assert captured["timeout"] == 10
+    assert body == {
+        "from": "BloomQuest <no-reply@example.com>",
+        "to": ["student@example.com"],
+        "subject": "Test subject",
+        "html": "<p>Code</p>",
+    }
+
+
 def test_contact_admin_otp_sends_email_before_reporting_success(monkeypatch):
     db = FakeSession()
     sent_emails = []
+    monkeypatch.setattr(main, "RESEND_API_KEY", "")
     monkeypatch.setattr(main, "SENDER_EMAIL", "noreply@example.com")
     monkeypatch.setattr(main, "SENDER_PASSWORD", "smtp-secret")
     monkeypatch.setattr(main, "validate_account_request_scope", lambda *args: None)
@@ -151,6 +191,7 @@ def test_contact_admin_otp_sends_email_before_reporting_success(monkeypatch):
 
 def test_contact_admin_otp_clears_pending_code_when_email_fails(monkeypatch):
     db = FakeSession()
+    monkeypatch.setattr(main, "RESEND_API_KEY", "")
     monkeypatch.setattr(main, "SENDER_EMAIL", "noreply@example.com")
     monkeypatch.setattr(main, "SENDER_PASSWORD", "smtp-secret")
     monkeypatch.setattr(main, "validate_account_request_scope", lambda *args: None)

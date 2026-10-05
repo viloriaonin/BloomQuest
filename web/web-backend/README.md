@@ -2,6 +2,15 @@
 
 The backend runs on Windows and Linux. It requires a reachable PostgreSQL database configured with `DATABASE_URL` in `database.env`.
 
+## OTP Email Delivery
+
+For Railway deployments, configure a transactional email API because outbound SMTP is disabled on Free, Trial, and Hobby plans. The backend supports Resend over HTTPS:
+
+- `RESEND_API_KEY`: Resend API key, stored as a secret in the hosting provider's environment variables.
+- `EMAIL_FROM`: sender identity on a domain verified with Resend, for example `BloomQuest <no-reply@example.com>`.
+
+Verify the sender domain with Resend before deploying, then add both variables to the backend service and redeploy. The existing Gmail SMTP settings (`SMTP_SERVER`, `SMTP_PORT`, `SENDER_EMAIL`, and `SENDER_PASSWORD`) remain available for local development and Railway Pro deployments. Never commit API keys or SMTP passwords.
+
 ## Windows
 
 From this directory, create and install into a virtual environment:
