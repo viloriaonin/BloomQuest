@@ -36,6 +36,10 @@ const UserDetailPage = () => {
   const [departments, setDepartments] = useState([]);
   const [selectedDepartment, setSelectedDepartment] = useState("");
   const [departmentBusy, setDepartmentBusy] = useState(false);
+  const [programManageOpen, setProgramManageOpen] = useState(false);
+  const [programs, setPrograms] = useState([]);
+  const [selectedProgram, setSelectedProgram] = useState("");
+  const [programBusy, setProgramBusy] = useState(false);
 
   const loadDetail = useCallback(async () => {
     setLoading(true);
@@ -103,12 +107,38 @@ const UserDetailPage = () => {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || "Could not update the user's department.");
       setDepartmentManageOpen(false);
+      setProgramManageOpen(false);
+      setSelectedProgram("");
+      setPrograms([]);
       await showAlert("User department updated successfully.", "User Management");
       await loadDetail();
     } catch (err) {
       await showAlert(err.message, "User Management");
     } finally {
       setDepartmentBusy(false);
+    }
+  };
+
+  const handleUpdateProgram = async (event) => {
+    event.preventDefault();
+    if (!selectedProgram) return;
+    setProgramBusy(true);
+    try {
+      const response = await apiFetch("/users/update-program", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: detail.user.email, program_id: Number(selectedProgram) }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Could not update the user's program assignment.");
+      setProgramManageOpen(false);
+      setSelectedProgram("");
+      await showAlert("User program assignment updated successfully.", "User Management");
+      await loadDetail();
+    } catch (err) {
+      await showAlert(err.message, "User Management");
+    } finally {
+      setProgramBusy(false);
     }
   };
 
@@ -176,7 +206,7 @@ const UserDetailPage = () => {
             {statusLabel}
           </span>
         </div>
-        <div className="grid gap-4 p-6 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 p-6 sm:grid-cols-2 lg:grid-cols-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
               Role
@@ -189,6 +219,14 @@ const UserDetailPage = () => {
             </p>
             <p className="mt-1 font-semibold text-gray-800">
               {user.department}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Program
+            </p>
+            <p className="mt-1 font-semibold text-gray-800">
+              {user.program || "Unassigned"}
             </p>
           </div>
           <div>
@@ -247,10 +285,39 @@ const UserDetailPage = () => {
             onClick={() => {
               setSelectedDepartment(String(departments.find((item) => item.name === user.department)?.id || ""));
               setDepartmentManageOpen((open) => !open);
+              setProgramManageOpen(false);
             }}
             className="bq-secondary-button"
           >
             Change department
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              const currentDepartmentId = departments.find((item) => item.name === user.department)?.id;
+              setSelectedDepartment(currentDepartmentId ? String(currentDepartmentId) : "");
+              if (!currentDepartmentId) {
+                setPrograms([]);
+                setSelectedProgram("");
+                setProgramManageOpen((open) => !open);
+                return;
+              }
+
+              try {
+                const response = await apiFetch(`/departments/${currentDepartmentId}/programs`);
+                const data = await response.json().catch(() => []);
+                const nextPrograms = Array.isArray(data) ? data : [];
+                setPrograms(nextPrograms);
+                setSelectedProgram(String(detail.user.program_id || ""));
+              } catch {
+                setPrograms([]);
+                setSelectedProgram("");
+              }
+              setProgramManageOpen((open) => !open);
+            }}
+            className="bq-secondary-button"
+          >
+            Change program assignment
           </button>
           <button
             type="button"
@@ -276,6 +343,26 @@ const UserDetailPage = () => {
               </select>
               <button type="submit" disabled={departmentBusy || !selectedDepartment} className="bq-primary-button disabled:cursor-not-allowed disabled:opacity-50">
                 {departmentBusy ? "Saving..." : "Save department"}
+              </button>
+            </div>
+          </form>
+        )}
+        {programManageOpen && (
+          <form onSubmit={handleUpdateProgram} className="mt-5 border-t border-gray-100 pt-5">
+            <h3 className="text-sm font-bold text-gray-900">Manage program assignment</h3>
+            <p className="mt-1 text-xs text-gray-500">Choose the program for this user within the selected department.</p>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <select
+                value={selectedProgram}
+                onChange={(event) => setSelectedProgram(event.target.value)}
+                className="bq-field flex-1 px-3 py-2 text-sm"
+                required
+              >
+                <option value="">Select a program</option>
+                {programs.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
+              </select>
+              <button type="submit" disabled={programBusy || !selectedProgram} className="bq-primary-button disabled:cursor-not-allowed disabled:opacity-50">
+                {programBusy ? "Saving..." : "Save program"}
               </button>
             </div>
           </form>

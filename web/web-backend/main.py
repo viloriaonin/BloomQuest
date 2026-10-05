@@ -854,6 +854,10 @@ class UserDepartmentUpdateRequest(AccountActionRequest):
     department_id: int | None = Field(default=None, ge=1)
 
 
+class UserProgramUpdateRequest(AccountActionRequest):
+    program_id: int | None = Field(default=None, ge=1)
+
+
 class AdminVerifyRequest(BaseModel):
     admin_email: str = Field(..., min_length=5, max_length=255)
     admin_password: str = Field(..., min_length=8, max_length=128)
@@ -1722,6 +1726,8 @@ def get_admin_user_overview(user_id: int, db: Session = Depends(get_db), _admin:
     ).order_by(models.Subject.created_at.desc()).all()
     activities = db.query(models.ActivityLog).filter(models.ActivityLog.user_id == user_id).order_by(models.ActivityLog.created_at.desc()).all()
 
+    program = db.query(models.Program).filter(models.Program.id == user.program_id).first() if user.program_id else None
+
     return {
         "user": {
             "id": user.id,
@@ -1729,6 +1735,8 @@ def get_admin_user_overview(user_id: int, db: Session = Depends(get_db), _admin:
             "email": user.email,
             "role": user.role,
             "department": user.department or "Unassigned",
+            "program": program.name if program else "Unassigned",
+            "program_id": user.program_id,
             "joined": user.created_at.isoformat() if user.created_at else None,
             "archived": user.archived,
         },
@@ -1874,6 +1882,22 @@ def update_user_password(payload: UpdatePasswordRequest, db: Session = Depends(g
     db.query(models.UserSession).filter(models.UserSession.user_id == user.id, models.UserSession.revoked_at.is_(None)).update({"revoked_at": utc_now()}, synchronize_session=False)
     return {"message": "Password updated successfully."}
 
+@app.get("/api/departments/{department_id}/programs")
+def get_department_programs(department_id: int, db: Session = Depends(get_db), admin: models.User = Depends(require_admin)):
+    department = db.query(models.Department).filter(models.Department.id == department_id).first()
+    if not department:
+        raise HTTPException(status_code=404, detail="Department not found.")
+    assert_campus_access(admin, department.campus_id)
+
+    programs = db.query(models.Program).filter(models.Program.department_id == department_id).order_by(models.Program.name.asc()).all()
+    return [{
+        "id": program.id,
+        "name": program.name,
+        "code": program.code,
+        "department_id": program.department_id,
+    } for program in programs]
+
+
 @app.put("/api/users/update-department")
 def update_user_department(payload: UserDepartmentUpdateRequest, db: Session = Depends(get_db), admin: models.User = Depends(require_admin)):
     normalized_email = normalize_email(payload.email)
@@ -1906,6 +1930,35 @@ def update_user_department(payload: UserDepartmentUpdateRequest, db: Session = D
     db.commit()
     log_activity(db, "User Department Updated", f"Admin {admin.id} assigned {normalized_email} to {department.name}.", "user", actor_id=admin.id, target_user_id=user.id)
     return {"message": "User department updated successfully.", "department": user.department}
+
+
+@app.put("/api/users/update-program")
+def update_user_program(payload: UserProgramUpdateRequest, db: Session = Depends(get_db), admin: models.User = Depends(require_admin)):
+    normalized_email = normalize_email(payload.email)
+    user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    assert_admin_can_access_user(db, admin, user)
+
+    if payload.program_id is None:
+        raise HTTPException(status_code=400, detail="Please select a program.")
+
+    program = db.query(models.Program).filter(models.Program.id == payload.program_id).first()
+    if not program:
+        raise HTTPException(status_code=404, detail="Program not found.")
+
+    department = db.query(models.Department).filter(models.Department.id == program.department_id).first()
+    if not department:
+        raise HTTPException(status_code=400, detail="Program does not belong to a valid department.")
+    assert_campus_access(admin, department.campus_id)
+
+    user.program_id = program.id
+    user.department = department.name
+    user.campus_id = department.campus_id
+    db.commit()
+    log_activity(db, "User Program Updated", f"Admin {admin.id} assigned {normalized_email} to program {program.name}.", "user", actor_id=admin.id, target_user_id=user.id)
+    return {"message": "User program assignment updated successfully.", "program_id": user.program_id, "program": program.name}
+
 
 @app.post("/api/users/archive")
 def archive_user(payload: AccountActionRequest, db: Session = Depends(get_db), admin: models.User = Depends(require_admin)):
