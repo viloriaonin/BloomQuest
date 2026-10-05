@@ -1788,6 +1788,18 @@ def get_admin_user_overview(user_id: int, db: Session = Depends(get_db), _admin:
         models.GeneratedQuestion.tos_id.in_(upload_owner_tos_ids),
     ))
     question_count = question_query.count()
+    generated_questions = question_query.with_entities(
+        models.GeneratedQuestion.id,
+        models.GeneratedQuestion.subject_id,
+        models.GeneratedQuestion.question,
+        models.GeneratedQuestion.question_type,
+        models.GeneratedQuestion.bloom_level,
+        models.GeneratedQuestion.review_status,
+        models.GeneratedQuestion.created_at,
+    ).order_by(
+        models.GeneratedQuestion.created_at.desc(),
+        models.GeneratedQuestion.id.desc(),
+    ).all()
     subject_ids = question_query.with_entities(models.GeneratedQuestion.subject_id).filter(
         models.GeneratedQuestion.subject_id.is_not(None)
     ).distinct()
@@ -1819,6 +1831,14 @@ def get_admin_user_overview(user_id: int, db: Session = Depends(get_db), _admin:
             "department": subject.department.name if subject.department else "Unassigned",
             "created_at": subject.created_at.isoformat() if subject.created_at else None,
             "archived": subject.archived,
+            "questions": [{
+                "id": question.id,
+                "question": question.question,
+                "question_type": question.question_type,
+                "bloom_level": question.bloom_level,
+                "review_status": question.review_status,
+                "created_at": question.created_at.isoformat() if question.created_at else None,
+            } for question in generated_questions if question.subject_id == subject.id],
         } for subject in subjects],
         "question_count": question_count,
         "activities": [{

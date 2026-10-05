@@ -383,6 +383,27 @@ const UserDetailPage = () => {
               <article key={subject.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                 <h3 className="font-semibold text-gray-900">{subject.name}</h3>
                 <p className="mt-1 text-xs text-gray-500">{subject.code || "No course code"} · {subject.department}</p>
+                <details className="mt-3 border-t border-gray-200 pt-3">
+                  <summary className="cursor-pointer text-xs font-semibold text-[#B4454A]">
+                    View {subject.questions?.length || 0} generated question{subject.questions?.length === 1 ? "" : "s"}
+                  </summary>
+                  {subject.questions?.length ? (
+                    <ol className="mt-3 space-y-3">
+                      {subject.questions.map((question, index) => (
+                        <li key={question.id} className="rounded-lg border border-gray-200 bg-white p-3">
+                          <p className="text-sm leading-6 text-gray-800">{index + 1}. {question.question}</p>
+                          <p className="mt-2 text-xs text-gray-500">
+                            {[question.question_type, question.bloom_level, question.review_status?.replaceAll("_", " ")]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p className="mt-3 text-xs text-gray-500">No questions are linked to this subject.</p>
+                  )}
+                </details>
               </article>
             ))}
           </div>

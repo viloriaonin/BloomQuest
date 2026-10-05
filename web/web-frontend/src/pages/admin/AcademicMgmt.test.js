@@ -33,7 +33,15 @@ const createFetchMock = () => jest.fn(async (url, options = {}) => {
     return { ok: true, json: async () => [] };
   }
   if (String(url).endsWith("/subjects") && !options.method) {
-    return { ok: true, json: async () => [] };
+    return {
+      ok: true,
+      json: async () => [{
+        id: 9,
+        name: "Introduction to Computing",
+        code: "IT 101",
+        program_id: 3,
+      }],
+    };
   }
   return { ok: true, json: async () => ({ id: 8 }) };
 });
@@ -51,6 +59,7 @@ const renderAt = (path) => render(
     <Routes>
       <Route path="/admin/academic/campus/:campusId" element={<AcademicMgmtContent />} />
       <Route path="/admin/academic/campus/:campusId/department/:departmentId" element={<AcademicMgmtContent />} />
+      <Route path="/admin/academic/campus/:campusId/department/:departmentId/program/:programId" element={<AcademicMgmtContent />} />
       <Route path="/admin/academic" element={<AcademicMgmtContent />} />
     </Routes>
   </MemoryRouter>,
@@ -95,4 +104,11 @@ test("program list shows its chair and Add Program saves the Program Chair field
     const request = global.fetch.mock.calls.find(([url, options]) => String(url).endsWith("/programs") && options?.method === "POST");
     expect(JSON.parse(request[1].body).chair_name).toBe("Dr. New Chair");
   });
+});
+
+test("subject list displays each subject code beneath its name", async () => {
+  renderAt("/admin/academic/campus/1/department/2/program/3");
+
+  expect(await screen.findByText("Introduction to Computing")).toBeInTheDocument();
+  expect(screen.getByText("IT 101")).toBeInTheDocument();
 });

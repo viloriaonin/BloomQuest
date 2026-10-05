@@ -495,7 +495,11 @@ def test_campus_admin_can_load_user_profile_within_campus(db_session):
     assert result["user"]["email"] == user.email
     assert [subject["id"] for subject in result["subjects"]] == [subject_with_questions.id]
     assert result["question_count"] == 4
-    assert "questions" not in result
+    assert {question["question"] for question in result["subjects"][0]["questions"]} == {
+        "Question text is not part of the profile response",
+        "Legacy question with ownership recorded by its upload",
+    }
+    assert all("correct_answer" not in question for question in result["subjects"][0]["questions"])
 
 
 def test_activity_logs_include_campus_from_target_user(db_session):

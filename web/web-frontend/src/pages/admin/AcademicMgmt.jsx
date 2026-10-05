@@ -595,7 +595,14 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic" }) => {
                       <tbody className="divide-y divide-slate-100">
                         {programSubjects.map((subject) => (
                           <tr key={subject.id} className="hover:bg-slate-50">
-                            <td className="px-4 py-3 text-sm font-medium text-slate-800">{subject.name}</td>
+                            <td className="px-4 py-3 text-sm font-medium text-slate-800">
+                              <div>{subject.name}</div>
+                              {subject.code && (
+                                <div className="mt-1 text-xs font-semibold tracking-wide" style={{ color: "var(--admin-muted, #8b8f99)" }}>
+                                  {subject.code}
+                                </div>
+                              )}
+                            </td>
                             <td className="px-4 py-3">
                               <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Active</span>
                             </td>
