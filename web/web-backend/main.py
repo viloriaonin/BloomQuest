@@ -969,6 +969,14 @@ SENDER_EMAIL = os.getenv("SENDER_EMAIL", "")
 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "")
 
 
+def require_email_delivery_configured() -> None:
+    if not SENDER_EMAIL or not SENDER_PASSWORD:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Email delivery is temporarily unavailable. Please try again later.",
+        )
+
+
 def normalize_email(value: str) -> str:
     """Normalize and correct common typos in email addresses."""
     raw = str(value or "").strip().lower()
@@ -1248,7 +1256,7 @@ def send_contact_admin_otp_email(recipient_email: str, otp_code: str) -> bool:
     msg.attach(MIMEText(html_body, "html"))
 
     try:
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=15) as server:
             server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
@@ -1288,7 +1296,7 @@ def send_password_reset_email(recipient_email: str, otp_code: str) -> bool:
     msg.attach(MIMEText(html_body, "html"))
 
     try:
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=15) as server:
             server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
@@ -1312,31 +1320,23 @@ def _cleanup_change_password_otp(email: str):
 
 
 @app.post("/api/forgot-password/send-otp")
-def send_otp(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
+def send_otp(data: ForgotPasswordRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     enforce_rate_limit("otp", data.email)
     user = db.query(models.User).filter(func.lower(models.User.email) == data.email).first()
     if not user:
         raise HTTPException(status_code=404, detail="No account found for this email.")
 
+    require_email_delivery_configured()
     code = f"{random.randint(0, 999999):06d}"
     otp_store[data.email] = {
         "otp": code,
         "expires_at": utc_now() + timedelta(minutes=10),
     }
     logger.info("[OTP] Generated password reset code for %s", data.email)
-
-    sent = send_password_reset_email(data.email, code)
-    if not sent:
-        logger.warning("[OTP] Password reset email not sent; returning demo code for %s", data.email)
-        log_activity(db, "Password Reset Code Generated", f"Generated a reset code for {data.email}.", "security")
-        return {
-            "message": "A password reset code has been sent to your email address.",
-            "demo_code": code,
-        }
-
-    log_activity(db, "Password Reset Code Sent", f"Sent a reset code for {data.email}.", "security")
+    background_tasks.add_task(send_password_reset_email, data.email, code)
+    log_activity(db, "Password Reset Code Requested", f"Queued a reset code email for {data.email}.", "security")
     return {
-        "message": "A password reset code has been sent to your email address.",
+        "message": "Your password reset code is being sent. Check your email shortly.",
     }
 
 @app.post("/api/forgot-password/verify-otp")
@@ -1371,7 +1371,11 @@ def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
 
 
 @app.post("/api/user/change-password/request-otp")
-def request_user_change_password_otp(data: ChangePasswordOtpRequest, db: Session = Depends(get_db)):
+def request_user_change_password_otp(
+    data: ChangePasswordOtpRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     enforce_rate_limit("change-password-otp", data.email)
     normalized_email = normalize_email(data.email)
     user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
@@ -1382,19 +1386,16 @@ def request_user_change_password_otp(data: ChangePasswordOtpRequest, db: Session
     if data.current_password == data.new_password:
         raise HTTPException(status_code=400, detail="Your new password must be different from the current password.")
 
+    require_email_delivery_configured()
     code = f"{random.randint(0, 999999):06d}"
     change_password_otp_store[normalized_email] = {
         "otp": code,
         "expires_at": utc_now() + timedelta(minutes=10),
     }
 
-    sent = send_password_reset_email(normalized_email, code)
-    if not sent:
-        logger.warning("[OTP] User password change email not sent; returning demo code for %s", normalized_email)
-        return {"message": "A verification code has been sent to your email address.", "demo_code": code}
-
-    log_activity(db, "Password Change OTP Sent", f"Sent a password change verification code for {normalized_email}.", "security", user_id=user.id)
-    return {"message": "A verification code has been sent to your email address."}
+    background_tasks.add_task(send_password_reset_email, normalized_email, code)
+    log_activity(db, "Password Change OTP Requested", f"Queued a password change verification code for {normalized_email}.", "security", user_id=user.id)
+    return {"message": "Your verification code is being sent. Check your email shortly."}
 
 
 @app.post("/api/user/change-password/verify-otp")
@@ -2120,6 +2121,7 @@ def request_contact_admin_otp(payload: ContactAdminOtpRequest, background_tasks:
             detail="An account request already exists for this email address.",
         )
 
+    require_email_delivery_configured()
     code = f"{random.randint(0, 999999):06d}"
     contact_admin_pending_requests[normalized_email] = {
         "full_name": payload.full_name,
@@ -2133,13 +2135,11 @@ def request_contact_admin_otp(payload: ContactAdminOtpRequest, background_tasks:
         "expires_at": utc_now() + timedelta(minutes=10),
     }
     logger.info("[OTP] Generated contact-admin verification code for %s", normalized_email)
-
-    sent = send_contact_admin_otp_email(normalized_email, code)
-
-    response = {"message": "OTP sent successfully. Please verify the code to continue.", "status": "otp-sent"}
-    if not sent:
-        response["demo_code"] = code
-    return response
+    background_tasks.add_task(send_contact_admin_otp_email, normalized_email, code)
+    return {
+        "message": "Your verification code is being sent. Check your email shortly.",
+        "status": "otp-sent",
+    }
 
 
 @app.post("/api/contact-admin/verify-otp")

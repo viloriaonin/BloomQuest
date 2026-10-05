@@ -53,7 +53,6 @@ const ForgotPassword = () => {
   const [showCf, setShowCf]     = useState(false);
   const [error, setError]       = useState("");
   const [loading, setLoading]   = useState(false);
-  const [demoCode, setDemoCode] = useState("");
   const [legalModal, setLegalModal] = useState(null); // "privacy" | "terms" | null
 
   const otpRefs = useRef([]);
@@ -106,7 +105,6 @@ const ForgotPassword = () => {
         return;
       }
 
-      setDemoCode(data.demo_code || "");
       setStep("otp");
     } catch {
       setError("Unable to connect to the server. Please try again later.");
@@ -235,7 +233,7 @@ const ForgotPassword = () => {
         setError(getErrorMessage(data) || "Unable to resend code. Please try again.");
         return;
       }
-      showAlert("A new verification code has been sent to your email.");
+      showAlert("A new verification code is being sent. Check your email shortly.");
     } catch {
       setError("Unable to resend code. Please try again later.");
     } finally {
@@ -333,36 +331,11 @@ const ForgotPassword = () => {
         <h2 className="bq-headline text-4xl" style={{ color: textPrimary }}>Check your email</h2>
         <div style={{ width: '36px', height: '2px', backgroundColor: accent, marginTop: '14px', marginBottom: '14px' }} />
         <p className="text-base" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
-          We sent a 6-digit code to <span style={{ color: textPrimary, fontWeight: 600 }}>{email}</span>
+          We're sending a 6-digit code to <span style={{ color: textPrimary, fontWeight: 600 }}>{email}</span>
         </p>
       </div>
 
       <ErrorBox msg={error} />
-
-      {demoCode ? (
-        <div className="mb-4 rounded-xl p-4" style={{ backgroundColor: 'rgba(180,69,74,0.04)', border: `1px solid ${border}`, fontFamily: 'Inter, sans-serif' }}>
-          <p className="font-semibold" style={{ color: textPrimary }}>Demo Mode — OTP not actually sent via email</p>
-          <p className="mt-1 text-sm" style={{ color: textMuted }}>
-            Use the demo code below to continue, or paste your real email code if it arrives.
-          </p>
-          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="inline-flex items-center rounded-lg px-3 py-2 text-lg font-semibold tracking-widest" style={{ backgroundColor: surface, color: accent, border: `1px solid ${border}` }}>
-              {demoCode}
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setOtp(demoCode.split(""));
-                otpRefs.current[0]?.focus();
-              }}
-              className="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
-              style={{ backgroundColor: accent }}
-            >
-              Auto-fill
-            </button>
-          </div>
-        </div>
-      ) : null}
 
       <div className="flex gap-2 mb-5 justify-between" onPaste={handleOtpPaste}>
         {otp.map((digit, i) => (

@@ -58,7 +58,6 @@ const ContactAdmin = () => {
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
-  const [demoCode, setDemoCode] = useState("");
   
   // State management for requests status alerts
   const [error, setError] = useState("");
@@ -229,7 +228,6 @@ const ContactAdmin = () => {
 
       if (!otpSent) {
         setOtpSent(true);
-        setDemoCode(data.demo_code || "");
         setError("");
         return;
       }
@@ -253,7 +251,6 @@ const ContactAdmin = () => {
       setDepartment("");
       setOtp("");
       setOtpSent(false);
-      setDemoCode("");
       setProgramId("");
     } catch (err) {
       setError("Unable to connect to the server. Please verify your backend application is running.");
@@ -477,8 +474,7 @@ const ContactAdmin = () => {
 
           {otpSent && (
             <div className="mb-4 border border-[#D9E1EC] bg-[#F5F8FC] px-4 py-3 text-sm" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
-              <p>A six-digit verification code was sent to your email. Enter it below to submit your request.</p>
-              {demoCode && <p className="mt-2 font-semibold" style={{ color: accent }}>Demo verification code: {demoCode}</p>}
+              <p>A six-digit verification code is being sent to your email. Check your inbox and spam folder, then enter it below to submit your request.</p>
             </div>
           )}
 
@@ -580,7 +576,6 @@ const ContactAdmin = () => {
                   setError("");
                   setOtpSent(false);
                   setOtp("");
-                  setDemoCode("");
                 }}
                 onBlur={handleEmailBlur}
                 placeholder="name@example.com"
@@ -627,7 +622,7 @@ const ContactAdmin = () => {
                 />
                 <button
                   type="button"
-                  onClick={() => { setOtpSent(false); setOtp(""); setDemoCode(""); setError(""); }}
+                  onClick={() => { setOtpSent(false); setOtp(""); setError(""); }}
                   className="mt-2 text-xs font-semibold hover:underline"
                   style={{ color: accent }}
                 >

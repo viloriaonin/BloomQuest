@@ -80,6 +80,53 @@ class FakeSession:
         return None
 
 
+def test_forgot_password_queues_email_without_returning_demo_code(monkeypatch):
+    user = SimpleNamespace(id=7, email="faculty@example.com")
+    db = FakeSession(user_results=[user])
+    background_tasks = BackgroundTasks()
+    monkeypatch.setattr(main, "SENDER_EMAIL", "noreply@example.com")
+    monkeypatch.setattr(main, "SENDER_PASSWORD", "smtp-secret")
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+
+    result = main.send_otp(
+        main.ForgotPasswordRequest(email="FACULTY@example.com"),
+        background_tasks,
+        db,
+    )
+
+    assert result["message"] == "Your password reset code is being sent. Check your email shortly."
+    assert "demo_code" not in result
+    assert len(background_tasks.tasks) == 1
+    assert background_tasks.tasks[0].func is main.send_password_reset_email
+    assert background_tasks.tasks[0].args[0] == "faculty@example.com"
+
+
+def test_contact_admin_otp_queues_email_without_returning_demo_code(monkeypatch):
+    db = FakeSession()
+    background_tasks = BackgroundTasks()
+    monkeypatch.setattr(main, "SENDER_EMAIL", "noreply@example.com")
+    monkeypatch.setattr(main, "SENDER_PASSWORD", "smtp-secret")
+    monkeypatch.setattr(main, "validate_account_request_scope", lambda *args: None)
+
+    result = main.request_contact_admin_otp(
+        main.ContactAdminOtpRequest(
+            full_name="Avery Faculty",
+            campus_id=1,
+            department="Informatics",
+            program_id=1,
+            email="avery@example.com",
+        ),
+        background_tasks,
+        db,
+    )
+
+    assert result["status"] == "otp-sent"
+    assert "demo_code" not in result
+    assert len(background_tasks.tasks) == 1
+    assert background_tasks.tasks[0].func is main.send_contact_admin_otp_email
+    assert background_tasks.tasks[0].args[0] == "avery@example.com"
+
+
 @pytest.mark.asyncio
 async def test_approve_request_creates_faculty_with_department_and_program(monkeypatch):
     request = SimpleNamespace(
