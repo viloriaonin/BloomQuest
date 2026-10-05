@@ -19,7 +19,7 @@ import models
 from database import Base
 from database import get_db
 from main import app, assert_question_access, validate_account_request_scope, create_department, create_subject_manually, update_user_department, get_admin_user_overview, DepartmentCreateRequest, UserDepartmentUpdateRequest, SubjectCreateRequest, get_subjects, get_faculty_program_subjects, get_questions, get_super_admin_overview, get_super_admin_ai_usage, get_question_sets, export_question_bank_tos, upload_files
-from routers.questions import _assert_upload_access, _resolve_department_leadership, upload_and_analyze_syllabus
+from routers.questions import _assert_upload_access, _resolve_department_leadership, export_institutional_tos, upload_and_analyze_syllabus
 from routers.activity import get_activity_logs
 from security import assert_campus_access, assert_user_subject_campus_access, get_current_user, require_admin, require_campus_admin, require_super_admin, visible_campus_id
 
@@ -995,6 +995,84 @@ def test_question_bank_tos_export_uses_authenticated_faculty_department_dean(db_
 
     assert "Faculty Campus Dean" in values
     assert "Other Campus Dean" not in values
+
+
+def test_legacy_saved_tos_export_restores_bloom_question_columns(db_session):
+    faculty = models.User(
+        email="legacy_tos_export@example.com",
+        password="not-used",
+        role="super_admin",
+        name="Prof. Test",
+    )
+    db_session.add(faculty)
+    db_session.flush()
+    subject = models.Subject(name="Legacy TOS Subject", code="CS101", user_id=faculty.id)
+    db_session.add(subject)
+    db_session.flush()
+    upload = models.UploadedFile(
+        user_id=faculty.id,
+        subject_id=subject.id,
+        module_filename="module.pdf",
+        syllabus_filename="syllabus.pdf",
+        module_text="",
+        syllabus_text="",
+    )
+    db_session.add(upload)
+    db_session.flush()
+    tos = models.TableOfSpecification(
+        upload_id=upload.id,
+        tos_data=[{
+            "topic_name": "Database Design",
+            "ilo": "Create logical models.",
+            "hours_a": 3,
+            "minutes_b": 0.6,
+            "items": 2,
+            "bloom_counts": {"Remember": 2},
+        }],
+        total_items=2,
+    )
+    db_session.add(tos)
+    db_session.flush()
+    db_session.add_all([
+        models.GeneratedQuestion(
+            tos_id=tos.id,
+            subject_id=subject.id,
+            user_id=faculty.id,
+            topic_name="Database Design",
+            bloom_level="Remember",
+            question_type="MCQ",
+            question="Question one?",
+        ),
+        models.GeneratedQuestion(
+            tos_id=tos.id,
+            subject_id=subject.id,
+            user_id=faculty.id,
+            topic_name="Database Design",
+            bloom_level="Understand",
+            question_type="MCQ",
+            question="Question two?",
+        ),
+    ])
+    db_session.commit()
+
+    async def download_tos():
+        response = await export_institutional_tos(
+            upload_id=str(upload.id),
+            user_id=None,
+            exam_type=None,
+            semester=None,
+            academic_year=None,
+            db=db_session,
+            current_user=faculty,
+        )
+        return b"".join([chunk async for chunk in response.body_iterator])
+
+    workbook = openpyxl.load_workbook(BytesIO(asyncio.run(download_tos())))
+    worksheet = workbook.active
+
+    assert worksheet["G23"].value == "1"
+    assert worksheet["I23"].value == "2"
+    assert worksheet["K23"].value in ("", None)
 
 
 def test_department_creation_is_scoped_to_campus(db_session):

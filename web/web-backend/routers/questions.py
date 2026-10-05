@@ -1010,6 +1010,24 @@ def _attach_bloom_question_numbers(tos_data, generated_questions):
         }
 
 
+def _bloom_question_numbers_missing(tos_data):
+    levels = ("Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create")
+    return any(
+        not isinstance(topic.get("bloom_question_numbers"), dict)
+        or any(
+            level not in topic["bloom_question_numbers"]
+            or topic["bloom_question_numbers"][level] is None
+            for level in levels
+        )
+        for topic in tos_data
+    )
+
+
+def _ensure_bloom_question_numbers(tos_data, generated_questions):
+    if _bloom_question_numbers_missing(tos_data):
+        _attach_bloom_question_numbers(tos_data, generated_questions)
+
+
 @router.post("/generate-preview")
 async def generate_preview(
     payload: TOSGenerationPayload,
@@ -1545,11 +1563,23 @@ async def export_institutional_tos(
         ).order_by(models.TableOfSpecification.id.desc()).first()
         subject = upload.subject if upload else None
         if upload and tos_record and subject:
+            tos_data = tos_record.tos_data or []
+            if _bloom_question_numbers_missing(tos_data):
+                saved_questions = db.query(models.GeneratedQuestion).filter(
+                    models.GeneratedQuestion.tos_id == tos_record.id
+                ).order_by(models.GeneratedQuestion.id.asc()).all()
+                _ensure_bloom_question_numbers(
+                    tos_data,
+                    [
+                        {"topic_name": question.topic_name, "bloom_level": question.bloom_level}
+                        for question in saved_questions
+                    ],
+                )
             creator = db.query(models.User).filter(models.User.id == upload.user_id).first() if upload.user_id else None
             department_name = tos_record.department or (creator.department if creator and creator.department else "")
             leadership = _resolve_department_leadership(db, creator=creator, subject=subject, department_name=department_name)
             workbook = generate_tos_from_excel_template(
-                selected_topics_data=tos_record.tos_data or [],
+                selected_topics_data=tos_data,
                 course_code=subject.code,
                 course_title=subject.name,
                 whole_total_items=tos_record.total_items or 0,
