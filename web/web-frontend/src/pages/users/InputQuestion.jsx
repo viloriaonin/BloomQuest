@@ -817,6 +817,8 @@ const InputQuestion = () => {
       subcolumnAValues: {},
     });
 
+    let resetFilesOnMismatch = false;
+    let uploadFailureMessage = '';
     try {
       const formData = new FormData();
       formData.append('module_file', moduleFile);
@@ -833,7 +835,13 @@ const InputQuestion = () => {
       });
 
       const data = await parseApiResponse(response);
-      if (!response.ok) throw new Error(getErrorMessage(data) || 'Upload failed');
+      if (!response.ok) {
+        if (data?.detail?.code === 'MATERIALS_MISMATCH') {
+          resetFilesOnMismatch = true;
+          throw new Error(data.detail.message || 'Warning: Uploaded materials do not align. Please upload the correct module and CIS.');
+        }
+        throw new Error(getErrorMessage(data) || 'Upload failed');
+      }
 
       setUploadResult(data);
       if (data.topics) {
@@ -866,12 +874,33 @@ const InputQuestion = () => {
         return;
       }
 
-      setError(err.message);
+      if (resetFilesOnMismatch) {
+        setModuleFile(null);
+        setSyllabusFile(null);
+        setUploadResult(null);
+        setGenerationResult(null);
+        setExcludedQuestionIds([]);
+        setSelectedTopics([]);
+        setSubcolumnAValues({});
+        setWizardStep(1);
+      }
+      uploadFailureMessage = err.message;
+      setError(uploadFailureMessage);
       persistInputQuestionSession({
         activeTab: 'upload',
         uploading: false,
         generating: false,
-        error: err.message,
+        ...(resetFilesOnMismatch ? {
+          moduleFile: null,
+          syllabusFile: null,
+          uploadResult: null,
+          generationResult: null,
+          excludedQuestionIds: [],
+          selectedTopics: [],
+          subcolumnAValues: {},
+          wizardStep: 1,
+        } : {}),
+        error: uploadFailureMessage,
       });
     } finally {
       setUploading(false);
@@ -882,6 +911,17 @@ const InputQuestion = () => {
         activeTab: 'upload',
         uploading: false,
         generating: false,
+        ...(resetFilesOnMismatch ? {
+          moduleFile: null,
+          syllabusFile: null,
+          uploadResult: null,
+          generationResult: null,
+          excludedQuestionIds: [],
+          selectedTopics: [],
+          subcolumnAValues: {},
+          wizardStep: 1,
+          error: uploadFailureMessage,
+        } : {}),
       });
     }
   };
@@ -1215,7 +1255,18 @@ const InputQuestion = () => {
           ))}
         </div>
 
-        {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">{error}</div>}
+        {error && (
+          <div
+            role="alert"
+            className={`mb-4 rounded-xl border p-3 text-sm font-medium ${
+              error.startsWith('Warning:')
+                ? 'border-amber-200 bg-amber-50 text-amber-900'
+                : 'border-red-200 bg-red-50 text-red-700'
+            }`}
+          >
+            {error}
+          </div>
+        )}
         {successMessage && <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-3 text-sm font-medium text-green-700">{successMessage}</div>}
 
         {/* MANUAL WORKSPACE TAB */}

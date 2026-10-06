@@ -17,7 +17,6 @@ const LandingPage = React.lazy(() => import("./pages/LandingPage"));
 const Dashboard = React.lazy(() => import("./pages/users/Dashboard"));
 const InputQuestion = React.lazy(() => import("./pages/users/InputQuestion"));
 const QuestionBank = React.lazy(() => import("./pages/users/QuestionBank"));
-const AssessmentAnalytics = React.lazy(() => import("./pages/users/AssessmentAnalytics"));
 const History = React.lazy(() => import("./pages/users/History"));
 const UserWorkspacePage = React.lazy(() => import("./pages/users/UserWorkspacePage"));
 const UserToolsPage = React.lazy(() => import("./pages/users/UserToolsPage"));
@@ -255,16 +254,7 @@ function App() {
             </UserRoute>
           } 
         />
-        <Route
-          path="/analytics"
-          element={
-            <UserRoute>
-              <MainLayout>
-                <AssessmentAnalytics />
-              </MainLayout>
-            </UserRoute>
-          }
-        />
+        <Route path="/analytics" element={<Navigate to="/dashboard" replace />} />
         <Route
           path="/settings"
           element={
@@ -281,7 +271,6 @@ function App() {
           ["/subjects", "subjects"],
           ["/notifications", "notifications"],
           ["/imports", "imports"],
-          ["/recycle-bin", "recycle"],
           ["/system-status", "status"],
           ["/help", "help"],
         ].map(([path, section]) => (
@@ -297,6 +286,7 @@ function App() {
             }
           />
         ))}
+        <Route path="/recycle-bin" element={<Navigate to="/dashboard" replace />} />
 
         {/* ========================================= */}
         {/* ADMIN ROUTES                              */}

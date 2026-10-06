@@ -14,7 +14,7 @@ const pageTitles = {
   "/dashboard": "Dashboard", "/input": "Input Questions", "/question-bank": "Question Bank",
   "/history": "History", "/settings": "Settings", "/assessments": "Assessments",
   "/favorites": "Downloads", "/subjects": "Subjects & Topics", "/notifications": "Notifications",
-  "/imports": "Import / Export", "/recycle-bin": "Recycle Bin", "/system-status": "System Status",
+  "/imports": "Import / Export", "/system-status": "System Status",
   "/help": "Help & Documentation", "/admin": "Admin Dashboard", "/admin/dashboard": "Admin Dashboard",
 };
 

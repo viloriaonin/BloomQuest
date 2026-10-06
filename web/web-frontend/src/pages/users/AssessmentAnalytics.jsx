@@ -5,7 +5,7 @@ import { API_URL } from "../../config/api";
 const BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
 const panelClass = "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm";
 
-const AssessmentAnalytics = () => {
+const AssessmentAnalytics = ({ embedded = false }) => {
   const [assessments, setAssessments] = useState([]);
   const [selectedId, setSelectedId] = useState("");
   const [analytics, setAnalytics] = useState(null);
@@ -84,16 +84,27 @@ const AssessmentAnalytics = () => {
   const selectedAssessment = assessments.find((item) => String(item.tos_id) === selectedId);
 
   return (
-    <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6">
+    <section
+      aria-labelledby={embedded ? "assessment-coverage-title" : "assessment-analytics-title"}
+      className={embedded ? "space-y-5" : "mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6"}
+    >
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wide text-[#B4454A]">Assessment insights</p>
-          <h1 className="mt-1 text-2xl font-bold text-slate-900">Assessment Analytics</h1>
+          {embedded ? (
+            <h2 id="assessment-coverage-title" className="mt-1 text-2xl font-bold text-slate-900">
+              Coverage and recommendations
+            </h2>
+          ) : (
+            <h1 id="assessment-analytics-title" className="mt-1 text-2xl font-bold text-slate-900">
+              Assessment Analytics
+            </h1>
+          )}
           <p className="mt-2 max-w-2xl text-sm text-slate-600">
             Review question coverage against the assessment blueprint and see actionable gaps.
           </p>
         </div>
-        <label className="flex min-w-64 flex-col gap-1 text-sm font-medium text-slate-700">
+        <label className="flex w-full flex-col gap-1 text-sm font-medium text-slate-700 sm:w-auto sm:min-w-64">
           Assessment
           <select
             className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-900"
@@ -250,7 +261,7 @@ const AssessmentAnalytics = () => {
           </section>
         </>
       )}
-    </main>
+    </section>
   );
 };
 

@@ -13,6 +13,7 @@ import { Bar, Doughnut } from "react-chartjs-2";
 import { BookOpen, ClipboardList, Download, Lightbulb, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { API_URL } from "../../config/api";
+import AssessmentAnalytics from "./AssessmentAnalytics";
 
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend);
@@ -270,7 +271,7 @@ const Dashboard = ({ onToggleSidebar }) => {
             Welcome back
           </h1>
           <p className="bq-page-description">
-            Visualizing structural breakdown metrics of your active assessment items.
+            Track your question pool, Bloom-level balance, and assessment coverage in one place.
           </p>
           </div>
         </div>
@@ -362,36 +363,40 @@ const Dashboard = ({ onToggleSidebar }) => {
               </div>
             </div>
 
-            <div
-              className="p-5 rounded-2xl"
-              style={{ backgroundColor: surface, border: `1px solid ${border}` }}
-            >
-              <h3 className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: textMuted }}>
-                Recent Account Activity
-              </h3>
-              <div className="space-y-2">
-                {recentActivity.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-start gap-3 p-3 rounded-xl text-xs"
-                    style={{ backgroundColor: "rgba(255,255,255,0.02)" }}
-                  >
-                    <span
-                      className="px-2 py-1 rounded-md font-bold"
-                      style={{ backgroundColor: item.tagColor + "22", color: item.tagColor }}
-                    >
-                      {item.tag}
-                    </span>
-                    <div>
-                      <p className="font-medium" style={{ color: textPrimary }}>{item.text}</p>
-                      <p className="text-[10px] mt-0.5" style={{ color: textMuted }}>{item.meta}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         )}
+        <div className="mt-8 border-t pt-7" style={{ borderColor: border }}>
+          <AssessmentAnalytics embedded />
+        </div>
+        <section
+          aria-labelledby="recent-account-activity-title"
+          className="mt-8 rounded-2xl p-5"
+          style={{ backgroundColor: surface, border: `1px solid ${border}` }}
+        >
+          <h2 id="recent-account-activity-title" className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: textMuted }}>
+            Recent Account Activity
+          </h2>
+          <div className="space-y-2">
+            {recentActivity.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-start gap-3 rounded-xl p-3 text-xs"
+                style={{ backgroundColor: "rgba(255,255,255,0.02)" }}
+              >
+                <span
+                  className="rounded-md px-2 py-1 font-bold"
+                  style={{ backgroundColor: item.tagColor + "22", color: item.tagColor }}
+                >
+                  {item.tag}
+                </span>
+                <div>
+                  <p className="font-medium" style={{ color: textPrimary }}>{item.text}</p>
+                  <p className="mt-0.5 text-[10px]" style={{ color: textMuted }}>{item.meta}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
     </div>
   );

@@ -78,6 +78,11 @@ class FakeSession:
     def commit(self):
         self.commits += 1
 
+    def flush(self):
+        for value in self.added:
+            if isinstance(value, models.User) and value.id is None:
+                value.id = 88
+
     def refresh(self, value):
         return None
 
@@ -578,6 +583,87 @@ def test_campus_admin_credentials_email_has_greeting_credentials_and_reminder(mo
     assert "avery@example.com" in body
     assert "InitialPass1!" in body
     assert "change your password immediately after your first login" in body
+
+
+def test_create_department_dean_account_assigns_user_and_queues_credentials(monkeypatch):
+    department = SimpleNamespace(id=9, name="Engineering", campus_id=4, dean_id=None, dean_name=None)
+    campus = SimpleNamespace(id=4, name="North Campus", is_active=True)
+    db = FakeSession(department=department, campus=campus, user_results=[None])
+    background_tasks = BackgroundTasks()
+    monkeypatch.setattr(main, "RESEND_API_KEY", "resend-test-key")
+    monkeypatch.setattr(main, "generate_temporary_password", lambda: "DeanTemp1!")
+    monkeypatch.setattr(main, "hash_password", lambda password: f"hashed:{password}")
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+
+    result = main.create_department_dean_account(
+        department.id,
+        main.DepartmentDeanCreateRequest(full_name="Dr. Alex Dean", email=" Alex.Dean@example.edu "),
+        background_tasks,
+        db,
+        admin=SimpleNamespace(id=1, role="campus_admin", campus_id=campus.id),
+    )
+
+    created_user = next(value for value in db.added if isinstance(value, models.User))
+    assert result["role"] == "department_dean"
+    assert result["email"] == "alex.dean@example.edu"
+    assert created_user.password == "hashed:DeanTemp1!"
+    assert created_user.department == department.name
+    assert department.dean_id == created_user.id == 88
+    assert department.dean_name == "Dr. Alex Dean"
+    assert db.commits == 1
+    assert len(background_tasks.tasks) == 1
+    assert background_tasks.tasks[0].func is main.send_department_dean_credentials_email
+    assert background_tasks.tasks[0].args == (
+        "alex.dean@example.edu",
+        "Dr. Alex Dean",
+        "DeanTemp1!",
+        department.name,
+        campus.name,
+    )
+
+
+def test_create_department_dean_account_rejects_existing_department_assignment(monkeypatch):
+    department = SimpleNamespace(id=9, name="Engineering", campus_id=4, dean_id=23, dean_name="Current Dean")
+    campus = SimpleNamespace(id=4, name="North Campus", is_active=True)
+    db = FakeSession(department=department, campus=campus)
+    monkeypatch.setattr(main, "RESEND_API_KEY", "resend-test-key")
+
+    with pytest.raises(HTTPException, match="already has a dean") as error:
+        main.create_department_dean_account(
+            department.id,
+            main.DepartmentDeanCreateRequest(full_name="Dr. Alex Dean", email="alex.dean@example.edu"),
+            BackgroundTasks(),
+            db,
+            admin=SimpleNamespace(id=1, role="campus_admin", campus_id=campus.id),
+        )
+
+    assert error.value.status_code == 409
+    assert db.added == []
+    assert db.commits == 0
+
+
+def test_department_dean_credentials_email_uses_configured_delivery(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(main, "send_email", lambda recipient, subject, html: captured.update({
+        "recipient": recipient,
+        "subject": subject,
+        "html": html,
+    }) or True)
+    monkeypatch.setattr(main.os, "getenv", lambda name, default=None: "https://bloomquest.example/" if name == "FRONTEND_URL" else default)
+
+    assert main.send_department_dean_credentials_email(
+        "dean@example.edu",
+        "Dr. <Alex> Dean",
+        "DeanTemp1!",
+        "Engineering",
+        "North Campus",
+    )
+
+    assert captured["recipient"] == "dean@example.edu"
+    assert "Department Dean Login Credentials" in captured["subject"]
+    assert "Dr. &lt;Alex&gt; Dean" in captured["html"]
+    assert "DeanTemp1!" in captured["html"]
+    assert "https://bloomquest.example/login" in captured["html"]
 
 
 def test_create_user_change_request_requires_matching_session_user():

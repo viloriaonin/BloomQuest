@@ -8,11 +8,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
-from sqlalchemy import func, text, or_, and_
+from sqlalchemy import func, inspect, text, or_, and_
 from sqlalchemy.exc import IntegrityError
 from dotenv import load_dotenv
 from database import engine, get_db, SessionLocal
 from file_extractor import extract_text
+from material_alignment import validate_material_alignment
 from ai_service import GeminiUsageTracker, generate_questions_from_tos, build_preview, prepare_database_rows, statistics, parse_syllabus_text_with_ai
 from routers.tos_utils import compute_tos, generate_tos_from_excel_template
 from classifier import classify_question, classify_question_ml
@@ -71,52 +72,87 @@ RATE_LIMIT_BUCKETS = defaultdict(list)
 models.Base.metadata.create_all(bind=engine)
 
 
-with engine.begin() as connection:
-    connection.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"))
-    connection.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS user_id INTEGER"))
-    connection.execute(text("ALTER TABLE departments ADD COLUMN IF NOT EXISTS dean_name VARCHAR(255)"))
-    connection.execute(text("ALTER TABLE departments ADD COLUMN IF NOT EXISTS chair_name VARCHAR(255)"))
-    connection.execute(text("ALTER TABLE programs ADD COLUMN IF NOT EXISTS chair_name VARCHAR(255)"))
-    if connection.dialect.name == "postgresql":
-        connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_department_id INTEGER REFERENCES departments(id)"))
-        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_users_admin_department_id ON users (admin_department_id)"))
-        connection.execute(text("DROP INDEX IF EXISTS ix_departments_name"))
-        connection.execute(text("DROP INDEX IF EXISTS ix_departments_code"))
-        connection.execute(text("DROP INDEX IF EXISTS departments_name_key"))
-        connection.execute(text("DROP INDEX IF EXISTS departments_code_key"))
-
-    # Remove the UNIQUE constraints first.
-    # PostgreSQL owns the indexes backing these constraints.
-    connection.execute(text("""
-        ALTER TABLE departments
-        DROP CONSTRAINT IF EXISTS uq_department_campus_name
-    """))
-
-    connection.execute(text("""
-        ALTER TABLE departments
-        DROP CONSTRAINT IF EXISTS uq_department_campus_code
-    """))
-
-    # Recreate case-insensitive unique indexes.
-    connection.execute(text("""
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_department_campus_name
-        ON departments (campus_id, lower(name))
-        WHERE campus_id IS NOT NULL
-    """))
-
-    connection.execute(text("""
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_department_campus_code
-        ON departments (campus_id, lower(code))
-        WHERE campus_id IS NOT NULL
-          AND code IS NOT NULL
-    """))
-
+def add_column_if_missing(connection, table_name: str, column_name: str, definition: str) -> bool:
+    if any(
+        column["name"] == column_name
+        for column in inspect(connection).get_columns(table_name)
+    ):
+        return False
     connection.execute(text(
-        "ALTER TABLE uploaded_files ALTER COLUMN user_id DROP NOT NULL"
+        f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column_name} {definition}"
     ))
+    return True
+
+
+with engine.begin() as connection:
+    add_column_if_missing(connection, "subjects", "archived", "BOOLEAN NOT NULL DEFAULT FALSE")
+    add_column_if_missing(connection, "subjects", "user_id", "INTEGER")
+    add_column_if_missing(connection, "departments", "dean_name", "VARCHAR(255)")
+    add_column_if_missing(connection, "departments", "chair_name", "VARCHAR(255)")
+    add_column_if_missing(connection, "programs", "chair_name", "VARCHAR(255)")
+    if connection.dialect.name == "postgresql":
+        add_column_if_missing(
+            connection,
+            "users",
+            "admin_department_id",
+            "INTEGER REFERENCES departments(id)",
+        )
+        department_indexes = {
+            item.get("name")
+            for item in inspect(connection).get_indexes("departments")
+        }
+        for legacy_index in (
+            "ix_departments_name",
+            "ix_departments_code",
+            "departments_name_key",
+            "departments_code_key",
+        ):
+            if legacy_index in department_indexes:
+                connection.execute(text(f"DROP INDEX {legacy_index}"))
+
+        department_constraints = {
+            item.get("name")
+            for item in inspect(connection).get_unique_constraints("departments")
+        }
+        for constraint in ("uq_department_campus_name", "uq_department_campus_code"):
+            if constraint in department_constraints:
+                connection.execute(text(f"ALTER TABLE departments DROP CONSTRAINT {constraint}"))
+
+        department_indexes = {
+            item.get("name")
+            for item in inspect(connection).get_indexes("departments")
+        }
+        if "uq_department_campus_name" not in department_indexes:
+            connection.execute(text("""
+                CREATE UNIQUE INDEX uq_department_campus_name
+                ON departments (campus_id, lower(name))
+                WHERE campus_id IS NOT NULL
+            """))
+        if "uq_department_campus_code" not in department_indexes:
+            connection.execute(text("""
+                CREATE UNIQUE INDEX uq_department_campus_code
+                ON departments (campus_id, lower(code))
+                WHERE campus_id IS NOT NULL
+                  AND code IS NOT NULL
+            """))
+        user_indexes = {
+            item.get("name")
+            for item in inspect(connection).get_indexes("users")
+        }
+        if "ix_users_admin_department_id" not in user_indexes:
+            connection.execute(text(
+            "CREATE INDEX ix_users_admin_department_id ON users (admin_department_id)"
+            ))
+
+    uploaded_file_columns = {
+        column["name"]: column
+        for column in inspect(connection).get_columns("uploaded_files")
+    }
+    if uploaded_file_columns.get("user_id", {}).get("nullable") is False:
+        connection.execute(text("ALTER TABLE uploaded_files ALTER COLUMN user_id DROP NOT NULL"))
     binary_definition = "BYTEA" if connection.dialect.name == "postgresql" else "BLOB"
     for column, definition in (("filename", "VARCHAR(255)"), ("media_type", "VARCHAR(255)"), ("file_content", binary_definition), ("archived", "BOOLEAN NOT NULL DEFAULT FALSE"), ("actor_id", "INTEGER"), ("target_user_id", "INTEGER")):
-        connection.execute(text(f"ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS {column} {definition}"))
+        add_column_if_missing(connection, "activity_logs", column, definition)
     for column, definition in (
         ("exam_type", "VARCHAR(64)"),
         ("semester", "VARCHAR(32)"),
@@ -124,7 +160,7 @@ with engine.begin() as connection:
         ("instructor_name", "VARCHAR(255)"),
         ("department", "VARCHAR(255)"),
     ):
-        connection.execute(text(f"ALTER TABLE table_of_specification ADD COLUMN IF NOT EXISTS {column} {definition}"))
+        add_column_if_missing(connection, "table_of_specification", column, definition)
 
 
 def log_activity(db: Session, action: str, details: str, type: str, status: str = "success", user_id: int = None, actor_id: int = None, target_user_id: int = None):
@@ -272,32 +308,39 @@ def serialize_question(question):
 # Ensure the new archive, name, and department columns exist in the users table.
 # SQLAlchemy's create_all does not alter existing tables, so we add missing columns explicitly.
 with engine.begin() as conn:
-    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"))
-    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR"))
-    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR"))
-    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS campus_id INTEGER REFERENCES campuses(id)"))
-    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS program_id INTEGER"))
-    conn.execute(text("ALTER TABLE campuses ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE"))
-    conn.execute(text("ALTER TABLE account_requests ADD COLUMN IF NOT EXISTS program_id INTEGER"))
-    conn.execute(text("ALTER TABLE account_requests ADD COLUMN IF NOT EXISTS campus_id INTEGER REFERENCES campuses(id)"))
-    conn.execute(text("UPDATE account_requests SET campus_id = departments.campus_id FROM programs JOIN departments ON departments.id = programs.department_id WHERE account_requests.program_id = programs.id AND account_requests.campus_id IS NULL"))
-    conn.execute(text("ALTER TABLE users DROP CONSTRAINT IF EXISTS chk_department"))
-    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
-    conn.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS department_id INTEGER"))
-    conn.execute(text("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS program_id INTEGER"))
-    conn.execute(text("ALTER TABLE departments ADD COLUMN IF NOT EXISTS campus_id INTEGER"))
-    conn.execute(text("ALTER TABLE departments ADD COLUMN IF NOT EXISTS dean_id INTEGER"))
-    conn.execute(text("ALTER TABLE programs ADD COLUMN IF NOT EXISTS chair_id INTEGER"))
-    conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS difficulty VARCHAR(32) NOT NULL DEFAULT 'moderate'"))
-    conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE"))
-    conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS user_id INTEGER"))
-    conn.execute(text("ALTER TABLE generated_questions ADD COLUMN IF NOT EXISTS points FLOAT"))
-    conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS exam_title VARCHAR(255)"))
-    conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS instructions TEXT"))
-    conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS total_points INTEGER"))
-    conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS time_limit VARCHAR(64)"))
-    conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS instructor_name VARCHAR(255)"))
-    conn.execute(text("ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS department VARCHAR(255)"))
+    add_column_if_missing(conn, "users", "archived", "BOOLEAN NOT NULL DEFAULT FALSE")
+    add_column_if_missing(conn, "users", "name", "VARCHAR")
+    add_column_if_missing(conn, "users", "department", "VARCHAR")
+    add_column_if_missing(conn, "users", "campus_id", "INTEGER REFERENCES campuses(id)")
+    add_column_if_missing(conn, "users", "program_id", "INTEGER")
+    add_column_if_missing(conn, "campuses", "is_active", "BOOLEAN NOT NULL DEFAULT TRUE")
+    add_column_if_missing(conn, "account_requests", "program_id", "INTEGER")
+    account_request_campus_added = add_column_if_missing(
+        conn, "account_requests", "campus_id", "INTEGER REFERENCES campuses(id)"
+    )
+    if account_request_campus_added:
+        conn.execute(text("UPDATE account_requests SET campus_id = departments.campus_id FROM programs JOIN departments ON departments.id = programs.department_id WHERE account_requests.program_id = programs.id AND account_requests.campus_id IS NULL"))
+    if any(
+        constraint.get("name") == "chk_department"
+        for constraint in inspect(conn).get_check_constraints("users")
+    ):
+        conn.execute(text("ALTER TABLE users DROP CONSTRAINT chk_department"))
+    add_column_if_missing(conn, "users", "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(conn, "subjects", "department_id", "INTEGER")
+    add_column_if_missing(conn, "subjects", "program_id", "INTEGER")
+    add_column_if_missing(conn, "departments", "campus_id", "INTEGER")
+    add_column_if_missing(conn, "departments", "dean_id", "INTEGER")
+    add_column_if_missing(conn, "programs", "chair_id", "INTEGER")
+    add_column_if_missing(conn, "generated_questions", "difficulty", "VARCHAR(32) NOT NULL DEFAULT 'moderate'")
+    add_column_if_missing(conn, "generated_questions", "archived", "BOOLEAN NOT NULL DEFAULT FALSE")
+    add_column_if_missing(conn, "generated_questions", "user_id", "INTEGER")
+    add_column_if_missing(conn, "generated_questions", "points", "FLOAT")
+    add_column_if_missing(conn, "question_sets", "exam_title", "VARCHAR(255)")
+    add_column_if_missing(conn, "question_sets", "instructions", "TEXT")
+    add_column_if_missing(conn, "question_sets", "total_points", "INTEGER")
+    add_column_if_missing(conn, "question_sets", "time_limit", "VARCHAR(64)")
+    add_column_if_missing(conn, "question_sets", "instructor_name", "VARCHAR(255)")
+    add_column_if_missing(conn, "question_sets", "department", "VARCHAR(255)")
 
 # Seed the default academic departments so the mobile dropdown has visible choices.
 with SessionLocal() as db:
@@ -354,14 +397,24 @@ def migrate_subject_name_scope():
     if engine.dialect.name != "postgresql":
         return
     with engine.begin() as connection:
-        connection.execute(text("ALTER TABLE subjects DROP CONSTRAINT IF EXISTS subjects_name_key"))
-        connection.execute(text("DROP INDEX IF EXISTS ix_subjects_name"))
-        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_subjects_name ON subjects (name)"))
-        connection.execute(text(
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_subjects_active_scope_name "
-            "ON subjects (COALESCE(program_id, -department_id, 0), LOWER(name)) "
-            "WHERE archived IS FALSE"
-        ))
+        constraints = {
+            item.get("name")
+            for item in inspect(connection).get_unique_constraints("subjects")
+        }
+        if "subjects_name_key" in constraints:
+            connection.execute(text("ALTER TABLE subjects DROP CONSTRAINT subjects_name_key"))
+        indexes = {
+            item.get("name")
+            for item in inspect(connection).get_indexes("subjects")
+        }
+        if "ix_subjects_name" not in indexes:
+            connection.execute(text("CREATE INDEX ix_subjects_name ON subjects (name)"))
+        if "uq_subjects_active_scope_name" not in indexes:
+            connection.execute(text(
+                "CREATE UNIQUE INDEX uq_subjects_active_scope_name "
+                "ON subjects (COALESCE(program_id, -department_id, 0), LOWER(name)) "
+                "WHERE archived IS FALSE"
+            ))
 
 
 @asynccontextmanager
@@ -1276,6 +1329,43 @@ def send_campus_admin_credentials_email(recipient_email: str, full_name: str, pa
                 return False
 
 
+def send_department_dean_credentials_email(
+    recipient_email: str,
+    full_name: str,
+    password: str,
+    department_name: str,
+    campus_name: str,
+) -> bool:
+    greeting_name = full_name or recipient_email.split("@")[0]
+    login_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173').rstrip('/')}/login"
+    html_body = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; color: #111; line-height: 1.6;">
+        <div style="max-width: 600px; margin: 0 auto; padding: 24px;">
+          <h2 style="color: #7B1113;">Your BloomQuest Department Dean account</h2>
+          <p>Hello {escape_html(greeting_name)},</p>
+          <p>A Department Dean account has been created for you. Use these credentials to sign in:</p>
+          <p><strong>Email:</strong> {escape_html(recipient_email)}<br />
+          <strong>Initial password:</strong> <code>{escape_html(password)}</code><br />
+          <strong>Department:</strong> {escape_html(department_name)}<br />
+          <strong>Campus:</strong> {escape_html(campus_name)}</p>
+          <p><a href="{escape_html(login_url)}">Sign in to BloomQuest</a></p>
+          <p>For your security, change your password immediately after your first login.</p>
+          <p>Best regards,<br /><strong>BloomQuest Administration</strong></p>
+        </div>
+      </body>
+    </html>
+    """
+    sent = send_email(
+        recipient_email,
+        "Your BloomQuest Department Dean Login Credentials",
+        html_body,
+    )
+    if not sent:
+        logger.error("[Email] Department Dean credentials email could not be delivered to %s", recipient_email)
+    return sent
+
+
 def send_approval_email(recipient_email: str, temporary_password: str, full_name: str = None, department: str = None):
     """Render the approval email template and send it via SMTP.
 
@@ -1581,7 +1671,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     else:
         user = None
 
-    if user and str(user.role).lower() in {"admin", "campus_admin"}:
+    if user and str(user.role).lower() in {"admin", "campus_admin", "department_dean"}:
         campus = db.query(models.Campus).filter(models.Campus.id == user.campus_id).first()
         if not campus or not campus.is_active:
             user = None
@@ -1674,7 +1764,7 @@ def list_pending_account_requests(db: Session = Depends(get_db), _admin: models.
 
 @app.get("/api/contact-admin/users")
 def list_admin_users(db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
-    roles = ("faculty", "student")
+    roles = ("faculty", "student", "department_dean")
     scoped_users = admin_scoped_user_query(db, _admin).filter(func.lower(models.User.role).in_(roles))
     active_users = scoped_users.filter(models.User.archived.is_(False)).order_by(models.User.id.desc()).all()
     archived_users = scoped_users.filter(models.User.archived.is_(True)).order_by(models.User.id.desc()).all()
@@ -2723,22 +2813,40 @@ async def upload_files(
             subject = db.query(models.Subject).filter(
                 models.Subject.name == subject_info["name"]
             ).first()
-            if not subject:
-                subject = models.Subject(
-                    name=subject_info["name"],
-                    code=subject_info.get("code"),
-                    description=subject_info.get("description"),
-                    user_id=user_id,
-                )
-                db.add(subject)
-                db.commit()
-                db.refresh(subject)
-
-            assert_user_subject_campus_access(db, current_user, subject)
 
         if topics_data is None:
             usage_id = questions.start_ai_usage(db, current_user, "syllabus_analysis")
             topics_data = detect_topics(syllabus_text, module_text, usage_tracker)
+
+        alignment_error = validate_material_alignment(
+            module_text,
+            topics_data.get("course_title"),
+            topics_data.get("course_code"),
+            topics_data.get("topics"),
+            {
+                "name": subject.name,
+                "code": subject.code,
+            } if subject else None,
+        )
+        if alignment_error:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "MATERIALS_MISMATCH",
+                    "message": f"Warning: Uploaded materials do not align. {alignment_error} Both files were cleared; upload the correct pair to continue.",
+                },
+            )
+
+        if subject is None:
+            subject = models.Subject(
+                name=subject_info["name"],
+                code=subject_info.get("code"),
+                description=subject_info.get("description"),
+                user_id=user_id,
+            )
+            db.add(subject)
+            db.flush()
+        assert_user_subject_campus_access(db, current_user, subject)
 
         if usage_id is not None:
             usage_record = db.query(models.AIUsage).filter(models.AIUsage.id == usage_id).first()
@@ -2937,7 +3045,6 @@ class CampusAdminCreateRequest(BaseModel):
     password: str = Field(..., min_length=8, max_length=128)
     campus_id: int = Field(..., ge=1)
 
-
 class DepartmentAdminCreateRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=255)
     email: str = Field(..., min_length=5, max_length=255)
@@ -2951,6 +3058,25 @@ class DepartmentAdminUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=255)
     email: str | None = Field(default=None, min_length=5, max_length=255)
 
+class DepartmentDeanCreateRequest(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=100)
+    email: str = Field(..., min_length=5, max_length=255)
+
+    @field_validator("full_name")
+    @classmethod
+    def validate_full_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not SAFE_NAME_REGEX.fullmatch(cleaned):
+            raise ValueError("Please provide a valid full name.")
+        return cleaned
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = normalize_email(value)
+        if not EMAIL_REGEX.fullmatch(normalized):
+            raise ValueError("Please provide a valid email address.")
+        return normalized
 
 class CampusAdminUpdateRequest(BaseModel):
     campus_id: int = Field(..., ge=1)
@@ -3199,6 +3325,11 @@ def get_academic_hierarchy(db: Session = Depends(get_db), admin: models.User = D
     for department in departments:
         department_faculty = [member for member in faculty if member.department and member.department.strip().lower() == department.name.strip().lower() or member.program_id in {program["id"] for program in programs_by_department[department.id]}]
         dean = next((member for member in department_faculty if member.id == department.dean_id), None)
+        if department.dean_id and not dean:
+            dean = db.query(models.User).filter(
+                models.User.id == department.dean_id,
+                models.User.archived.is_(False),
+            ).first()
         dean_name = (department.dean_name or "").strip()
         chair_name = (department.chair_name or "").strip()
         departments_by_campus[department.campus_id].append({
@@ -3208,7 +3339,7 @@ def get_academic_hierarchy(db: Session = Depends(get_db), admin: models.User = D
             "dean_id": department.dean_id,
             "dean_name": dean_name or (dean.name if dean else ""),
             "chair_name": chair_name,
-            "dean": {"id": dean.id, "name": dean.name or dean.email, "email": dean.email} if dean else ({"id": None, "name": dean_name, "email": None} if dean_name else None),
+            "dean": {"id": dean.id, "name": dean.name or dean.email, "email": dean.email, "role": dean.role} if dean else ({"id": None, "name": dean_name, "email": None, "role": None} if dean_name else None),
             "programs": programs_by_department[department.id],
             "faculty": [
                 {
@@ -3397,6 +3528,158 @@ def get_super_admin_overview(db: Session = Depends(get_db), _admin: models.User 
     }
 
 
+@app.get("/api/admin/campus-overview")
+def get_admin_campus_overview(
+    department_id: int | None = None,
+    db: Session = Depends(get_db),
+    _admin: models.User = Depends(require_campus_admin),
+):
+    campus_id = visible_campus_id(_admin)
+    if campus_id is None:
+        raise HTTPException(status_code=403, detail="Campus-scoped administrator access required")
+    campus = db.query(models.Campus).filter(models.Campus.id == campus_id).first()
+    if not campus:
+        raise HTTPException(status_code=404, detail="Assigned campus was not found")
+
+    department_query = db.query(models.Department.id).filter(models.Department.campus_id == campus_id)
+    if department_id is not None:
+        selected_department = department_query.filter(models.Department.id == department_id).first()
+        if not selected_department:
+            raise HTTPException(status_code=404, detail="Department was not found in your campus")
+        department_query = department_query.filter(models.Department.id == department_id)
+    department_ids = department_query.subquery()
+    program_ids = db.query(models.Program.id).filter(
+        models.Program.department_id.in_(department_ids)
+    ).subquery()
+    selected_department_names = db.query(func.lower(models.Department.name)).filter(
+        models.Department.id.in_(department_ids)
+    )
+    subject_ids = db.query(models.Subject.id).filter(
+        or_(
+            models.Subject.department_id.in_(department_ids),
+            models.Subject.program_id.in_(program_ids),
+        )
+    ).subquery()
+    campus_users_query = db.query(models.User.id).outerjoin(
+        models.Program, models.Program.id == models.User.program_id
+    ).outerjoin(
+        models.Department, models.Department.id == models.Program.department_id
+    ).filter(or_(
+        models.User.campus_id == campus_id,
+        and_(
+            models.User.campus_id.is_(None),
+            or_(
+                models.Department.campus_id == campus_id,
+                func.lower(models.User.department).in_(
+                    db.query(func.lower(models.Department.name)).filter(
+                        models.Department.campus_id == campus_id
+                    )
+                ),
+            ),
+        ),
+    ))
+    if department_id is not None:
+        campus_users_query = campus_users_query.filter(or_(
+            models.User.program_id.in_(program_ids),
+            func.lower(models.User.department).in_(selected_department_names),
+        ))
+    campus_users = campus_users_query.subquery()
+    question_attribution = or_(
+        models.GeneratedQuestion.user_id.in_(campus_users),
+        and_(
+            models.GeneratedQuestion.user_id.is_(None),
+            models.UploadedFile.user_id.in_(campus_users),
+        ),
+        and_(
+            models.GeneratedQuestion.user_id.is_(None),
+            models.UploadedFile.user_id.is_(None),
+            or_(
+                models.GeneratedQuestion.subject_id.in_(subject_ids),
+                models.Subject.user_id.in_(campus_users),
+            ),
+        ),
+    )
+    if department_id is not None:
+        question_attribution = or_(
+            question_attribution,
+            models.GeneratedQuestion.subject_id.in_(subject_ids),
+            models.UploadedFile.subject_id.in_(subject_ids),
+        )
+    question_ids = {
+        row[0]
+        for row in db.query(models.GeneratedQuestion.id).outerjoin(
+            models.TableOfSpecification, models.TableOfSpecification.id == models.GeneratedQuestion.tos_id
+        ).outerjoin(
+            models.UploadedFile, models.UploadedFile.id == models.TableOfSpecification.upload_id
+        ).outerjoin(
+            models.Subject, models.Subject.id == models.GeneratedQuestion.subject_id
+        ).filter(
+            models.GeneratedQuestion.archived.is_(False),
+            question_attribution,
+        ).distinct().all()
+    }
+    active_questions = db.query(models.GeneratedQuestion).filter(
+        models.GeneratedQuestion.id.in_(question_ids),
+        models.GeneratedQuestion.archived.is_(False),
+    )
+    bloom_distribution = {
+        level or "Unclassified": count
+        for level, count in active_questions.with_entities(
+            models.GeneratedQuestion.bloom_level,
+            func.count(models.GeneratedQuestion.id),
+        ).group_by(models.GeneratedQuestion.bloom_level).all()
+    }
+    question_type_distribution = {
+        question_type or "Unclassified": count
+        for question_type, count in active_questions.with_entities(
+            models.GeneratedQuestion.question_type,
+            func.count(models.GeneratedQuestion.id),
+        ).group_by(models.GeneratedQuestion.question_type).all()
+    }
+    campus_stats = {
+        "id": campus.id,
+        "name": campus.name,
+        "code": campus.code,
+        "is_active": campus.is_active,
+        "departments": db.query(models.Department.id).filter(
+            models.Department.id.in_(department_ids)
+        ).count(),
+        "programs": db.query(models.Program.id).filter(
+            models.Program.department_id.in_(department_ids)
+        ).count(),
+        "subjects": db.query(models.Subject.id).filter(
+            models.Subject.id.in_(subject_ids),
+            models.Subject.archived.is_(False),
+        ).count(),
+        "users": db.query(models.User.id).filter(
+            models.User.id.in_(campus_users),
+            models.User.archived.is_(False),
+        ).count(),
+        "faculty": db.query(models.User.id).filter(
+            models.User.id.in_(campus_users),
+            models.User.role.ilike("faculty"),
+            models.User.archived.is_(False),
+        ).count(),
+        "questions": len(question_ids),
+        "bloom_distribution": bloom_distribution,
+    }
+    return {
+        "totals": {
+            "campuses": 1,
+            "active_campuses": int(bool(campus.is_active)),
+            "departments": campus_stats["departments"],
+            "programs": campus_stats["programs"],
+            "subjects": campus_stats["subjects"],
+            "users": campus_stats["users"],
+            "faculty": campus_stats["faculty"],
+            "questions": campus_stats["questions"],
+        },
+        "bloom_distribution": bloom_distribution,
+        "question_type_distribution": question_type_distribution,
+        "campuses": [campus_stats],
+    }
+
+
 @app.get("/api/super-admin/ai-usage")
 def get_super_admin_ai_usage(
     campus_id: int | None = None,
@@ -3414,16 +3697,25 @@ def get_super_admin_ai_usage(
         raise HTTPException(status_code=422, detail="Unsupported AI usage status filter.")
 
     filters = []
+    available_model_filters = []
     if campus_id is not None:
-        filters.append(models.AIUsage.campus_id == campus_id)
+        campus_filter = models.AIUsage.campus_id == campus_id
+        filters.append(campus_filter)
+        available_model_filters.append(campus_filter)
     if date_from is not None:
-        filters.append(models.AIUsage.generated_at >= datetime.combine(date_from, datetime.min.time()))
+        start_filter = models.AIUsage.generated_at >= datetime.combine(date_from, datetime.min.time())
+        filters.append(start_filter)
+        available_model_filters.append(start_filter)
     if date_to is not None:
-        filters.append(models.AIUsage.generated_at < datetime.combine(date_to + timedelta(days=1), datetime.min.time()))
+        end_filter = models.AIUsage.generated_at < datetime.combine(date_to + timedelta(days=1), datetime.min.time())
+        filters.append(end_filter)
+        available_model_filters.append(end_filter)
     if model_name:
         filters.append(models.AIUsage.gemini_model == model_name)
     if request_status:
-        filters.append(models.AIUsage.status == request_status)
+        status_filter = models.AIUsage.status == request_status
+        filters.append(status_filter)
+        available_model_filters.append(status_filter)
 
     usage = db.query(models.AIUsage).filter(*filters)
     generated_questions = int(
@@ -3560,10 +3852,37 @@ def get_super_admin_ai_usage(
         "available_models": [
             row[0]
             for row in db.query(models.AIUsage.gemini_model).filter(
-                models.AIUsage.gemini_model.is_not(None)
+                models.AIUsage.gemini_model.is_not(None),
+                *available_model_filters,
             ).distinct().order_by(models.AIUsage.gemini_model).all()
         ],
     }
+
+
+@app.get("/api/admin/ai-usage")
+def get_admin_ai_usage(
+    campus_id: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    model_name: str | None = None,
+    request_status: str | None = None,
+    db: Session = Depends(get_db),
+    _admin: models.User = Depends(require_campus_admin),
+):
+    assigned_campus_id = visible_campus_id(_admin)
+    if assigned_campus_id is None:
+        raise HTTPException(status_code=403, detail="Campus-scoped administrator access required")
+    if campus_id is not None and campus_id != assigned_campus_id:
+        raise HTTPException(status_code=403, detail="You do not have access to this campus")
+    return get_super_admin_ai_usage(
+        campus_id=assigned_campus_id,
+        date_from=date_from,
+        date_to=date_to,
+        model_name=model_name,
+        request_status=request_status,
+        db=db,
+        _admin=_admin,
+    )
 
 
 @app.get("/api/super-admin/campuses")
@@ -4169,6 +4488,87 @@ def assign_department_dean(department_id: int, payload: LeadershipAssignmentRequ
     db.commit()
     log_activity(db, "Department Dean Updated", f"Admin {admin.id} updated dean for department '{department.name}'.", "academic", user_id=admin.id)
     return {"department_id": department.id, "dean_id": department.dean_id, "dean_name": department.dean_name}
+
+@app.post("/api/departments/{department_id}/dean-account", status_code=201)
+def create_department_dean_account(
+    department_id: int,
+    payload: DepartmentDeanCreateRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_admin),
+):
+    department = db.query(models.Department).filter(models.Department.id == department_id).first()
+    if not department:
+        raise HTTPException(status_code=404, detail="Department not found.")
+    assert_campus_access(admin, department.campus_id)
+    if not RESEND_API_KEY and (not SENDER_EMAIL or not SENDER_PASSWORD):
+        raise HTTPException(
+            status_code=503,
+            detail="Email delivery is not configured. Configure Resend or SMTP before creating a dean account.",
+        )
+    if department.dean_id:
+        raise HTTPException(
+            status_code=409,
+            detail="This department already has a dean account or faculty member assigned. Clear the current assignment before creating another dean account.",
+        )
+
+    campus = db.query(models.Campus).filter(
+        models.Campus.id == department.campus_id,
+        models.Campus.is_active.is_(True),
+    ).first()
+    if not campus:
+        raise HTTPException(status_code=404, detail="Active campus not found.")
+
+    normalized_email = normalize_email(payload.email)
+    if db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first():
+        raise HTTPException(status_code=409, detail="An account with this email already exists.")
+
+    temporary_password = generate_temporary_password()
+    while validate_password_strength(temporary_password):
+        temporary_password = generate_temporary_password()
+
+    user = models.User(
+        email=normalized_email,
+        password=hash_password(temporary_password),
+        role="department_dean",
+        archived=False,
+        campus_id=campus.id,
+        name=payload.full_name,
+        department=department.name,
+    )
+    db.add(user)
+    db.flush()
+    department.dean_id = user.id
+    department.dean_name = user.name
+    db.commit()
+    db.refresh(user)
+    log_activity(
+        db,
+        "Department Dean Account Created",
+        f"Admin {admin.id} created a Department Dean account for department '{department.name}'.",
+        "security",
+        user_id=admin.id,
+        target_user_id=user.id,
+    )
+    background_tasks.add_task(
+        send_department_dean_credentials_email,
+        normalized_email,
+        user.name,
+        temporary_password,
+        department.name,
+        campus.name,
+    )
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": user.role,
+        "department_id": department.id,
+        "department": department.name,
+        "campus_id": campus.id,
+        "campus": campus.name,
+        "email_status": "queued",
+    }
 
 @app.put("/api/departments/{department_id}/chair")
 def assign_department_chair(department_id: int, payload: LeadershipAssignmentRequest, db: Session = Depends(get_db), admin: models.User = Depends(require_academic_admin)):

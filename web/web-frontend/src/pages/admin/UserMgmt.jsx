@@ -75,7 +75,7 @@ export const UserMgmtContent = () => {
       const isManagedUser = (user) => {
         if (!user || typeof user.role !== "string") return true;
         const role = user.role.toLowerCase();
-        return role === "faculty" || role === "student";
+        return role === "faculty" || role === "student" || role === "department_dean";
       };
       const uniqueUsers = (users) => Array.from(
         new Map(
@@ -586,7 +586,7 @@ export const UserMgmtContent = () => {
               const displayStatus = user.status || (user.is_active === false ? "Inactive" : "Active");
               return (
                 <tr key={user.id || user.email} className="transition hover:bg-gray-50">
-                  <td className="px-3 py-3"><div className="flex min-w-0 items-center gap-2.5"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-700 text-xs font-bold text-white">{displayInitials}</div><div className="min-w-0"><p className="break-words font-semibold text-gray-900">{displayName}</p><p className="break-all text-xs text-gray-500">{user.email}</p></div></div></td>
+                  <td className="px-3 py-3"><div className="flex min-w-0 items-center gap-2.5"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-700 text-xs font-bold text-white">{displayInitials}</div><div className="min-w-0"><p className="break-words font-semibold text-gray-900">{displayName}</p><p className="break-all text-xs text-gray-500">{user.email}</p>{user.role === "department_dean" && <span className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Department Dean</span>}</div></div></td>
                   <td className="break-words px-3 py-3 text-gray-700">{user.department || "N/A"}</td>
                   <td className="break-words px-3 py-3 text-gray-700">{user.program || "N/A"}</td>
                   <td className="whitespace-nowrap px-3 py-3 text-xs text-gray-500">{formatJoinedDate(user.joined || user.created_at)}</td>

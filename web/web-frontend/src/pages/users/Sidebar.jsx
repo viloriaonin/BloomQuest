@@ -4,9 +4,7 @@ import { API_URL } from "../../config/api";
 import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
 import {
   BookOpen,
-  BarChart3,
   FileClock,
-  FolderArchive,
   Download,
   LayoutDashboard,
   LogOut,
@@ -21,10 +19,8 @@ const icons = {
   input: Sparkles,
   history: FileClock,
   bank: BookOpen,
-  analytics: BarChart3,
   settings: Settings,
   favorites: Download,
-  recycle: FolderArchive,
   logout: LogOut,
   collapse: PanelLeftClose,
   expand: PanelLeftOpen,
@@ -40,10 +36,8 @@ const Sidebar = ({ collapsed, mobileOpen, onToggleCollapsed, onNavigate }) => {
     : [
         { label: "Dashboard", path: "/dashboard", icon: icons.dashboard },
         { label: "New Analysis", path: "/input", icon: icons.input },
-        { label: "Assessment Analytics", path: "/analytics", icon: icons.analytics },
         { label: "Question Bank", path: "/question-bank", icon: icons.bank },
         { label: "Downloads", path: "/favorites", icon: icons.favorites },
-        { label: "Recycle Bin", path: "/recycle-bin", icon: icons.recycle },
         { label: "History", path: "/history", icon: icons.history },
         { label: "Settings", path: "/settings", icon: icons.settings },
       ];

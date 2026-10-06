@@ -1006,6 +1006,14 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
         setHierarchy(hierarchyData);
         setAllSubjects(allSubjectsData);
         setSubjects(allSubjectsData);
+        if (!isSuperAdmin) {
+          setSelection({
+            campusId: hierarchyData.campuses[0]?.id ?? null,
+            departmentId: null,
+            programId: null,
+            subjectId: null,
+          });
+        }
       } catch (err) {
         setError(err.message);
       } finally {
@@ -1013,7 +1021,7 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
       }
     };
     loadAcademicData();
-  }, []);
+  }, [isSuperAdmin]);
 
   useEffect(() => {
     const loadProgramSubjects = async () => {
@@ -1072,7 +1080,7 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
     setSelection(nextSelection);
   };
   const backTo = (level) => {
-    if (level === "campus") choose({ campusId: null, departmentId: null, programId: null, subjectId: null });
+    if (level === "campus") choose({ campusId: isSuperAdmin ? null : hierarchy.campuses[0]?.id ?? null, departmentId: null, programId: null, subjectId: null });
     if (level === "department") choose({ campusId: selection.campusId, departmentId: null, programId: null, subjectId: null });
     if (level === "program") choose({ campusId: selection.campusId, departmentId: selection.departmentId, programId: null, subjectId: null });
     if (level === "subject") choose({ ...selection, subjectId: null });
@@ -1106,20 +1114,20 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
       <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 shadow-sm">
         <nav className="mb-3 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500" aria-label="Question Bank navigation">
           <button type="button" onClick={() => backTo("campus")} className="font-semibold hover:text-[#B4454A]">Question Bank</button>
-          {selectedCampus && <><ChevronRight size={13} /><button type="button" onClick={() => backTo("department")} className="hover:text-[#B4454A]">{selectedCampus.name}</button></>}
+          {selectedCampus && isSuperAdmin && <><ChevronRight size={13} /><button type="button" onClick={() => backTo("department")} className="hover:text-[#B4454A]">{selectedCampus.name}</button></>}
           {selectedDepartment && <><ChevronRight size={13} /><button type="button" onClick={() => backTo("program")} className="hover:text-[#B4454A]">{selectedDepartment.name}</button></>}
           {selectedProgram && <><ChevronRight size={13} /><button type="button" onClick={() => backTo("subject")} className="hover:text-[#B4454A]">{selectedProgram.name}</button></>}
           {selectedSubject && <><ChevronRight size={13} /><span className="font-semibold text-slate-700">{selectedSubject.name}</span></>}
         </nav>
         <div className="flex flex-col justify-between gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-end">
-          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#B4454A]">Faculty collections</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{selectedSubject ? selectedSubject.name : selectedProgram ? selectedProgram.name : selectedDepartment ? selectedDepartment.name : selectedCampus ? selectedCampus.name : "Question Bank"}</h2><p className="mt-1 text-sm text-slate-500">Browse questions through the academic structure.</p></div>
+          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#B4454A]">Faculty collections</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{selectedSubject ? selectedSubject.name : selectedProgram ? selectedProgram.name : selectedDepartment ? selectedDepartment.name : !isSuperAdmin && selectedCampus ? "Choose a department" : selectedCampus ? selectedCampus.name : "Question Bank"}</h2><p className="mt-1 text-sm text-slate-500">Browse questions through the academic structure.</p></div>
         </div>
-        {(!isSuperAdmin || selection.campusId) && <button type="button" onClick={goBack} className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-[#B4454A] px-4 py-2 text-sm font-semibold text-[#B4454A] transition hover:bg-[#B4454A] hover:text-white"><ArrowLeft size={15} /> Back</button>}
+        {(selection.departmentId || selection.programId || selection.subjectId || (isSuperAdmin && selection.campusId)) && <button type="button" onClick={goBack} className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-[#B4454A] px-4 py-2 text-sm font-semibold text-[#B4454A] transition hover:bg-[#B4454A] hover:text-white"><ArrowLeft size={15} /> Back</button>}
       </section>
 
       {selectedSubject && <div className="flex justify-end"><label className="text-xs font-semibold text-slate-600">Bloom level <select value={bloomLevel} onChange={(event) => setBloomLevel(event.target.value)} className="bq-field ml-2 py-2 text-sm"><option>All levels</option>{BLOOMS_LEVELS.map((level) => <option key={level.name}>{level.name}</option>)}</select></label></div>}
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-      {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">Loading academic structure...</div> : !selectedCampus ? (
+      {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">Loading academic structure...</div> : !selectedCampus ? isSuperAdmin ? (
         <section>
           <div className="mb-3 flex items-end justify-between">
             <h3 className="text-lg font-semibold text-slate-900">Choose a campus</h3>
@@ -1159,6 +1167,10 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
             <div className="space-y-3">{hierarchy.campuses.map((campus) => <ListItem key={campus.id} icon={Shield} title={campus.name} code={campus.code} detail={`${campus.departments.length} department${campus.departments.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: campus.id, departmentId: null, programId: null, subjectId: null })} />)}</div>
           )}
         </section>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
+          No campus is assigned to this account. Contact your administrator.
+        </div>
       ) : !selectedDepartment ? (
         <section><div className="mb-3"><h3 className="text-lg font-semibold text-slate-900">Choose a department</h3></div><div className="space-y-3">{selectedCampus.departments.map((department) => <ListItem key={department.id} icon={FlaskConical} title={department.name} code={department.code} detail={`${department.programs.length} program${department.programs.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: selectedCampus.id, departmentId: department.id, programId: null, subjectId: null })} />)}</div></section>
       ) : !selectedProgram ? (

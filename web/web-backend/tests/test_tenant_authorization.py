@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 import models
 from database import Base
 from database import get_db
-from main import app, assert_question_access, validate_account_request_scope, create_department, create_subject_manually, update_user_department, get_admin_user_overview, DepartmentCreateRequest, UserDepartmentUpdateRequest, SubjectCreateRequest, get_subjects, get_faculty_program_subjects, get_questions, get_super_admin_overview, get_super_admin_ai_usage, get_question_sets, export_question_bank_tos, upload_files
+from main import app, assert_question_access, validate_account_request_scope, create_department, create_subject_manually, update_user_department, get_admin_user_overview, DepartmentCreateRequest, UserDepartmentUpdateRequest, SubjectCreateRequest, get_subjects, get_faculty_program_subjects, get_questions, get_super_admin_overview, get_super_admin_ai_usage, get_admin_campus_overview, get_admin_ai_usage, get_question_sets, export_question_bank_tos, upload_files
 from main import get_question_versions
 from routers.questions import _assert_upload_access, _resolve_department_leadership, export_institutional_tos, upload_and_analyze_syllabus
 from routers.activity import get_activity_logs
@@ -837,10 +837,10 @@ def test_faculty_upload_uses_only_the_selected_program_subject(db_session, monke
     db_session.add_all([faculty, assigned_subject, other_subject])
     db_session.commit()
 
-    monkeypatch.setattr(main, "extract_text", lambda _contents, _filename: "Mocked extracted material.")
+    monkeypatch.setattr(main, "extract_text", lambda _contents, _filename: "Mock Topic learning material.")
     monkeypatch.setattr(main, "detect_topics", lambda *_args, **_kwargs: {
-        "course_title": "Syllabus Course",
-        "course_code": "SYL101",
+        "course_title": "Assigned Programming",
+        "course_code": "UP101",
         "topics": [{"name": "Mock Topic", "ilo": "ILO 1", "weight": 1.0}],
     })
 
@@ -859,6 +859,22 @@ def test_faculty_upload_uses_only_the_selected_program_subject(db_session, monke
         upload_for_subject(other_subject.id)
     assert denied.value.status_code == 404
 
+    monkeypatch.setattr(main, "detect_topics", lambda *_args, **_kwargs: {
+        "course_title": "Unrelated Course",
+        "course_code": "OTHER101",
+        "topics": [{"name": "Mock Topic", "ilo": "ILO 1", "weight": 1.0}],
+    })
+    with pytest.raises(HTTPException) as mismatched_cis:
+        upload_for_subject(assigned_subject.id)
+    assert mismatched_cis.value.status_code == 422
+    assert mismatched_cis.value.detail["code"] == "MATERIALS_MISMATCH"
+    assert db_session.query(models.UploadedFile).count() == 0
+
+    monkeypatch.setattr(main, "detect_topics", lambda *_args, **_kwargs: {
+        "course_title": "Assigned Programming",
+        "course_code": "UP101",
+        "topics": [{"name": "Mock Topic", "ilo": "ILO 1", "weight": 1.0}],
+    })
     result = upload_for_subject(assigned_subject.id)
     assert result["subject"]["code"] == "UP101"
     upload_record = db_session.query(models.UploadedFile).filter_by(id=result["upload_id"]).one()
@@ -901,10 +917,10 @@ def test_active_question_upload_uses_selected_faculty_program_subject(db_session
     )
     db_session.add_all([faculty, assigned_subject, other_subject])
     db_session.commit()
-    monkeypatch.setattr(questions_router, "extract_text", lambda *_args: "Module text.")
+    monkeypatch.setattr(questions_router, "extract_text", lambda *_args: "Test topic module material.")
     monkeypatch.setattr(questions_router, "parse_syllabus_text_with_ai", lambda *_args, **_kwargs: (
-        "Syllabus title",
-        "SYL101",
+        "Selected Course",
+        "ACTIVE101",
         [{"name": "Test topic", "weight": 1.0, "ilo": "ILO 1", "ilo_description": "Test outcome."}],
     ))
 
@@ -925,6 +941,14 @@ def test_active_question_upload_uses_selected_faculty_program_subject(db_session
         upload(other_subject.id)
     assert foreign_subject.value.status_code == 404
 
+    monkeypatch.setattr(questions_router, "extract_text", lambda *_args: "Unrelated biology learning material.")
+    with pytest.raises(HTTPException) as mismatched_material:
+        upload(assigned_subject.id)
+    assert mismatched_material.value.status_code == 422
+    assert mismatched_material.value.detail["code"] == "MATERIALS_MISMATCH"
+    assert db_session.query(models.UploadedFile).count() == 0
+
+    monkeypatch.setattr(questions_router, "extract_text", lambda *_args: "Test topic module material.")
     result = upload(assigned_subject.id)
     assert result["subject"]["name"] == assigned_subject.name
     assert result["subject"]["code"] == assigned_subject.code
@@ -981,6 +1005,77 @@ def test_super_admin_overview_counts_only_campus_attributed_questions(db_session
     assert campuses["Alpha Campus"]["bloom_distribution"] == {"Remember": 5, "Analyze": 5}
     assert campuses["Beta Campus"]["bloom_distribution"] == {"Remember": 5, "Analyze": 5}
     assert overview["bloom_distribution"] == {"Remember": 10, "Analyze": 10}
+
+
+def test_campus_admin_overview_is_limited_to_assigned_campus(db_session):
+    alpha = models.Campus(name="Campus Overview Alpha", code="COV-ALPHA")
+    beta = models.Campus(name="Campus Overview Beta", code="COV-BETA")
+    db_session.add_all([alpha, beta])
+    db_session.flush()
+    alpha_department = models.Department(name="Alpha Overview Department", campus_id=alpha.id)
+    alpha_other_department = models.Department(name="Alpha Other Department", campus_id=alpha.id)
+    beta_department = models.Department(name="Beta Overview Department", campus_id=beta.id)
+    db_session.add_all([alpha_department, alpha_other_department, beta_department])
+    db_session.flush()
+    alpha_program = models.Program(name="Alpha Overview Program", department_id=alpha_department.id)
+    alpha_other_program = models.Program(name="Alpha Other Program", department_id=alpha_other_department.id)
+    beta_program = models.Program(name="Beta Overview Program", department_id=beta_department.id)
+    db_session.add_all([alpha_program, alpha_other_program, beta_program])
+    db_session.flush()
+    alpha_user = models.User(email="campus_overview_alpha@example.com", password="test-password", role="faculty", campus_id=alpha.id, program_id=alpha_program.id)
+    alpha_other_user = models.User(email="campus_overview_other@example.com", password="test-password", role="faculty", campus_id=alpha.id, program_id=alpha_other_program.id)
+    alpha_unassigned_user = models.User(email="campus_overview_unassigned@example.com", password="test-password", role="faculty", campus_id=alpha.id)
+    beta_user = models.User(email="campus_overview_beta@example.com", password="test-password", role="faculty", campus_id=beta.id, program_id=beta_program.id)
+    db_session.add_all([alpha_user, alpha_other_user, alpha_unassigned_user, beta_user])
+    db_session.flush()
+    alpha_subject = models.Subject(name="Alpha Overview Subject", department_id=alpha_department.id)
+    alpha_other_subject = models.Subject(name="Alpha Other Subject", department_id=alpha_other_department.id)
+    beta_subject = models.Subject(name="Beta Overview Subject", department_id=beta_department.id)
+    db_session.add_all([alpha_subject, alpha_other_subject, beta_subject])
+    db_session.flush()
+    db_session.add_all([
+        models.GeneratedQuestion(subject_id=alpha_subject.id, user_id=alpha_user.id, bloom_level="Remember", question="Alpha question", question_type="Multiple Choice"),
+        models.GeneratedQuestion(subject_id=alpha_subject.id, user_id=alpha_unassigned_user.id, bloom_level="Remember", question="Alpha subject question", question_type="Multiple Choice"),
+        models.GeneratedQuestion(subject_id=alpha_other_subject.id, user_id=alpha_other_user.id, bloom_level="Analyze", question="Alpha other question", question_type="Essay"),
+        models.GeneratedQuestion(subject_id=beta_subject.id, user_id=beta_user.id, bloom_level="Analyze", question="Beta question", question_type="Essay"),
+    ])
+    db_session.commit()
+
+    overview = get_admin_campus_overview(
+        db=db_session,
+        _admin=SimpleNamespace(role="campus_admin", campus_id=alpha.id),
+    )
+
+    assert overview["totals"]["campuses"] == 1
+    assert overview["totals"]["departments"] == 2
+    assert overview["totals"]["programs"] == 2
+    assert overview["totals"]["subjects"] == 2
+    assert overview["totals"]["users"] == 3
+    assert overview["totals"]["faculty"] == 3
+    assert overview["totals"]["questions"] == 3
+    assert overview["campuses"][0]["name"] == "Campus Overview Alpha"
+    assert overview["bloom_distribution"] == {"Remember": 2, "Analyze": 1}
+    assert overview["question_type_distribution"] == {"Multiple Choice": 2, "Essay": 1}
+
+    filtered = get_admin_campus_overview(
+        db=db_session,
+        department_id=alpha_department.id,
+        _admin=SimpleNamespace(role="campus_admin", campus_id=alpha.id),
+    )
+    assert filtered["totals"]["departments"] == 1
+    assert filtered["totals"]["programs"] == 1
+    assert filtered["totals"]["subjects"] == 1
+    assert filtered["totals"]["faculty"] == 1
+    assert filtered["totals"]["questions"] == 2
+    assert filtered["bloom_distribution"] == {"Remember": 2}
+    assert filtered["question_type_distribution"] == {"Multiple Choice": 2}
+    with pytest.raises(HTTPException) as error:
+        get_admin_campus_overview(
+            db=db_session,
+            department_id=beta_department.id,
+            _admin=SimpleNamespace(role="campus_admin", campus_id=alpha.id),
+        )
+    assert error.value.status_code == 404
 
 
 def test_super_admin_ai_usage_aggregates_and_filters_by_campus_date_and_status(db_session):
@@ -1124,6 +1219,57 @@ def test_campus_admin_cannot_access_foreign_campus_ai_usage_api(db_session):
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(previous_overrides)
+
+
+def test_campus_admin_ai_usage_is_forced_to_assigned_campus(db_session):
+    alpha = models.Campus(name="Scoped Usage Alpha", code="SCOPED-ALPHA")
+    beta = models.Campus(name="Scoped Usage Beta", code="SCOPED-BETA")
+    db_session.add_all([alpha, beta])
+    db_session.flush()
+    alpha_user = models.User(email="scoped_usage_alpha@example.com", password="test-password", role="faculty", campus_id=alpha.id)
+    beta_user = models.User(email="scoped_usage_beta@example.com", password="test-password", role="faculty", campus_id=beta.id)
+    db_session.add_all([alpha_user, beta_user])
+    db_session.flush()
+    db_session.add_all([
+        models.AIUsage(
+            user_id=alpha_user.id,
+            campus_id=alpha.id,
+            generated_at=datetime(2026, 9, 8, 12),
+            request_type="question_generation",
+            requested_question_count=3,
+            generated_question_count=2,
+            gemini_model="alpha-model",
+            gemini_api_call_count=1,
+            status="success",
+        ),
+        models.AIUsage(
+            user_id=beta_user.id,
+            campus_id=beta.id,
+            generated_at=datetime(2026, 9, 8, 12),
+            request_type="question_generation",
+            requested_question_count=10,
+            generated_question_count=10,
+            gemini_model="beta-model",
+            gemini_api_call_count=4,
+            status="success",
+        ),
+    ])
+    db_session.commit()
+    campus_admin = SimpleNamespace(role="campus_admin", campus_id=alpha.id)
+
+    usage = get_admin_ai_usage(db=db_session, _admin=campus_admin)
+    assert usage["totals"]["total_ai_requests"] == 1
+    assert usage["totals"]["total_questions_generated"] == 2
+    assert usage["requests_by_campus"] == [{
+        "campus_id": alpha.id,
+        "campus": "Scoped Usage Alpha",
+        "requests": 1,
+        "questions": 2,
+    }]
+    assert usage["available_models"] == ["alpha-model"]
+    with pytest.raises(HTTPException) as error:
+        get_admin_ai_usage(db=db_session, campus_id=beta.id, _admin=campus_admin)
+    assert error.value.status_code == 403
 
 
 def test_tos_leadership_uses_faculty_program_department_before_subject_department(db_session):

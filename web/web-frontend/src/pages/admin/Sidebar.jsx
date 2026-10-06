@@ -6,7 +6,7 @@ import ReportsBtn from "./Reports";
 import QuestionBankBtn from "./QuestionBank";
 import LogoutBtn from "./Logout";
 import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
-import { ClipboardList, FolderArchive, Settings, Sun, Moon, Users } from "lucide-react";
+import { ClipboardList, FolderArchive, Settings, Sun, Moon, Sparkles, Users } from "lucide-react";
 
 const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed, mobileOpen, onNavigate, departmentAdmin = false }) => {
   return (
@@ -71,6 +71,17 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed
             <ReportsBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
           </>
         )}
+        {!departmentAdmin && <button
+          type="button"
+          title={collapsed ? "AI Usage" : undefined}
+          aria-label={collapsed ? "AI Usage" : undefined}
+          onClick={() => setActiveTab("ai-usage")}
+          className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150"
+          style={activeTab === "ai-usage" ? { background: "var(--bq-accent)", color: "#ffffff" } : { color: "var(--bq-muted)", background: "transparent" }}
+        >
+          <Sparkles size={20} className={activeTab === "ai-usage" ? "text-white" : "text-[#C4485A]"} />
+          <span className="text-sm font-medium tracking-wide">AI Usage</span>
+        </button>}
         <button
           type="button"
           title={collapsed ? "Settings" : undefined}

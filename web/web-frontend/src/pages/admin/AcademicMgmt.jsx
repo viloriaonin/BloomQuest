@@ -90,12 +90,14 @@ const SummaryStat = ({ icon: Icon, label, value }) => (
   </div>
 );
 
-const DepartmentLeadershipSection = ({ department, faculty = [], onSave, readOnly = false }) => {
+const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreateAccount, readOnly = false }) => {
   const [form, setForm] = React.useState({
     dean_name: department?.dean_name || department?.dean?.name || "",
     dean_id: department?.dean_id || "",
   });
   const [saveState, setSaveState] = React.useState({ saving: false, saved: false });
+  const [accountForm, setAccountForm] = React.useState({ full_name: "", email: "" });
+  const [accountState, setAccountState] = React.useState({ saving: false, message: "", error: "" });
 
   React.useEffect(() => {
     setForm({
@@ -103,6 +105,8 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, readOnl
       dean_id: department?.dean_id || "",
     });
     setSaveState((prev) => ({ ...prev, saved: false }));
+    setAccountForm({ full_name: "", email: "" });
+    setAccountState({ saving: false, message: "", error: "" });
   }, [department?.id, department?.dean_id, department?.dean_name, department?.dean?.name]);
 
   const handleSubmit = async (event) => {
@@ -121,8 +125,21 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, readOnl
     }
   };
 
+  const handleCreateAccount = async (event) => {
+    event.preventDefault();
+    if (readOnly || !onCreateAccount) return;
+    setAccountState({ saving: true, message: "", error: "" });
+    try {
+      await onCreateAccount(accountForm);
+      setAccountForm({ full_name: "", email: "" });
+      setAccountState({ saving: false, message: "Account created. Login credentials are queued for email delivery.", error: "" });
+    } catch (error) {
+      setAccountState({ saving: false, message: "", error: error.message || "Could not create the dean account." });
+    }
+  };
+
   return (
-    <form onSubmit={handleSubmit} className="bq-panel mb-5 rounded-2xl border p-3 shadow-sm" style={{ background: "var(--admin-panel, #14161c)", borderColor: "var(--admin-border, #262a34)", color: "var(--admin-text, #ecedef)" }}>
+    <div className="bq-panel mb-5 rounded-2xl border p-3 shadow-sm" style={{ background: "var(--admin-panel, #14161c)", borderColor: "var(--admin-border, #262a34)", color: "var(--admin-text, #ecedef)" }}>
       <div className="mb-3 flex items-center justify-between gap-2">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--bq-accent)" }}>Leadership</p>
@@ -162,7 +179,7 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, readOnl
             value={form.dean_name}
             onChange={(event) => setForm((prev) => ({ ...prev, dean_name: event.target.value, dean_id: "" }))}
             placeholder="Enter dean name"
-            disabled={readOnly}
+            disabled={readOnly || department?.dean?.role === "department_dean"}
             className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
             style={{ borderColor: "var(--bq-border)" }}
           />
@@ -187,12 +204,14 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, readOnl
               ))}
             </select>
           )}
+          {department?.dean?.role === "department_dean" && (
+            <p className="mt-2 text-xs text-slate-600">Login account: {department.dean.email}</p>
+          )}
         </div>
-
       </div>
 
-      {!readOnly && onSave && (
-        <div className="mt-3 flex justify-end gap-2">
+      {!readOnly && onSave && department?.dean?.role !== "department_dean" && (
+        <form onSubmit={handleSubmit} className="mt-3 flex justify-end gap-2">
           <button type="button" onClick={() => {
             setForm({ dean_name: "", dean_id: "" });
             setSaveState({ saving: false, saved: false });
@@ -202,9 +221,37 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, readOnl
           <button type="submit" disabled={saveState.saving} className="rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-70" style={{ background: "var(--bq-accent-strong)", color: "#fff" }}>
             {saveState.saving ? "Saving..." : "Save"}
           </button>
-        </div>
+        </form>
       )}
-    </form>
+      {!readOnly && onCreateAccount && !department?.dean_id && (
+        <form onSubmit={handleCreateAccount} className="mt-4 border-t border-slate-200 pt-4">
+          <h4 className="text-sm font-semibold text-slate-800">Create dean login</h4>
+          <p className="mt-1 text-xs text-slate-500">A temporary password will be emailed to the dean’s address.</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="text-xs font-semibold text-slate-600">
+              Dean full name
+              <input required minLength={2} maxLength={100} value={accountForm.full_name} onChange={(event) => setAccountForm((current) => ({ ...current, full_name: event.target.value }))} className="bq-field mt-1 w-full px-3" placeholder="Enter full name" />
+            </label>
+            <label className="text-xs font-semibold text-slate-600">
+              Dean email
+              <input required type="email" maxLength={255} value={accountForm.email} onChange={(event) => setAccountForm((current) => ({ ...current, email: event.target.value }))} className="bq-field mt-1 w-full px-3" placeholder="name@institution.edu" />
+            </label>
+          </div>
+          {accountState.error && <p role="alert" className="mt-3 text-sm text-red-700">{accountState.error}</p>}
+          {accountState.message && <p role="status" className="mt-3 text-sm text-emerald-700">{accountState.message}</p>}
+          <div className="mt-3 flex justify-end">
+            <button type="submit" disabled={accountState.saving} className="rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-70" style={{ background: "var(--bq-accent-strong)", color: "#fff" }}>
+              {accountState.saving ? "Creating account..." : "Create account and email credentials"}
+            </button>
+          </div>
+        </form>
+      )}
+      {!readOnly && department?.dean_id && department?.dean?.role !== "department_dean" && (
+        <p className="mt-3 border-t border-slate-200 pt-3 text-xs text-amber-700">
+          Clear and save the current dean assignment before creating a separate dean login.
+        </p>
+      )}
+    </div>
   );
 };
 
@@ -657,6 +704,23 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
     }
   };
 
+  const createDepartmentDeanAccount = async ({ full_name, email }) => {
+    if (isSuperAdmin || !selectedDepartment?.id) return;
+    try {
+      const response = await fetch(`${ACADEMIC_API}/departments/${selectedDepartment.id}/dean-account`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ full_name, email }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || "Could not create the dean account.");
+      await loadData();
+      setError("");
+    } catch (err) {
+      setError(err.message || "Could not create the dean account.");
+      throw err;
+    }
+  };
   return (
     <div className="bq-academic-attached grid gap-6">
       {error && (
@@ -712,7 +776,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
         )}
 
         {!loading && selectedDepartment && !programId && (
-          <DepartmentLeadershipSection department={selectedDepartment} faculty={departmentFaculty} onSave={saveDepartmentLeadership} readOnly={isSuperAdmin} />
+          <DepartmentLeadershipSection department={selectedDepartment} faculty={departmentFaculty} onSave={saveDepartmentLeadership} onCreateAccount={createDepartmentDeanAccount} readOnly={isSuperAdmin} />
         )}
 
         {loading ? (

@@ -167,6 +167,22 @@ test("department list shows its dean and Add Department saves the Dean field", a
   });
 });
 
+test("campus admin can create a dean login from the department leadership section", async () => {
+  renderAt("/admin/academic/campus/1");
+  await screen.findByRole("heading", { name: "CICS" });
+  fireEvent.click(screen.getByRole("button", { name: "View Department" }));
+
+  fireEvent.change(await screen.findByLabelText("Dean full name"), { target: { value: "Dr. Alex Dean" } });
+  fireEvent.change(screen.getByLabelText("Dean email"), { target: { value: "alex.dean@example.edu" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create account and email credentials" }));
+
+  await waitFor(() => {
+    const request = global.fetch.mock.calls.find(([url, options]) => String(url).endsWith("/departments/2/dean-account") && options?.method === "POST");
+    expect(JSON.parse(request[1].body)).toEqual({ full_name: "Dr. Alex Dean", email: "alex.dean@example.edu" });
+  });
+  expect(await screen.findByRole("status")).toHaveTextContent("credentials are queued for email delivery");
+});
+
 test("program list shows its chair and Add Program saves the Program Chair field", async () => {
   renderAt("/admin/academic/campus/1/department/2");
 

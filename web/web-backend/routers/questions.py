@@ -39,6 +39,7 @@ from ai_service import (
 )
 from classifier import classify_question, classify_question_ml
 from file_extractor import extract_text
+from material_alignment import validate_material_alignment
 from routers.tos_utils import (
     compute_tos,
     generate_tos_from_excel_template,
@@ -894,6 +895,25 @@ async def upload_and_analyze_syllabus(
             raise HTTPException(
                 status_code=400,
                 detail="Unsupported syllabus file format. Please upload a .pdf, .docx, .xlsx, or .xls file."
+            )
+
+        alignment_error = validate_material_alignment(
+            module_text,
+            course_title,
+            course_code,
+            detected_topics,
+            {
+                "name": selected_subject.name,
+                "code": selected_subject.code,
+            } if selected_subject else None,
+        )
+        if alignment_error:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "MATERIALS_MISMATCH",
+                    "message": f"Warning: Uploaded materials do not align. {alignment_error} Both files were cleared; upload the correct pair to continue.",
+                },
             )
 
         detected_subject = {

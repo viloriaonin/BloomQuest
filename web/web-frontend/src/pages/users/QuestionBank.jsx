@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckSquare, ChevronRight, Download, FileText, Filter, FlaskConical, Heart, Info, Plus, Search, Shield, Sigma, Trash2, Sparkles, AlertCircle } from 'lucide-react';
+import { CheckSquare, ChevronRight, Download, FileText, Filter, FlaskConical, Heart, Info, Search, Shield, Sigma, Trash2, Sparkles, AlertCircle } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { usePopup } from '../../components/PopupProvider';
 import { API_URL } from '../../config/api';
@@ -395,10 +395,6 @@ const QuestionBank = () => {
   const [versionQuestion, setVersionQuestion] = useState(null);
   const [versions, setVersions] = useState([]);
   const [deletedSubject, setDeletedSubject] = useState(null);
-  const [addSubjectOpen, setAddSubjectOpen] = useState(false);
-  const [newSubjectName, setNewSubjectName] = useState('');
-  const [newSubjectCode, setNewSubjectCode] = useState('');
-  const [addingSubject, setAddingSubject] = useState(false);
   const [showSidebarInfo, setShowSidebarInfo] = useState(true);
   const [tosModalOpen, setTosModalOpen] = useState(false);
   const [testModalOpen, setTestModalOpen] = useState(false);
@@ -508,30 +504,6 @@ const QuestionBank = () => {
       setDeletedSubject(null);
     } catch (err) {
       setError(err.message);
-    }
-  };
-
-  const handleAddSubject = async (event) => {
-    event.preventDefault();
-    if (!newSubjectName.trim()) return;
-    setAddingSubject(true);
-    setError('');
-    try {
-      const res = await fetch(`${API_URL}/subjects`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newSubjectName.trim(), code: newSubjectCode.trim() || null, user_id: Number(localStorage.getItem('user_id')) || null }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.detail || 'Could not add subject');
-      setSubjects((current) => [...current, data]);
-      setNewSubjectName('');
-      setNewSubjectCode('');
-      setAddSubjectOpen(false);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setAddingSubject(false);
     }
   };
 
@@ -851,14 +823,6 @@ const QuestionBank = () => {
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#B4454A]">Choose a subject</p>
             <h2 className="mt-1 text-lg font-bold text-slate-900">Your question collections</h2>
           </div>
-          <button
-            type="button"
-            onClick={() => setAddSubjectOpen(true)}
-            className="flex items-center gap-2 rounded-lg bg-[#F0645A] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#d9564d]"
-          >
-            <Plus className="h-4 w-4" />
-            Add subject
-          </button>
         </div>
 
         {loadingSubjects ? (
@@ -917,20 +881,9 @@ const QuestionBank = () => {
                 </div>
               );
             })}
-
-            <button
-              type="button"
-              onClick={() => setAddSubjectOpen(true)}
-              className="flex min-h-[176px] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 text-slate-500 transition-colors hover:border-[#B4454A]/50 hover:bg-red-50/30 hover:text-[#B4454A]"
-            >
-              <Plus className="h-5 w-5" />
-              <span className="text-sm font-medium">Add subject</span>
-            </button>
           </div>
         )}
       </section>}
-
-      {addSubjectOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f172a]/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setAddSubjectOpen(false); }}><form onSubmit={handleAddSubject} className="bq-panel w-full max-w-md border-[#ead8d5] bg-[#fffdfc] p-6 shadow-[0_20px_50px_rgba(15,23,42,0.18)]"><h2 className="text-lg font-bold text-slate-900">Add Subject</h2><label className="mt-5 block text-sm font-semibold text-slate-700">Subject name<input autoFocus value={newSubjectName} onChange={(event) => setNewSubjectName(event.target.value)} placeholder="e.g. Software Engineering" className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 font-normal outline-none focus:border-[#B4454A] focus:ring-2 focus:ring-[#B4454A]/15" /></label><label className="mt-4 block text-sm font-semibold text-slate-700">Subject code <span className="font-normal text-slate-400">(optional)</span><input value={newSubjectCode} onChange={(event) => setNewSubjectCode(event.target.value)} placeholder="e.g. IT 332" className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 font-normal outline-none focus:border-[#B4454A] focus:ring-2 focus:ring-[#B4454A]/15" /></label><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setAddSubjectOpen(false)} className="bq-secondary-button">Cancel</button><button type="submit" disabled={!newSubjectName.trim() || addingSubject} className="bq-primary-button disabled:cursor-not-allowed disabled:bg-slate-300">{addingSubject ? 'Adding...' : 'Add Subject'}</button></div></form></div>}
 
       {deletedSubject && <div className="fixed bottom-5 right-5 z-40 flex items-center gap-4 rounded-lg bg-slate-900 px-4 py-3 text-sm text-white shadow-xl"><span>Subject removed from your Question Bank</span><button type="button" onClick={undoDeleteSubject} className="font-bold text-emerald-300 hover:text-emerald-200">Undo</button></div>}
 
