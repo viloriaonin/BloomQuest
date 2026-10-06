@@ -6,9 +6,9 @@ import ReportsBtn from "./Reports";
 import QuestionBankBtn from "./QuestionBank";
 import LogoutBtn from "./Logout";
 import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
-import { FolderArchive, Settings, Sun, Moon } from "lucide-react";
+import { ClipboardList, FolderArchive, Settings, Sun, Moon, Users } from "lucide-react";
 
-const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed, mobileOpen, onNavigate }) => {
+const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed, mobileOpen, onNavigate, departmentAdmin = false }) => {
   return (
     <aside
       className={`bq-admin-sidebar fixed inset-y-0 left-0 z-40 flex h-screen shrink-0 flex-col transition-all duration-300 md:static md:z-auto ${collapsed ? "is-collapsed w-20" : "w-56"} ${mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
@@ -27,21 +27,50 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed
           </div>
           <div>
             <h1 className="font-bold text-[1.05rem] tracking-wide leading-none" style={{ color: "#0F172A" }}>BloomQuest</h1>
-            <p className="text-xs mt-1" style={{ color: "#64748B" }}>Admin workspace</p>
+            <p className="text-xs mt-1" style={{ color: "#64748B" }}>{departmentAdmin ? "Department workspace" : "Admin workspace"}</p>
           </div>
         </div>
       </div>
 
       <div className="px-3 pt-4 pb-2">
-        <span className="px-2.5 text-[10px] font-bold tracking-[0.16em] uppercase text-slate-400">Administration</span>
+        <span className="px-2.5 text-[10px] font-bold tracking-[0.16em] uppercase text-slate-400">{departmentAdmin ? "Department tools" : "Administration"}</span>
       </div>
 
       <nav onClick={onNavigate} className="flex-1 px-2.5 space-y-1 overflow-y-auto pb-4">
-        <DashboardBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
+        {departmentAdmin && <DashboardBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />}
         <AcademicMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
-        <QuestionBankBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
-        <UserMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
-        <ReportsBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
+        {departmentAdmin ? (
+          <>
+            <button
+              type="button"
+              title={collapsed ? "Faculty Management" : undefined}
+              aria-label={collapsed ? "Faculty Management" : undefined}
+              onClick={() => setActiveTab("faculty")}
+              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150"
+              style={activeTab === "faculty" ? { background: "var(--bq-accent)", color: "#ffffff" } : { color: "var(--bq-muted)", background: "transparent" }}
+            >
+              <Users size={20} className={activeTab === "faculty" ? "text-white" : "text-[#C4485A]"} />
+              <span className="text-sm font-medium tracking-wide">Faculty Management</span>
+            </button>
+            <button
+              type="button"
+              title={collapsed ? "Academic Requests" : undefined}
+              aria-label={collapsed ? "Academic Requests" : undefined}
+              onClick={() => setActiveTab("requests")}
+              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150"
+              style={activeTab === "requests" ? { background: "var(--bq-accent)", color: "#ffffff" } : { color: "var(--bq-muted)", background: "transparent" }}
+            >
+              <ClipboardList size={20} className={activeTab === "requests" ? "text-white" : "text-[#C4485A]"} />
+              <span className="text-sm font-medium tracking-wide">Academic Requests</span>
+            </button>
+          </>
+        ) : (
+          <>
+            <QuestionBankBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
+            <UserMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
+            <ReportsBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
+          </>
+        )}
         <button
           type="button"
           title={collapsed ? "Settings" : undefined}
@@ -53,7 +82,7 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed
           <Settings size={20} className={activeTab === "settings" ? "text-white" : "text-[#C4485A]"} />
           <span className="text-sm font-medium tracking-wide">Settings</span>
         </button>
-        <button
+        {!departmentAdmin && <button
           type="button"
           title={collapsed ? "Recycle Bin" : undefined}
           aria-label={collapsed ? "Recycle Bin" : undefined}
@@ -63,7 +92,7 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed
         >
           <FolderArchive size={20} className={activeTab === "recycle" ? "text-white" : "text-[#C4485A]"} />
           <span className="text-sm font-medium tracking-wide">Recycle Bin</span>
-        </button>
+        </button>}
       </nav>
 
       <div className="px-3 py-4" style={{ borderTop: "1px solid rgba(15, 23, 42, 0.08)" }}>

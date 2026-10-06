@@ -11,6 +11,8 @@ const LogoutBtn = ({ collapsed = false }) => {
     localStorage.removeItem("role");
     localStorage.removeItem("email");
     localStorage.removeItem("campus_id");
+    localStorage.removeItem("department_id");
+    localStorage.removeItem("name");
     navigate("/");
   };
 

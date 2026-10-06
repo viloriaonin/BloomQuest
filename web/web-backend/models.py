@@ -12,6 +12,7 @@ class User(Base):
     archived = Column(Boolean, default=False, nullable=False)
     name = Column(String, nullable=True)         # <-- new
     department = Column(String, nullable=True)   # <-- new, only set for role == "faculty"
+    admin_department_id = Column(Integer, ForeignKey("departments.id"), nullable=True, index=True)
     campus_id = Column(Integer, ForeignKey("campuses.id"), nullable=True, index=True)
     program_id = Column(Integer, ForeignKey("programs.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
@@ -143,6 +144,20 @@ class UserChangeRequest(Base):
     current_value = Column(String(255), nullable=True)
     requested_value = Column(String(255), nullable=False)
     status = Column(String(32), nullable=False, default="pending", index=True)
+    created_at = Column(DateTime, server_default=func.now())
+    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+class DepartmentAcademicChangeRequest(Base):
+    __tablename__ = "department_academic_change_requests"
+    id = Column(Integer, primary_key=True, index=True)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=False, index=True)
+    submitted_by = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    related_department = Column(String(255), nullable=True)
+    title = Column(String(255), nullable=False)
+    details = Column(Text, nullable=False)
+    status = Column(String(32), nullable=False, default="pending", index=True)
+    response = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     reviewed_at = Column(DateTime, nullable=True)
     reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)

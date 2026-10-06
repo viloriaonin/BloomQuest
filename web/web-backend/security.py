@@ -69,6 +69,24 @@ def require_admin(user: models.User = Depends(get_current_user)):
     return user
 
 
+def require_academic_admin(user: models.User = Depends(get_current_user)):
+    role = str(user.role).lower()
+    if role == "department_admin":
+        if not user.admin_department_id:
+            raise HTTPException(status_code=403, detail="A department assignment is required.")
+        return user
+    return require_admin(user)
+
+
+def require_admin_workspace(user: models.User = Depends(get_current_user)):
+    role = str(user.role).lower()
+    if role == "department_admin":
+        if not user.admin_department_id:
+            raise HTTPException(status_code=403, detail="A department assignment is required.")
+        return user
+    return require_admin(user)
+
+
 def assert_campus_access(user: models.User, campus_id: int) -> None:
     role = str(user.role).lower()
     if role == "super_admin":
@@ -76,6 +94,14 @@ def assert_campus_access(user: models.User, campus_id: int) -> None:
     if role in {"admin", "campus_admin"} and user.campus_id == campus_id:
         return
     raise HTTPException(status_code=403, detail="You do not have access to this campus")
+
+
+def assert_department_access(user: models.User, department: models.Department) -> None:
+    if str(user.role).lower() == "department_admin":
+        if user.admin_department_id != department.id:
+            raise HTTPException(status_code=403, detail="You do not have access to this department.")
+        return
+    assert_campus_access(user, department.campus_id)
 
 
 def visible_campus_id(user: models.User) -> int | None:
@@ -89,6 +115,12 @@ def visible_campus_id(user: models.User) -> int | None:
 def user_campus_id(db: Session, user: models.User) -> int | None:
     role = str(user.role).lower()
     if role == "super_admin":
+        return None
+    if role == "department_admin":
+        if user.admin_department_id:
+            return db.query(models.Department.campus_id).filter(
+                models.Department.id == user.admin_department_id
+            ).scalar()
         return None
     if role in {"admin", "campus_admin"}:
         return visible_campus_id(user)
@@ -128,7 +160,17 @@ def subject_campus_id(db: Session, subject: models.Subject) -> int | None:
 
 
 def assert_user_subject_campus_access(db: Session, user: models.User, subject: models.Subject) -> None:
-    if str(user.role).lower() not in {"faculty", "student"}:
+    role = str(user.role).lower()
+    if role == "department_admin":
+        department_id = subject.department_id
+        if department_id is None and subject.program_id:
+            department_id = db.query(models.Program.department_id).filter(
+                models.Program.id == subject.program_id
+            ).scalar()
+        if department_id != user.admin_department_id:
+            raise HTTPException(status_code=403, detail="You can only use subjects in your assigned department.")
+        return
+    if role not in {"faculty", "student"}:
         return
     actor_campus_id = user_campus_id(db, user)
     if actor_campus_id is None or subject_campus_id(db, subject) != actor_campus_id:

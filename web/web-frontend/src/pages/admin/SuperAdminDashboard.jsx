@@ -8,6 +8,7 @@ import { AcademicMgmtContent } from "./AcademicMgmt";
 import { QuestionBankContent } from "./QuestionBank";
 import { ReportsContent } from "./Reports";
 import { API_URL } from "../../config/api";
+import DataRefreshButton from "../../components/DataRefreshButton";
 
 ChartJS.register(ArcElement, BarElement, CategoryScale, Legend, LinearScale, Tooltip);
 
@@ -53,6 +54,9 @@ const SuperAdminDashboard = () => {
   const [deletingAdminId, setDeletingAdminId] = useState(null);
   const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [adminForm, setAdminForm] = useState({ name: "", email: "", password: "", campus_id: "" });
+  const [departmentAdmins, setDepartmentAdmins] = useState([]);
+  const [academicDepartments, setAcademicDepartments] = useState([]);
+  const [departmentAdminForm, setDepartmentAdminForm] = useState({ name: "", email: "", password: "", department_id: "" });
   const [users, setUsers] = useState([]);
   const [userFilters, setUserFilters] = useState({ campus_id: "", role: "", status_filter: "active", search: "" });
   const [aiUsage, setAIUsage] = useState(null);
@@ -102,6 +106,18 @@ const SuperAdminDashboard = () => {
   useEffect(() => {
     if (activeTab !== "admins") return;
     requestJson("/super-admin/admins").then(setAdmins).catch((reason) => setError(reason.message));
+    Promise.all([
+      requestJson("/super-admin/department-admins"),
+      requestJson("/academic-hierarchy"),
+    ]).then(([departmentAdminRows, hierarchy]) => {
+      setDepartmentAdmins(departmentAdminRows);
+      setAcademicDepartments((hierarchy.campuses || []).flatMap((campus) =>
+        (campus.departments || []).map((department) => ({
+          ...department,
+          campus_name: campus.name,
+        })),
+      ));
+    }).catch((reason) => setError(reason.message));
   }, [activeTab]);
 
   useEffect(() => {
@@ -204,6 +220,47 @@ const SuperAdminDashboard = () => {
       setError(reason.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const createDepartmentAdmin = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      await requestJson("/super-admin/department-admins", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...departmentAdminForm,
+          department_id: Number(departmentAdminForm.department_id),
+        }),
+      });
+      setDepartmentAdminForm({ name: "", email: "", password: "", department_id: "" });
+      setNotice("Department Admin account created.");
+      setDepartmentAdmins(await requestJson("/super-admin/department-admins"));
+    } catch (reason) {
+      setError(reason.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateDepartmentAdmin = async (departmentAdmin, changes) => {
+    setError("");
+    try {
+      await requestJson(`/super-admin/department-admins/${departmentAdmin.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          department_id: changes.department_id ?? departmentAdmin.department_id,
+          is_active: changes.is_active ?? departmentAdmin.is_active,
+        }),
+      });
+      setDepartmentAdmins(await requestJson("/super-admin/department-admins"));
+      setNotice("Department Admin updated.");
+    } catch (reason) {
+      setError(reason.message);
     }
   };
 
@@ -347,6 +404,33 @@ const SuperAdminDashboard = () => {
       <section className="bq-admin-panel overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead><tr className="border-b border-slate-700"><th className="py-2 pr-3">Administrator</th><th className="py-2 pr-3">Email</th><th className="py-2 pr-3">Campus</th><th className="py-2 pr-3">Status</th><th className="py-2">Action</th></tr></thead><tbody>
         {admins.map((admin) => <tr key={admin.id} className="border-b border-slate-800"><td className="py-3 pr-3">{admin.name}</td><td className="py-3 pr-3">{admin.email}</td><td className="py-3 pr-3"><select aria-label={`Campus for ${admin.name}`} value={admin.campus_id || ""} onChange={(event) => updateCampusAdmin(admin, { campus_id: event.target.value })} className="bq-field"><option value="">Select campus</option>{campuses.map((campus) => <option key={campus.id} value={campus.id}>{campus.name}</option>)}</select></td><td className="py-3 pr-3">{admin.is_active ? "Active" : "Inactive"}</td><td className="py-3"><div className="flex gap-2"><button type="button" className="bq-admin-action" onClick={() => { setEditingAdmin(admin); setShowAdminPassword(false); setAdminForm({ name: admin.name, email: admin.email, password: "", campus_id: String(admin.campus_id || "") }); }}>Edit</button><button type="button" className="bq-admin-action" onClick={() => updateCampusAdmin(admin, { is_active: !admin.is_active })}>{admin.is_active ? "Deactivate" : "Activate"}</button>{!admin.is_active && <button type="button" className="bq-admin-action" disabled={deletingAdminId === admin.id} onClick={() => deleteCampusAdmin(admin)}>{deletingAdminId === admin.id ? "Deleting..." : "Delete"}</button>}</div></td></tr>)}
       </tbody></table>{!admins.length && <p className="bq-admin-muted py-5">No Campus Admin accounts found.</p>}</section>
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Department Administrators</h2>
+          <p className="bq-admin-muted mt-1 text-sm">Each account can manage the dean, programs, and subjects for one assigned department.</p>
+        </div>
+        <form onSubmit={createDepartmentAdmin} className="bq-admin-panel grid gap-3 md:grid-cols-2 xl:grid-cols-5 xl:items-end">
+          <label className="text-sm">Name<input required minLength={2} maxLength={255} value={departmentAdminForm.name} onChange={(event) => setDepartmentAdminForm({ ...departmentAdminForm, name: event.target.value })} className="bq-field mt-1 w-full" /></label>
+          <label className="text-sm">Email<input required type="email" value={departmentAdminForm.email} onChange={(event) => setDepartmentAdminForm({ ...departmentAdminForm, email: event.target.value })} className="bq-field mt-1 w-full" /></label>
+          <label className="text-sm">Initial password<input required minLength={8} maxLength={128} type="password" value={departmentAdminForm.password} onChange={(event) => setDepartmentAdminForm({ ...departmentAdminForm, password: event.target.value })} className="bq-field mt-1 w-full" /></label>
+          <label className="text-sm">Department<select required value={departmentAdminForm.department_id} onChange={(event) => setDepartmentAdminForm({ ...departmentAdminForm, department_id: event.target.value })} className="bq-field mt-1 w-full"><option value="">Select department</option>{academicDepartments.map((department) => <option key={department.id} value={department.id}>{department.campus_name} / {department.name}</option>)}</select></label>
+          <button type="submit" disabled={saving || !academicDepartments.length} className="bq-admin-action">{saving ? "Creating..." : "Create Department Admin"}</button>
+        </form>
+        <section className="bq-admin-panel overflow-x-auto">
+          <table className="w-full min-w-[720px] text-left text-sm">
+            <thead><tr className="border-b border-slate-700"><th className="py-2 pr-3">Administrator</th><th className="py-2 pr-3">Email</th><th className="py-2 pr-3">Campus</th><th className="py-2 pr-3">Department</th><th className="py-2 pr-3">Status</th><th className="py-2">Actions</th></tr></thead>
+            <tbody>{departmentAdmins.map((departmentAdmin) => <tr key={departmentAdmin.id} className="border-b border-slate-800">
+              <td className="py-3 pr-3">{departmentAdmin.name}</td>
+              <td className="py-3 pr-3">{departmentAdmin.email}</td>
+              <td className="py-3 pr-3">{departmentAdmin.campus || "Unassigned"}</td>
+              <td className="py-3 pr-3"><select aria-label={`Department for ${departmentAdmin.name}`} value={departmentAdmin.department_id} onChange={(event) => updateDepartmentAdmin(departmentAdmin, { department_id: Number(event.target.value) })} className="bq-field">{academicDepartments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></td>
+              <td className="py-3 pr-3">{departmentAdmin.is_active ? "Active" : "Inactive"}</td>
+              <td className="py-3"><button type="button" className="bq-admin-action" onClick={() => updateDepartmentAdmin(departmentAdmin, { is_active: !departmentAdmin.is_active })}>{departmentAdmin.is_active ? "Deactivate" : "Activate"}</button></td>
+            </tr>)}</tbody>
+          </table>
+          {!departmentAdmins.length && <p className="bq-admin-muted py-5">No Department Admin accounts found.</p>}
+        </section>
+      </section>
     </div>
   );
 
@@ -355,7 +439,7 @@ const SuperAdminDashboard = () => {
       <div className="grid gap-2 md:grid-cols-4">
         <label className="relative"><Search size={15} className="absolute left-3 top-3 text-slate-400" /><input aria-label="Search users" placeholder="Search name or email" value={userFilters.search} onChange={(event) => setUserFilters({ ...userFilters, search: event.target.value })} className="bq-field w-full pl-9" /></label>
         <select aria-label="Filter by campus" value={userFilters.campus_id} onChange={(event) => setUserFilters({ ...userFilters, campus_id: event.target.value })} className="bq-field"><option value="">All campuses</option>{campuses.map((campus) => <option key={campus.id} value={campus.id}>{campus.name}</option>)}</select>
-        <select aria-label="Filter by role" value={userFilters.role} onChange={(event) => setUserFilters({ ...userFilters, role: event.target.value })} className="bq-field"><option value="">All roles</option><option value="campus_admin">Campus Admin</option><option value="faculty">Faculty</option></select>
+        <select aria-label="Filter by role" value={userFilters.role} onChange={(event) => setUserFilters({ ...userFilters, role: event.target.value })} className="bq-field"><option value="">All roles</option><option value="campus_admin">Campus Admin</option><option value="department_admin">Department Admin</option><option value="faculty">Faculty</option></select>
         <select aria-label="Filter by status" value={userFilters.status_filter} onChange={(event) => setUserFilters({ ...userFilters, status_filter: event.target.value })} className="bq-field"><option value="active">Active</option><option value="archived">Inactive</option><option value="">All statuses</option></select>
       </div>
       <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead><tr className="border-b border-slate-700"><th className="py-2 pr-3">Name</th><th className="py-2 pr-3">Role</th><th className="py-2 pr-3">Campus</th><th className="py-2 pr-3">Department / Program</th><th className="py-2">Status</th></tr></thead><tbody>
@@ -480,7 +564,7 @@ const SuperAdminDashboard = () => {
       <main className="bq-admin-main flex min-w-0 flex-1 flex-col overflow-auto">
         <header className="bq-admin-header sticky top-0 z-10 flex min-h-[76px] items-center justify-between border-b px-6 py-4 backdrop-blur">
           <div className="flex items-center gap-3"><button type="button" onClick={toggleSidebar} className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white" aria-label="Toggle navigation"><Menu size={18} /></button><div><p className="bq-admin-eyebrow">UNIVERSITY ADMINISTRATION</p><h1 className="bq-admin-title">{metadata?.[1] || "Dashboard"}</h1></div></div>
-          <div className="text-right"><p className="text-sm font-medium">Super Admin</p><p className="bq-admin-mono">{localStorage.getItem("email") || ""}</p></div>
+          <div className="flex items-center gap-3"><DataRefreshButton className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white/10 hover:text-white" /><div className="text-right"><p className="text-sm font-medium">Super Admin</p><p className="bq-admin-mono">{localStorage.getItem("email") || ""}</p></div></div>
         </header>
         <div className="bq-page flex-1"><div className="bq-page-inner space-y-4">
           {error && <div role="alert" className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}

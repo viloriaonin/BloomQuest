@@ -14,6 +14,8 @@ Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
 The page will reload when you make changes.\
 You may also see any lint errors in the console.
 
+Successful JSON API GET responses are cached in memory while you navigate, with requests scoped to the active authorization token. Successful API mutations clear this cache so later views use updated data. Use **Refresh data** in the workspace header to clear the cache and reload the application.
+
 ### `npm test`
 
 Launches the test runner in the interactive watch mode.\

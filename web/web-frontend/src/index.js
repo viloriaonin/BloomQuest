@@ -5,15 +5,21 @@ import './App.css';
 import App from './App';
 import { PopupProvider } from './components/PopupProvider';
 import reportWebVitals from './reportWebVitals';
+import { createCachedApiFetch } from './utils/apiFetch';
+import { registerApiCacheClearer } from './utils/apiCache';
+import { API_URL } from './config/api';
 
 const nativeFetch = window.fetch.bind(window);
+const cachedFetch = createCachedApiFetch(nativeFetch, API_URL);
+registerApiCacheClearer(cachedFetch.clearCache);
 window.fetch = (input, init = {}) => {
   const requestUrl = typeof input === 'string' ? input : input.url;
   const headers = new Headers(init.headers || (typeof input !== 'string' ? input.headers : undefined));
   const token = localStorage.getItem('token');
   if (token && !requestUrl.includes('/api/login')) headers.set('Authorization', `Bearer ${token}`);
-  return nativeFetch(input, { ...init, headers }).then((response) => {
+  return cachedFetch(input, { ...init, headers }).then((response) => {
     if (response.status === 401 && !requestUrl.includes('/api/login')) {
+      cachedFetch.clearCache();
       localStorage.removeItem('token');
       localStorage.removeItem('role');
       window.location.assign('/');

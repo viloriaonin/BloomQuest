@@ -22,6 +22,7 @@ const History = React.lazy(() => import("./pages/users/History"));
 const UserWorkspacePage = React.lazy(() => import("./pages/users/UserWorkspacePage"));
 const UserToolsPage = React.lazy(() => import("./pages/users/UserToolsPage"));
 const AdminDashboard = React.lazy(() => import("./pages/admin/admindashboard"));
+const DepartmentAdminDashboard = React.lazy(() => import("./pages/admin/admindashboard").then((module) => ({ default: module.DepartmentAdminDashboard })));
 const SuperAdminDashboard = React.lazy(() => import("./pages/admin/SuperAdminDashboard"));
 
 // ---------------------------------------------------------
@@ -88,9 +89,11 @@ const getUserRole = () => {
   return localStorage.getItem("role")?.toLowerCase();
 };
 
-const AdminRoute = ({ children }) => {
+const ADMIN_ROLES = ["admin", "campus_admin", "department_admin"];
+
+const AdminRoute = ({ children, academicOnly = false }) => {
   const role = getUserRole();
-  const [isAuthorized, setIsAuthorized] = React.useState(["admin", "campus_admin"].includes(role) ? "checking" : "denied");
+  const [isAuthorized, setIsAuthorized] = React.useState(ADMIN_ROLES.includes(role) ? "checking" : "denied");
 
   React.useEffect(() => {
     if (!role || role === "super_admin") {
@@ -114,7 +117,7 @@ const AdminRoute = ({ children }) => {
             setIsAuthorized("super-admin");
             return;
           }
-          if (!["admin", "campus_admin"].includes(backendRole)) {
+          if (!ADMIN_ROLES.includes(backendRole)) {
             localStorage.removeItem("token");
             localStorage.removeItem("role");
             setIsAuthorized("denied");
@@ -138,6 +141,9 @@ const AdminRoute = ({ children }) => {
   if (!role) return <Navigate to="/" replace />;
   if (role === "super_admin" || isAuthorized === "super-admin") return <Navigate to="/super-admin/dashboard" replace />;
   if (isAuthorized === "checking") return <div className="flex h-screen items-center justify-center text-sm text-slate-500">Checking admin access…</div>;
+  if (isAuthorized === "allowed" && role === "department_admin" && !academicOnly) {
+    return <Navigate to="/admin/academic" replace />;
+  }
   return isAuthorized === "allowed" ? children : <Navigate to="/dashboard" replace />;
 };
 
@@ -147,6 +153,8 @@ const SuperAdminRoute = ({ children }) => {
   if (role === "super_admin") return children;
   return ["campus_admin", "admin"].includes(role)
     ? <Navigate to="/admin/dashboard" replace />
+    : role === "department_admin"
+      ? <Navigate to="/admin/academic" replace />
     : <Navigate to="/dashboard" replace />;
 };
 
@@ -154,11 +162,15 @@ const UserRoute = ({ children }) => {
   const role = getUserRole();
   if (!role) return <Navigate to="/" replace />;
   if (role === "super_admin") return <Navigate to="/super-admin/dashboard" replace />;
-  return ["campus_admin", "admin"].includes(role) ? <Navigate to="/admin/dashboard" replace /> : children;
+  return ["campus_admin", "admin"].includes(role)
+    ? <Navigate to="/admin/dashboard" replace />
+    : role === "department_admin"
+      ? <Navigate to="/admin/academic" replace />
+      : children;
 };
 
 const QuestionBankRoute = () => {
-  if (["admin", "campus_admin"].includes(getUserRole())) {
+  if (["admin", "campus_admin", "department_admin"].includes(getUserRole())) {
     return (
       <AdminRoute>
         <PageContainer>
@@ -178,9 +190,11 @@ const QuestionBankRoute = () => {
 };
 
 const AdminAcademicRoute = () => (
-  <AdminRoute>
+  <AdminRoute academicOnly>
     <PageContainer>
-      <AdminDashboard />
+      {getUserRole() === "department_admin"
+        ? <DepartmentAdminDashboard />
+        : <AdminDashboard />}
     </PageContainer>
   </AdminRoute>
 );

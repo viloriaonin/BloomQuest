@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { usePopup } from "../../components/PopupProvider";
 import { API_URL } from "../../config/api";
 
-const AdminSettings = ({ theme, onThemeChange }) => {
+const AdminSettings = ({ theme, onThemeChange, departmentAdmin = false }) => {
   const { showAlert, showConfirm } = usePopup();
   const [settings, setSettings] = useState(() => ({
     fullName: localStorage.getItem("name") || "Admin",
@@ -13,6 +13,7 @@ const AdminSettings = ({ theme, onThemeChange }) => {
   }));
   const [saved, setSaved] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  const [saveError, setSaveError] = useState("");
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [passwords, setPasswords] = useState({ current: "", next: "", confirm: "" });
   const [passwordError, setPasswordError] = useState("");
@@ -30,20 +31,47 @@ const AdminSettings = ({ theme, onThemeChange }) => {
     setSettings((current) => ({ ...current, [key]: value }));
     setSaved(false);
     setSaveMessage("");
+    setSaveError("");
   };
 
   const saveSettings = async () => {
     if (!settings.fullName.trim()) {
-      await showAlert("Please enter the administrator name before saving.", "Invalid profile");
+      await showAlert(`Please enter the ${departmentAdmin ? "Department Admin" : "administrator"} name before saving.`, "Invalid profile");
       return;
     }
-    if (!(await showConfirm("Are you sure you want to save the updated administrator profile?", "Confirm changes"))) return;
-    localStorage.setItem("bloomquest-settings", JSON.stringify(settings));
-    localStorage.setItem("name", settings.fullName.trim());
-    localStorage.setItem("department", settings.department);
-    window.dispatchEvent(new CustomEvent("profile-updated"));
-    setSaved(true);
-    setSaveMessage("Changes saved successfully.");
+    if (!(await showConfirm(`Are you sure you want to save the updated ${departmentAdmin ? "Department Admin" : "administrator"} profile?`, "Confirm changes"))) return;
+    setSaveError("");
+    try {
+      let savedSettings = { ...settings, fullName: settings.fullName.trim() };
+      if (departmentAdmin) {
+        const response = await fetch(`${API_URL}/user/profile`, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ full_name: savedSettings.fullName }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(result.detail || "Could not save your profile.");
+        }
+        savedSettings = {
+          ...savedSettings,
+          fullName: result.full_name || savedSettings.fullName,
+          department: result.department || savedSettings.department,
+        };
+        setSettings(savedSettings);
+      }
+      localStorage.setItem("bloomquest-settings", JSON.stringify(savedSettings));
+      localStorage.setItem("name", savedSettings.fullName);
+      localStorage.setItem("department", savedSettings.department);
+      window.dispatchEvent(new CustomEvent("profile-updated"));
+      setSaved(true);
+      setSaveMessage("Changes saved successfully.");
+    } catch (error) {
+      setSaveError(error.message || "Could not save your profile.");
+    }
   };
 
   const updatePassword = async () => {
@@ -86,20 +114,20 @@ const AdminSettings = ({ theme, onThemeChange }) => {
     <div className="bq-admin-settings max-w-5xl space-y-4 page-transition">
       <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
         <section className="bq-admin-panel">
-          <div className="flex items-center gap-3 border-b border-[#262A34] pb-4"><UserRound size={18} className="text-[#C4485A]" /><div><h2>Profile</h2><p className="bq-admin-muted mt-1">Update the administrator account details.</p></div></div>
-          <div className="mt-5 space-y-4"><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-semibold text-[#ECEDEF]">Full name<input value={settings.fullName} onChange={(event) => updateField("fullName", event.target.value)} className="bq-field mt-2 w-full px-3 py-2" /></label><label className="text-sm font-semibold text-[#ECEDEF]">Department<input value={settings.department} readOnly className="bq-field mt-2 w-full px-3 py-2 opacity-70" /></label></div><div className="flex justify-end"><button type="button" onClick={saveSettings} className="bq-admin-action"><Save size={15} /> {saved ? "Saved" : "Save changes"}</button></div>{saveMessage && <div className="flex items-center gap-2 rounded-lg border border-emerald-800/50 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-300"><CheckCircle2 size={15} />{saveMessage}</div>}</div>
+          <div className="flex items-center gap-3 border-b border-[#262A34] pb-4"><UserRound size={18} className="text-[#C4485A]" /><div><h2>Profile</h2><p className="bq-admin-muted mt-1">Update your account details.</p></div></div>
+          <div className="mt-5 space-y-4"><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-semibold text-[#ECEDEF]">Full name<input value={settings.fullName} onChange={(event) => updateField("fullName", event.target.value)} className="bq-field mt-2 w-full px-3 py-2" /></label><label className="text-sm font-semibold text-[#ECEDEF]">Department<input value={settings.department} readOnly className="bq-field mt-2 w-full px-3 py-2 opacity-70" /></label></div><div className="flex justify-end"><button type="button" onClick={saveSettings} className="bq-admin-action"><Save size={15} /> {saved ? "Saved" : "Save changes"}</button></div>{saveError && <p role="alert" className="text-sm text-red-300">{saveError}</p>}{saveMessage && <div className="flex items-center gap-2 rounded-lg border border-emerald-800/50 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-300"><CheckCircle2 size={15} />{saveMessage}</div>}</div>
         </section>
 
         <section className="bq-admin-panel">
-          <div className="flex items-center gap-3 border-b border-[#262A34] pb-4"><LockKeyhole size={18} className="text-[#C4485A]" /><div><h2>Security</h2><p className="bq-admin-muted mt-1">Manage administrator account access.</p></div></div>
-          <div className="mt-5 rounded-xl border border-[#262A34] bg-[#1B1E26] p-4"><p className="text-sm font-medium text-[#ECEDEF]">Password</p><p className="mt-1 text-sm text-[#8B8F99]">Keep the administrator account secure.</p><button type="button" onClick={() => setPasswordOpen(true)} className="bq-secondary-button mt-4 px-3 py-2 text-sm">Change password</button></div>
+          <div className="flex items-center gap-3 border-b border-[#262A34] pb-4"><LockKeyhole size={18} className="text-[#C4485A]" /><div><h2>Security</h2><p className="bq-admin-muted mt-1">Manage {departmentAdmin ? "Department Admin" : "administrator"} account access.</p></div></div>
+          <div className="mt-5 rounded-xl border border-[#262A34] bg-[#1B1E26] p-4"><p className="text-sm font-medium text-[#ECEDEF]">Password</p><p className="mt-1 text-sm text-[#8B8F99]">Keep your account secure.</p><button type="button" onClick={() => setPasswordOpen(true)} className="bq-secondary-button mt-4 px-3 py-2 text-sm">Change password</button></div>
         </section>
       </div>
 
       <section className="bq-admin-panel">
         <div className="flex items-center gap-3 border-b border-[#262A34] pb-4"><span className="text-lg">Aa</span><div><h2>Appearance</h2><p className="bq-admin-muted mt-1">Choose the theme for the administrator workspace.</p></div></div>
-        <div className="mt-5 grid max-w-md grid-cols-2 gap-3" role="radiogroup" aria-label="Admin theme">
-          {[['dark', 'Dark', 'Admin workspace theme'], ['light', 'Light', 'User workspace theme']].map(([value, label, detail]) => <button key={value} type="button" role="radio" aria-checked={theme === value} onClick={() => changeTheme(value)} className={`rounded-lg border p-4 text-left transition-colors ${theme === value ? "border-[#C4485A] bg-[#C4485A]/10" : "border-[#262A34] bg-[#1B1E26]"}`}><span className="block text-sm font-semibold text-[#ECEDEF]">{label}</span><span className="mt-1 block text-xs text-[#8B8F99]">{detail}</span></button>)}
+        <div className="mt-5 grid max-w-md grid-cols-2 gap-3" role="radiogroup" aria-label="Workspace theme">
+          {[['dark', 'Dark'], ['light', 'Light']].map(([value, label]) => <button key={value} type="button" role="radio" aria-checked={theme === value} onClick={() => changeTheme(value)} className={`rounded-lg border p-4 text-left transition-colors ${theme === value ? "border-[#C4485A] bg-[#C4485A]/10" : "border-[#262A34] bg-[#1B1E26]"}`}><span className="block text-sm font-semibold text-[#ECEDEF]">{label}</span><span className="mt-1 block text-xs text-[#8B8F99]">{label} {departmentAdmin ? "Department Admin" : "Admin"} workspace theme</span></button>)}
         </div>
       </section>
 

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Menu, ShieldCheck } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { API_URL } from "../config/api";
+import DataRefreshButton from "./DataRefreshButton";
 
 const bg = "#F5F7FB";
 const border = "rgba(15, 23, 42, 0.08)";
@@ -91,6 +92,7 @@ const TopBar = ({ onToggleSidebar }) => {
       </div>
 
       <div className="flex items-center gap-3">
+        <DataRefreshButton className="rounded-lg p-2 transition-colors hover:bg-white" style={{ color: textMuted }} />
         <div className="text-right max-sm:hidden"><p className="text-sm font-medium" style={{ color: textPrimary }}>{profile.displayName}</p><p className="text-[10px] uppercase tracking-wider" style={{ color: textMuted }}>{profile.email}</p><p className="text-[10px]" style={{ color: textMuted }}>{profile.program}</p><p className="text-[10px]" style={{ color: textMuted }}>{profile.department}</p></div>
         <div className="relative flex h-10 w-10 items-center justify-center rounded-full border text-sm font-bold" style={{ backgroundColor: "#fff", borderColor: accent, color: accent }}>{initials}<span className="absolute -bottom-1 -right-1 flex h-[18px] w-[18px] items-center justify-center rounded-full border-2" style={{ backgroundColor: bg, borderColor: bg, color: accent }}><ShieldCheck size={11} /></span></div>
       </div>

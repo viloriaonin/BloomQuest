@@ -53,6 +53,10 @@ npm start
 
 The frontend expects the backend at `http://localhost:8000` by default. Set `REACT_APP_API_BASE_URL` when using another backend URL.
 
+Department Admin accounts are created and assigned to one department by a Super Admin from **Admin Management**. Their shared admin dashboard shows only department-scoped Dashboard, Academic Management, Faculty Management, Academic Requests, and Settings tabs. In their assigned department they can update its name/code and dean, maintain programs and subjects, assign department faculty to programs and subjects, appoint program chairs from the program's faculty, and review department-level faculty/program/subject coverage. Settings allow a Department Admin to update their own display name and password, but not their department assignment or role.
+
+Department Admins cannot create or deactivate faculty accounts or change user roles. They can submit a faculty account request for a department program; a Campus Admin or Super Admin must approve it through the existing account-request workflow. They can also submit academic change requests involving another department. Campus Admins can review requests within their campus, while Super Admins can review all requests. These requests record a status and reviewer response and do not apply cross-department changes automatically.
+
 ## Flutter Desktop App
 
 The Flutter app is in `mobile/mob_frontend` and includes Windows and Linux desktop targets.

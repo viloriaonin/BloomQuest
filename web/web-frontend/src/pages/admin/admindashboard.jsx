@@ -9,6 +9,7 @@ import Governance from "./Governance";
 import RecycleBin from "./RecycleBin";
 import UserDetailPage from "./UserDetailPage";
 import AdminSettings from "./AdminSettings";
+import DataRefreshButton from "../../components/DataRefreshButton";
 import { QuestionBankContent } from "./QuestionBank";
 import { downloadXlsxReport } from "./reportExport";
 import { getDepartmentScopedDashboardData } from "./dashboardReportUtils";
@@ -30,6 +31,14 @@ const TAB_META = {
   "question-bank": {
     label: "Question Bank",
     description: "Browse faculty-created questions by campus, department, program, and subject.",
+  },
+  faculty: {
+    label: "Faculty Management",
+    description: "Review department faculty and maintain program assignments.",
+  },
+  requests: {
+    label: "Academic Requests",
+    description: "Submit faculty account requests and coordinate academic changes.",
   },
   users: {
     label: "User Management",
@@ -53,17 +62,113 @@ const TAB_META = {
   },
 };
 
+const DepartmentAdminOverview = ({ setActiveTab }) => {
+  const [summary, setSummary] = useState({ programs: 0, subjects: 0, faculty: 0, assignedFaculty: 0 });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadSummary = async () => {
+      try {
+        const headers = { Authorization: `Bearer ${localStorage.getItem("token") || ""}` };
+        const [hierarchyResponse, subjectsResponse] = await Promise.all([
+          fetch(`${API_URL}/academic-hierarchy`, { headers }),
+          fetch(`${API_URL}/subjects`, { headers }),
+        ]);
+        const hierarchy = await hierarchyResponse.json().catch(() => ({}));
+        const subjectRecords = await subjectsResponse.json().catch(() => []);
+        if (!hierarchyResponse.ok || !subjectsResponse.ok) {
+          throw new Error(hierarchy.detail || subjectsResponse.detail || "Could not load department summary.");
+        }
+        const departments = (hierarchy.campuses || []).flatMap((campus) =>
+          (campus.departments || []).map((department) => ({ ...department, campus_id: campus.id })),
+        );
+        const department = departments.find((item) =>
+          item.id === Number(localStorage.getItem("department_id")),
+        ) || departments[0];
+        if (!department) throw new Error("No department is assigned to this account.");
+        const faculty = department.faculty || [];
+        if (!cancelled) {
+          setSummary({
+            programs: (department.programs || []).length,
+            subjects: subjectRecords.filter((subject) =>
+              !subject.archived && (
+                subject.department_id === department.id ||
+                (department.programs || []).some((program) => program.id === subject.program_id)
+              ),
+            ).length,
+            faculty: faculty.length,
+            assignedFaculty: faculty.filter((member) => member.program_id).length,
+          });
+        }
+      } catch (loadError) {
+        if (!cancelled) setError(loadError.message || "Could not load department summary.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    loadSummary();
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <div className="space-y-5">
+      <section className="bq-admin-panel">
+        <p className="bq-admin-eyebrow">DEPARTMENT OVERVIEW</p>
+        <h2 className="mt-2 text-xl font-semibold">Your department at a glance</h2>
+        <p className="bq-admin-muted mt-1">Review academic structure, faculty coverage, and pending coordination needs.</p>
+        {error && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          ["Programs", summary.programs],
+          ["Subjects", summary.subjects],
+          ["Faculty", summary.faculty],
+          ["Faculty assigned to programs", `${summary.assignedFaculty}/${summary.faculty}`],
+        ].map(([label, value]) => (
+          <div className="bq-admin-metric" key={label}>
+            <p>{label}</p>
+            <strong>{loading ? "—" : value}</strong>
+          </div>
+        ))}
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-3">
+        {[
+          ["Academic Management", "Update dean, department details, programs, and subjects.", "academic"],
+          ["Faculty Management", "Review department faculty and manage program assignments.", "faculty"],
+          ["Academic Requests", "Invite faculty for approval or coordinate cross-department changes.", "requests"],
+        ].map(([title, description, tab]) => (
+          <button
+            type="button"
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className="bq-admin-panel text-left transition hover:border-[#C4485A]"
+          >
+            <h3 className="font-semibold">{title}</h3>
+            <p className="bq-admin-muted mt-2 text-sm">{description}</p>
+            <span className="mt-4 inline-block text-sm font-semibold" style={{ color: "var(--bq-accent)" }}>Open workspace →</span>
+          </button>
+        ))}
+      </section>
+    </div>
+  );
+};
+
 const AdminDashboard = () => {
   const location = useLocation();
-  const [activeTab, setActiveTab] = useState(
-    location.pathname.startsWith("/admin/academic")
+  const isDepartmentAdmin = String(localStorage.getItem("role") || "").toLowerCase() === "department_admin";
+  const [activeTab, setActiveTab] = useState(() => isDepartmentAdmin
+    ? "dashboard"
+    : location.pathname.startsWith("/admin/academic")
         ? "academic"
       : location.pathname.startsWith("/admin/questions")
         ? "question-bank"
       : location.pathname.startsWith("/admin/users")
         ? "users"
-        : "dashboard",
-  );
+        : "dashboard");
   const [userEmail, setUserEmail] = useState("admin@bloomquest.edu");
   const [userRole, setUserRole] = useState("Administrator");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -88,6 +193,7 @@ const AdminDashboard = () => {
   };
 
   useEffect(() => {
+    if (isDepartmentAdmin) return;
     if (location.pathname.startsWith("/admin/academic")) {
       setActiveTab("academic");
     } else if (location.pathname.startsWith("/admin/questions")) {
@@ -95,7 +201,7 @@ const AdminDashboard = () => {
     } else if (location.pathname.startsWith("/admin/users")) {
       setActiveTab("users");
     }
-  }, [location.pathname]);
+  }, [isDepartmentAdmin, location.pathname]);
 
   useEffect(() => {
     const storedEmail = window.localStorage.getItem("email");
@@ -105,6 +211,10 @@ const AdminDashboard = () => {
   }, []);
 
   useEffect(() => {
+    if (isDepartmentAdmin) {
+      setDashboardLoading(false);
+      return undefined;
+    }
     const loadDashboardData = async () => {
       try {
         const headers = { Authorization: `Bearer ${localStorage.getItem("token") || ""}` };
@@ -165,7 +275,7 @@ const AdminDashboard = () => {
       }
     };
     loadDashboardData();
-  }, []);
+  }, [isDepartmentAdmin]);
 
   const meta = TAB_META[activeTab] || { label: activeTab, description: "" };
 
@@ -251,6 +361,19 @@ const AdminDashboard = () => {
   };
 
   const renderTabContent = () => {
+    if (isDepartmentAdmin) {
+      if (activeTab === "dashboard") {
+        return <DepartmentAdminOverview setActiveTab={setActiveTab} />;
+      }
+      if (activeTab === "settings") {
+        return <AdminSettings theme={adminTheme} onThemeChange={setAdminTheme} departmentAdmin />;
+      }
+      return (
+        <AcademicMgmtContent
+          activeSection={activeTab === "faculty" ? "faculty" : activeTab === "requests" ? "requests" : null}
+        />
+      );
+    }
     if (activeTab === "users" && location.pathname.startsWith("/admin/users/")) {
       return <UserDetailPage />;
     }
@@ -294,6 +417,7 @@ const AdminDashboard = () => {
         collapsed={sidebarCollapsed}
         mobileOpen={mobileSidebarOpen}
         onNavigate={() => setMobileSidebarOpen(false)}
+        departmentAdmin={isDepartmentAdmin}
       />
       <main className="bq-admin-main flex flex-1 flex-col overflow-auto">
         <header
@@ -304,14 +428,15 @@ const AdminDashboard = () => {
               <Menu size={18} />
             </button>
             <div>
-            <div className="flex items-center gap-2"><p className="bq-admin-eyebrow">ADMIN WORKSPACE</p><span className="bq-admin-live"><Radio size={10} /> LIVE</span></div>
+            <div className="flex items-center gap-2"><p className="bq-admin-eyebrow">{isDepartmentAdmin ? "DEPARTMENT WORKSPACE" : "ADMIN WORKSPACE"}</p><span className="bq-admin-live"><Radio size={10} /> LIVE</span></div>
             <h1 className="bq-admin-title">{meta.label}</h1>
             <p className="bq-admin-muted mt-1">{meta.description}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <DataRefreshButton className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white/10 hover:text-white" />
             <div className="text-right">
-              <p className="text-sm font-medium">{userRole}</p>
+              <p className="text-sm font-medium">{isDepartmentAdmin ? "Department Admin" : userRole}</p>
               <p className="bq-admin-mono">{userEmail}</p>
             </div>
             <div
@@ -331,5 +456,7 @@ const AdminDashboard = () => {
     </div>
   );
 };
+
+export const DepartmentAdminDashboard = () => <AdminDashboard />;
 
 export default AdminDashboard;
