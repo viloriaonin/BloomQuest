@@ -1512,6 +1512,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         "role": user.role,
         "campus_id": user.campus_id,
         "email": user.email,
+        "name": user.name or "",
         "department": user.department,
         "message": "Login successful"
     }

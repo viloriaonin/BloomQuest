@@ -412,6 +412,28 @@ def test_approval_response_includes_temporary_password_only_in_demo_mode(monkeyp
         assert result["demo_temporary_password"] == "TempPass1!"
 
 
+def test_login_returns_authenticated_users_name(monkeypatch):
+    user = SimpleNamespace(
+        id=23,
+        email="faculty@example.com",
+        name="Avery Faculty",
+        role="faculty",
+        archived=False,
+        password="stored-hash",
+        campus_id=1,
+        department="Informatics",
+    )
+    db = FakeSession(user_results=[user])
+    monkeypatch.setattr(main, "enforce_rate_limit", lambda *args: None)
+    monkeypatch.setattr(main, "verify_password", lambda *args: True)
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+
+    result = main.login(main.LoginRequest(email=user.email, password="password123"), db)
+
+    assert result["name"] == "Avery Faculty"
+    assert result["email"] == user.email
+
+
 @pytest.mark.asyncio
 async def test_approve_request_creates_faculty_with_department_and_program(monkeypatch):
     request = SimpleNamespace(

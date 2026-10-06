@@ -102,6 +102,7 @@ const Login = () => {
       localStorage.setItem("email", data.email);
       localStorage.setItem("user_id", String(data.user_id));
       localStorage.setItem("campus_id", data.campus_id ? String(data.campus_id) : "");
+      localStorage.setItem("name", data.name || "");
       localStorage.setItem("department", data.department || "");
       window.dispatchEvent(new Event("profile-updated"));
 
