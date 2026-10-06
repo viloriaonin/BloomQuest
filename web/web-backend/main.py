@@ -1190,7 +1190,7 @@ def send_approval_email(recipient_email: str, temporary_password: str, full_name
 
     Falls back to a minimal inline message if the template cannot be read.
     """
-    if not SENDER_EMAIL or not SENDER_PASSWORD:
+    if not RESEND_API_KEY and (not SENDER_EMAIL or not SENDER_PASSWORD):
         print(f"SMTP credentials are not configured. Approval email for {recipient_email} was not sent.")
         return
 
@@ -1231,16 +1231,9 @@ def send_approval_email(recipient_email: str, temporary_password: str, full_name
             </html>
             """
 
-        msg = MIMEMultipart()
-        msg["From"] = SENDER_EMAIL
-        msg["To"] = recipient_email
-        msg["Subject"] = "BloomQuest Account Approved & Created"
-        msg.attach(MIMEText(rendered, "html"))
-
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()
-            server.login(SENDER_EMAIL, SENDER_PASSWORD)
-            server.send_message(msg)
+        if not send_email(recipient_email, "BloomQuest Account Approved & Created", rendered):
+            logger.error("Failed to deliver account creation email to %s", recipient_email)
+            return
         logger.info("[Email] Approval email sent successfully to %s", recipient_email)
     except Exception as exc:
         logger.error("Failed to deliver account creation email: %s", exc, exc_info=True)

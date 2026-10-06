@@ -157,6 +157,33 @@ def test_send_email_uses_resend_https_api(monkeypatch):
     }
 
 
+def test_approval_email_uses_shared_helper_when_resend_is_configured(monkeypatch):
+    sent_emails = []
+    monkeypatch.setattr(main, "RESEND_API_KEY", "resend-test-key")
+    monkeypatch.setattr(main, "EMAIL_FROM", "BloomQuest <no-reply@example.com>")
+    monkeypatch.setattr(main, "SENDER_EMAIL", "")
+    monkeypatch.setattr(main, "SENDER_PASSWORD", "")
+    monkeypatch.setattr(
+        main,
+        "send_email",
+        lambda recipient, subject, html: sent_emails.append((recipient, subject, html)) or True,
+    )
+
+    main.send_approval_email(
+        "avery@example.com",
+        "TempPass1!",
+        full_name="Avery Faculty",
+        department="Informatics",
+    )
+
+    assert len(sent_emails) == 1
+    recipient, subject, html = sent_emails[0]
+    assert recipient == "avery@example.com"
+    assert subject == "BloomQuest Account Approved & Created"
+    assert "Avery Faculty" in html
+    assert "TempPass1!" in html
+
+
 def test_contact_admin_otp_sends_email_before_reporting_success(monkeypatch):
     db = FakeSession()
     sent_emails = []
