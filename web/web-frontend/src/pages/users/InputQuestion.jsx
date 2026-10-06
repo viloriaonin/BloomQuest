@@ -3,7 +3,7 @@ import { UploadCloud, FileText, FileSpreadsheet, Presentation, X, CheckCircle2, 
 import { usePopup } from '../../components/PopupProvider';
 import { API_URL } from '../../config/api';
 
-const MAX_QUESTIONS_PER_GENERATION = 200;
+const MAX_QUESTIONS_PER_GENERATION = 100;
 const EXAM_TYPE_OPTIONS = ['Midterm Exam', 'Preliminary Exam', 'Final Exam', 'Quiz', 'Long Quiz'];
 const SEMESTER_OPTIONS = ['First Semester', 'Second Semester', 'Midterm Class'];
 const PRIMARY = '#8F1424';
@@ -938,10 +938,10 @@ const InputQuestion = () => {
     );
     const invalidQuestionTypeItems = selectedQuestionTypes.some((type) => {
       const items = questionTypeItemCounts[type];
-      return !Number.isInteger(items) || items < 1 || items > 200;
+      return !Number.isInteger(items) || items < 1 || items > maxQuestionsPerGeneration;
     });
     if (invalidQuestionTypeItems) {
-      setError('Please enter a valid number of questions between 1 and 200 for each selected question type.');
+      setError(`Please enter a valid number of questions between 1 and ${maxQuestionsPerGeneration} for each selected question type.`);
       return;
     }
     if (Object.values(questionTypeItemCounts).reduce((sum, items) => sum + items, 0) !== intTotalItems) {

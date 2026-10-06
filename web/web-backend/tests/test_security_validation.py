@@ -100,18 +100,28 @@ def test_tos_generation_payload_accepts_new_assessment_metadata():
 
 
 def test_tos_generation_payload_enforces_max_questions_per_generation():
+    assert MAX_QUESTIONS_PER_GENERATION == 100
     payload = TOSGenerationPayload(
         upload_id="demo-upload",
         total_items=MAX_QUESTIONS_PER_GENERATION,
         whole_total_points=50,
+        question_type_items={"MCQ": MAX_QUESTIONS_PER_GENERATION},
     )
     assert payload.total_items == MAX_QUESTIONS_PER_GENERATION
 
     with pytest.raises(ValueError):
         TOSGenerationPayload(
             upload_id="demo-upload",
-            total_items=MAX_QUESTIONS_PER_GENERATION + 1,
+            total_items=101,
             whole_total_points=50,
+        )
+
+    with pytest.raises(ValueError):
+        TOSGenerationPayload(
+            upload_id="demo-upload",
+            total_items=100,
+            whole_total_points=50,
+            question_type_items={"MCQ": 101},
         )
 
 
@@ -135,7 +145,7 @@ def test_ai_generation_reservations_enforce_cooldown_and_daily_quota(monkeypatch
     session.commit()
     current_user = session.query(models.User).filter_by(email="limit@example.com").first()
 
-    monkeypatch.setattr("routers.questions.MAX_GENERATIONS_PER_USER_PER_DAY", 2)
+    monkeypatch.setattr("routers.questions.MAX_GENERATED_QUESTIONS_PER_USER_PER_DAY", 10)
     monkeypatch.setattr("routers.questions.GENERATION_COOLDOWN_SECONDS", 60)
     request_started_at = time.perf_counter()
     usage_id = reserve_ai_generation(
@@ -195,8 +205,234 @@ def test_ai_generation_reservations_enforce_cooldown_and_daily_quota(monkeypatch
     with pytest.raises(HTTPException) as daily_error:
         reserve_ai_generation(session, current_user, 3, "question_generation")
     assert daily_error.value.status_code == 429
-    assert "daily" in daily_error.value.detail.lower()
+    assert "2 question(s) remaining" in daily_error.value.detail
     assert session.query(models.AIUsage).filter_by(status="rate_limited").count() == 2
+
+    session.close()
+    engine.dispose()
+
+
+def _create_quota_test_session():
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    campus = models.Campus(name="Question Quota Campus", code="QQC")
+    session.add(campus)
+    session.commit()
+    return engine, session, campus
+
+
+def _create_quota_test_user(session, campus, email):
+    user = models.User(
+        email=email,
+        password="test-password-hash",
+        role="faculty",
+        campus_id=campus.id,
+    )
+    session.add(user)
+    session.commit()
+    return user
+
+
+def _record_quota_usage(session, user, campus, request_type, requested_count, generated_at=None):
+    usage = models.AIUsage(
+        user_id=user.id,
+        campus_id=campus.id,
+        generated_at=generated_at or datetime.utcnow(),
+        request_type=request_type,
+        requested_question_count=requested_count,
+        generated_question_count=requested_count,
+        gemini_model=ai_service.MODEL_NAME,
+        status="success",
+        gemini_api_call_count=1,
+        input_tokens=120,
+        output_tokens=44,
+        total_tokens=164,
+    )
+    session.add(usage)
+    session.commit()
+    return usage
+
+
+def test_ai_generation_quota_accepts_100_and_rejects_any_more(monkeypatch):
+    engine, session, campus = _create_quota_test_session()
+    user = _create_quota_test_user(session, campus, "exact-quota@example.com")
+    monkeypatch.setattr(
+        "routers.questions.MAX_GENERATED_QUESTIONS_PER_USER_PER_DAY", 100
+    )
+    monkeypatch.setattr("routers.questions.GENERATION_COOLDOWN_SECONDS", 10)
+
+    usage_id = reserve_ai_generation(session, user, 100, "question_generation")
+    usage = session.query(models.AIUsage).filter_by(id=usage_id).first()
+    assert usage.requested_question_count == 100
+    assert usage.status == "in_progress"
+
+    with pytest.raises(HTTPException) as quota_error:
+        reserve_ai_generation(session, user, 1, "question_generation")
+    assert quota_error.value.status_code == 429
+    assert "0 question(s) remaining" in quota_error.value.detail
+    limited = session.query(models.AIUsage).filter_by(status="rate_limited").one()
+    assert limited.error_type == "daily_question_limit"
+    assert limited.requested_question_count == 1
+
+    session.close()
+    engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("requested_count", "accepted"),
+    [(30, True), (31, False)],
+)
+def test_daily_question_quota_checks_remaining_amount(monkeypatch, requested_count, accepted):
+    engine, session, campus = _create_quota_test_session()
+    user = _create_quota_test_user(
+        session, campus, f"seventy-used-{requested_count}@example.com"
+    )
+    monkeypatch.setattr(
+        "routers.questions.MAX_GENERATED_QUESTIONS_PER_USER_PER_DAY", 100
+    )
+    monkeypatch.setattr("routers.questions.GENERATION_COOLDOWN_SECONDS", 10)
+    _record_quota_usage(
+        session, user, campus, "question_generation", 70
+    )
+
+    if accepted:
+        usage_id = reserve_ai_generation(
+            session, user, requested_count, "question_generation"
+        )
+        usage = session.query(models.AIUsage).filter_by(id=usage_id).one()
+        assert usage.requested_question_count == 30
+    else:
+        with pytest.raises(HTTPException) as quota_error:
+            reserve_ai_generation(
+                session, user, requested_count, "question_generation"
+            )
+        assert quota_error.value.status_code == 429
+        assert "30 question(s) remaining" in quota_error.value.detail
+        assert "this request asks for 31" in quota_error.value.detail
+        assert session.query(models.AIUsage).filter_by(
+            user_id=user.id, status="in_progress"
+        ).count() == 0
+
+    session.close()
+    engine.dispose()
+
+
+def test_question_recreation_reserves_one_daily_question(monkeypatch):
+    engine, session, campus = _create_quota_test_session()
+    user = _create_quota_test_user(session, campus, "recreate-quota@example.com")
+    monkeypatch.setattr(
+        "routers.questions.MAX_GENERATED_QUESTIONS_PER_USER_PER_DAY", 100
+    )
+    monkeypatch.setattr("routers.questions.GENERATION_COOLDOWN_SECONDS", 10)
+    _record_quota_usage(session, user, campus, "question_generation", 99)
+
+    usage_id = reserve_ai_generation(session, user, 1, "question_recreation")
+    usage = session.query(models.AIUsage).filter_by(id=usage_id).one()
+    assert usage.request_type == "question_recreation"
+    assert usage.requested_question_count == 1
+
+    with pytest.raises(HTTPException) as quota_error:
+        reserve_ai_generation(session, user, 1, "question_recreation")
+    assert quota_error.value.status_code == 429
+    assert "0 question(s) remaining" in quota_error.value.detail
+
+    session.close()
+    engine.dispose()
+
+
+def test_non_generation_actions_do_not_consume_question_quota(monkeypatch):
+    engine, session, campus = _create_quota_test_session()
+    user = _create_quota_test_user(session, campus, "non-generation@example.com")
+    monkeypatch.setattr(
+        "routers.questions.MAX_GENERATED_QUESTIONS_PER_USER_PER_DAY", 100
+    )
+    monkeypatch.setattr("routers.questions.GENERATION_COOLDOWN_SECONDS", 10)
+    for request_type in (
+        "bloom_classification",
+        "question_bank_reuse",
+        "assessment_builder",
+        "assessment_download",
+    ):
+        _record_quota_usage(session, user, campus, request_type, 100)
+
+    usage_id = reserve_ai_generation(session, user, 100, "question_generation")
+    usage = session.query(models.AIUsage).filter_by(id=usage_id).one()
+    assert usage.requested_question_count == 100
+    assert session.query(models.AIUsage).filter_by(status="rate_limited").count() == 0
+
+    session.close()
+    engine.dispose()
+
+
+def test_daily_question_quota_resets_at_utc_midnight(monkeypatch):
+    engine, session, campus = _create_quota_test_session()
+    user = _create_quota_test_user(session, campus, "utc-quota@example.com")
+    monkeypatch.setattr(
+        "routers.questions.MAX_GENERATED_QUESTIONS_PER_USER_PER_DAY", 100
+    )
+    monkeypatch.setattr("routers.questions.GENERATION_COOLDOWN_SECONDS", 10)
+    yesterday = datetime.utcnow().replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ) - timedelta(seconds=1)
+    _record_quota_usage(
+        session, user, campus, "question_generation", 100, yesterday
+    )
+
+    usage_id = reserve_ai_generation(session, user, 100, "question_generation")
+    usage = session.query(models.AIUsage).filter_by(id=usage_id).one()
+    assert usage.generated_at.date() == datetime.utcnow().date()
+    assert usage.requested_question_count == 100
+
+    session.close()
+    engine.dispose()
+
+
+def test_generation_cooldown_still_records_rate_limited_attempt(monkeypatch):
+    engine, session, campus = _create_quota_test_session()
+    user = _create_quota_test_user(session, campus, "cooldown-quota@example.com")
+    monkeypatch.setattr(
+        "routers.questions.MAX_GENERATED_QUESTIONS_PER_USER_PER_DAY", 100
+    )
+    monkeypatch.setattr("routers.questions.GENERATION_COOLDOWN_SECONDS", 10)
+    reserve_ai_generation(session, user, 5, "question_generation")
+
+    with pytest.raises(HTTPException) as cooldown_error:
+        reserve_ai_generation(session, user, 1, "question_generation")
+    assert cooldown_error.value.status_code == 429
+    assert cooldown_error.value.headers["Retry-After"]
+    limited = session.query(models.AIUsage).filter_by(status="rate_limited").one()
+    assert limited.error_type == "generation_cooldown"
+
+    session.close()
+    engine.dispose()
+
+
+def test_quota_reservation_keeps_per_user_row_lock(monkeypatch):
+    from sqlalchemy.orm import Query
+
+    engine, session, campus = _create_quota_test_session()
+    user = _create_quota_test_user(session, campus, "locked-quota@example.com")
+    monkeypatch.setattr(
+        "routers.questions.MAX_GENERATED_QUESTIONS_PER_USER_PER_DAY", 100
+    )
+    monkeypatch.setattr("routers.questions.GENERATION_COOLDOWN_SECONDS", 10)
+    _record_quota_usage(session, user, campus, "question_generation", 20)
+    original_with_for_update = Query.with_for_update
+    lock_calls = []
+
+    def record_row_lock(query, *args, **kwargs):
+        lock_calls.append(query.column_descriptions[0]["entity"])
+        return original_with_for_update(query, *args, **kwargs)
+
+    monkeypatch.setattr(Query, "with_for_update", record_row_lock)
+    accepted = reserve_ai_generation(session, user, 50, "question_generation")
+    assert session.query(models.AIUsage).filter_by(id=accepted).one().requested_question_count == 50
+    with pytest.raises(HTTPException) as competing_request:
+        reserve_ai_generation(session, user, 50, "question_generation")
+    assert competing_request.value.status_code == 429
+    assert "30 question(s) remaining" in competing_request.value.detail
+    assert lock_calls == [models.User, models.User]
 
     session.close()
     engine.dispose()
@@ -223,7 +459,7 @@ def test_direct_generation_api_enforces_maximum_and_daily_limit(monkeypatch):
     session.add(current_user)
     session.commit()
 
-    monkeypatch.setattr("routers.questions.MAX_GENERATIONS_PER_USER_PER_DAY", 5)
+    monkeypatch.setattr("routers.questions.MAX_GENERATED_QUESTIONS_PER_USER_PER_DAY", 100)
     monkeypatch.setattr("routers.questions.GENERATION_COOLDOWN_SECONDS", 1)
     reserve_ai_generation(session, current_user, 1, "question_generation")
 
@@ -280,11 +516,26 @@ def test_direct_generation_api_enforces_maximum_and_daily_limit(monkeypatch):
                 aging_session.query(models.ActivityLog).filter_by(
                     action="AI generation reservation"
                 ).update({models.ActivityLog.created_at: datetime.utcnow() - timedelta(seconds=120)})
+                aging_session.query(models.AIUsage).filter_by(
+                    user_id=current_user.id,
+                    request_type="question_generation",
+                ).delete()
                 aging_session.commit()
-            monkeypatch.setattr("routers.questions.MAX_GENERATIONS_PER_USER_PER_DAY", 1)
+            monkeypatch.setattr("routers.questions.MAX_GENERATED_QUESTIONS_PER_USER_PER_DAY", 1)
+            with session_factory() as full_quota_session:
+                full_quota_session.add(models.AIUsage(
+                    user_id=current_user.id,
+                    campus_id=campus.id,
+                    generated_at=datetime.utcnow(),
+                    request_type="question_generation",
+                    requested_question_count=1,
+                    generated_question_count=1,
+                    status="success",
+                ))
+                full_quota_session.commit()
             daily_limit = client.post("/api/questions/generate-preview", json=valid_payload)
             assert daily_limit.status_code == 429
-            assert "daily" in daily_limit.json()["detail"].lower()
+            assert "0 question(s) remaining" in daily_limit.json()["detail"]
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(previous_overrides)

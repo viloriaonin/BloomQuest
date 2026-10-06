@@ -56,9 +56,18 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)),
 
 FILE_CACHE = {}
 MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
-MAX_QUESTIONS_PER_GENERATION = max(1, int(os.getenv("MAX_QUESTIONS_PER_GENERATION", "200")))
-MAX_GENERATIONS_PER_USER_PER_DAY = max(1, int(os.getenv("MAX_GENERATIONS_PER_USER_PER_DAY", "20")))
+MAX_QUESTIONS_PER_GENERATION = min(
+    100, max(1, int(os.getenv("MAX_QUESTIONS_PER_GENERATION", "100")))
+)
+MAX_GENERATED_QUESTIONS_PER_USER_PER_DAY = max(
+    1, int(os.getenv("MAX_GENERATED_QUESTIONS_PER_USER_PER_DAY", "100"))
+)
 GENERATION_COOLDOWN_SECONDS = max(1, int(os.getenv("GENERATION_COOLDOWN_SECONDS", "10")))
+AI_GENERATION_REQUEST_TYPES = (
+    "question_generation",
+    "question_recreation",
+    "legacy_question_generation",
+)
 ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".docx", ".pptx", ".xlsx", ".xls"}
 DENIED_UPLOAD_EXTENSIONS = {".exe", ".bat", ".cmd", ".scr", ".com", ".jar", ".ps1", ".php", ".jsp", ".html", ".svg", ".js", ".ts", ".py"}
 DISALLOWED_MIME_SIGNATURES = {
@@ -143,6 +152,11 @@ def reserve_ai_generation(
     campus_id = _generation_campus_id(db, current_user, upload_id)
     user_id = current_user.id
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if requested_question_count < 1:
+        raise HTTPException(
+            status_code=422,
+            detail="At least one new question must be requested for AI generation.",
+        )
     try:
         locked_user = db.query(models.User.id).filter(
             models.User.id == user_id
@@ -156,16 +170,34 @@ def reserve_ai_generation(
             models.ActivityLog.action == "AI generation reservation",
             models.ActivityLog.type == "generate",
         )
-        daily_count = reservations.filter(models.ActivityLog.created_at >= day_start).count()
-        if daily_count >= MAX_GENERATIONS_PER_USER_PER_DAY:
+        reserved_questions = int(
+            db.query(func.coalesce(func.sum(models.AIUsage.requested_question_count), 0))
+            .filter(
+                models.AIUsage.user_id == user_id,
+                models.AIUsage.request_type.in_(AI_GENERATION_REQUEST_TYPES),
+                models.AIUsage.status != "rate_limited",
+                models.AIUsage.generated_at >= day_start,
+            )
+            .scalar()
+            or 0
+        )
+        remaining_questions = max(
+            0, MAX_GENERATED_QUESTIONS_PER_USER_PER_DAY - reserved_questions
+        )
+        if requested_question_count > remaining_questions:
             db.rollback()
             _record_rate_limited_usage(
                 db, current_user, campus_id, requested_question_count, request_type,
-                "daily_generation_limit", request_started_at,
+                "daily_question_limit", request_started_at,
             )
             raise HTTPException(
                 status_code=429,
-                detail=f"Daily AI generation limit reached ({MAX_GENERATIONS_PER_USER_PER_DAY}). Try again tomorrow.",
+                detail=(
+                    "Daily AI-generated question limit reached "
+                    f"({MAX_GENERATED_QUESTIONS_PER_USER_PER_DAY} per UTC day). "
+                    f"You have {remaining_questions} question(s) remaining today; "
+                    f"this request asks for {requested_question_count}."
+                ),
             )
 
         cooldown_start = now - timedelta(seconds=GENERATION_COOLDOWN_SECONDS)
@@ -191,6 +223,7 @@ def reserve_ai_generation(
         usage_record = models.AIUsage(
             user_id=user_id,
             campus_id=campus_id,
+            generated_at=now,
             request_type=request_type,
             requested_question_count=requested_question_count,
             status="in_progress",
@@ -200,7 +233,7 @@ def reserve_ai_generation(
         db.add(models.ActivityLog(
             user_id=user_id,
             action="AI generation reservation",
-            details="Question generation request accepted.",
+            details=f"Reserved {requested_question_count} new question(s) for generation.",
             type="generate",
             status="started",
             created_at=now,
@@ -346,8 +379,16 @@ class TOSGenerationPayload(BaseModel):
             "Enumeration", "Matching Type", "Situational", "Short Answer",
         }
         for question_type, items in value.items():
-            if question_type not in allowed or not isinstance(items, int) or items < 1 or items > 200:
-                raise ValueError("Each question type must have a valid number of questions between 1 and 200.")
+            if (
+                question_type not in allowed
+                or not isinstance(items, int)
+                or items < 1
+                or items > MAX_QUESTIONS_PER_GENERATION
+            ):
+                raise ValueError(
+                    "Each question type must have a valid number of questions "
+                    f"between 1 and {MAX_QUESTIONS_PER_GENERATION}."
+                )
         return value
 
     @field_validator("question_types")
