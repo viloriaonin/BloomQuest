@@ -2182,7 +2182,7 @@ def request_contact_admin_otp(payload: ContactAdminOtpRequest, background_tasks:
         .filter(func.lower(models.AccountRequest.email) == normalized_email)
         .first()
     )
-    if existing:
+    if existing and existing.status != "declined":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="An account request already exists for this email address.",
@@ -2255,7 +2255,7 @@ def verify_contact_admin_otp(data: VerifyOtpRequest, background_tasks: Backgroun
         .filter(func.lower(models.AccountRequest.email) == normalized_email)
         .first()
     )
-    if existing:
+    if existing and existing.status != "declined":
         contact_admin_otp_store.pop(normalized_email, None)
         contact_admin_pending_requests.pop(normalized_email, None)
         raise HTTPException(
@@ -2263,17 +2263,25 @@ def verify_contact_admin_otp(data: VerifyOtpRequest, background_tasks: Backgroun
             detail="An account request already exists for this email address.",
         )
 
-    new_request = models.AccountRequest(
-        full_name=pending_payload["full_name"],
-        campus_id=pending_payload["campus_id"],
-        department=pending_payload["department"],
-        program_id=pending_payload.get("program_id"),
-        email=normalized_email,
-        status="pending"
-    )
-    db.add(new_request)
+    if existing:
+        existing.full_name = pending_payload["full_name"]
+        existing.campus_id = pending_payload["campus_id"]
+        existing.department = pending_payload["department"]
+        existing.program_id = pending_payload.get("program_id")
+        existing.status = "pending"
+    else:
+        new_request = models.AccountRequest(
+            full_name=pending_payload["full_name"],
+            campus_id=pending_payload["campus_id"],
+            department=pending_payload["department"],
+            program_id=pending_payload.get("program_id"),
+            email=normalized_email,
+            status="pending"
+        )
+        db.add(new_request)
     db.commit()
-    db.refresh(new_request)
+    if not existing:
+        db.refresh(new_request)
 
     contact_admin_otp_store.pop(normalized_email, None)
     contact_admin_pending_requests.pop(normalized_email, None)

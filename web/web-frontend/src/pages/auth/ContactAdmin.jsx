@@ -143,8 +143,11 @@ const ContactAdmin = () => {
       if (response.ok) {
         const data = await response.json();
         if (data.exists) {
-          setExistingRequestStatus(data.status || "existing"); // Catches any existing record
-          setError("This email is already in use or has an existing request."); 
+          const status = data.status || "existing";
+          setExistingRequestStatus(status);
+          setError(status === "declined"
+            ? "Your previous request was declined. You may submit a new request."
+            : "This email is already in use or has an existing request.");
         } else {
           setExistingRequestStatus(null);
         }
@@ -190,7 +193,7 @@ const ContactAdmin = () => {
     }
 
     // Block submission explicitly if ANY existing ticket/account is tracked in state
-    if (existingRequestStatus) {
+    if (existingRequestStatus && existingRequestStatus !== "declined") {
       setError("Cannot submit. This email is already in use or requested.");
       return;
     }
@@ -643,11 +646,11 @@ const ContactAdmin = () => {
 
             <button
               type="submit"
-              disabled={loading || !!existingRequestStatus}
+              disabled={loading || (!!existingRequestStatus && existingRequestStatus !== "declined")}
               className="w-full text-white font-semibold py-3 transition duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
               style={{ backgroundColor: ink }}
-              onMouseOver={(e) => !loading && !existingRequestStatus && (e.currentTarget.style.backgroundColor = accent)}
-              onMouseOut={(e) => !loading && !existingRequestStatus && (e.currentTarget.style.backgroundColor = ink)}
+              onMouseOver={(e) => !loading && (!existingRequestStatus || existingRequestStatus === "declined") && (e.currentTarget.style.backgroundColor = accent)}
+              onMouseOut={(e) => !loading && (!existingRequestStatus || existingRequestStatus === "declined") && (e.currentTarget.style.backgroundColor = ink)}
             >
               {loading ? <LoadingSpinner label={otpSent ? "Verifying..." : "Sending code..."} spinnerColor="border-white" /> : otpSent ? "Verify & Submit Request" : "Send Verification Code"}
             </button>

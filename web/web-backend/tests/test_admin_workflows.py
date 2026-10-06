@@ -228,6 +228,97 @@ def test_contact_admin_otp_demo_mode_logs_code_without_sending_email(monkeypatch
     assert f"[DEMO] Contact-admin verification code for demo@example.com: {code}" in caplog.text
 
 
+def test_declined_account_request_can_request_new_otp(monkeypatch):
+    declined_request = SimpleNamespace(status="declined", email="retry@example.com")
+    db = FakeSession(account_request=declined_request)
+    monkeypatch.setattr(main, "DEMO_EMAIL_VERIFICATION", True)
+    monkeypatch.setattr(main, "validate_account_request_scope", lambda *args: None)
+
+    result = main.request_contact_admin_otp(
+        main.ContactAdminOtpRequest(
+            full_name="Avery Faculty",
+            campus_id=1,
+            department="Informatics",
+            program_id=1,
+            email="retry@example.com",
+        ),
+        BackgroundTasks(),
+        db,
+    )
+
+    assert result["status"] == "otp-sent"
+    assert main.contact_admin_otp_store["retry@example.com"]["otp"] == result["demo_otp"]
+
+
+@pytest.mark.parametrize("request_status", ["pending", "approved"])
+def test_active_account_request_still_blocks_new_otp(monkeypatch, request_status):
+    existing_request = SimpleNamespace(status=request_status, email="existing@example.com")
+    db = FakeSession(account_request=existing_request)
+    monkeypatch.setattr(main, "DEMO_EMAIL_VERIFICATION", True)
+    monkeypatch.setattr(main, "validate_account_request_scope", lambda *args: None)
+
+    with pytest.raises(HTTPException) as error:
+        main.request_contact_admin_otp(
+            main.ContactAdminOtpRequest(
+                full_name="Avery Faculty",
+                campus_id=1,
+                department="Informatics",
+                program_id=1,
+                email="existing@example.com",
+            ),
+            BackgroundTasks(),
+            db,
+        )
+
+    assert error.value.status_code == 409
+
+
+def test_verifying_declined_account_request_reopens_same_record(monkeypatch):
+    declined_request = SimpleNamespace(
+        id=15,
+        full_name="Previous Name",
+        campus_id=1,
+        department="Previous Department",
+        program_id=2,
+        email="retry@example.com",
+        status="declined",
+    )
+    db = FakeSession(account_request=declined_request)
+    code = "043821"
+    monkeypatch.setattr(main, "validate_account_request_scope", lambda *args: None)
+    monkeypatch.setitem(
+        main.contact_admin_otp_store,
+        "retry@example.com",
+        {"otp": code, "expires_at": main.utc_now() + main.timedelta(minutes=10)},
+    )
+    monkeypatch.setitem(
+        main.contact_admin_pending_requests,
+        "retry@example.com",
+        {
+            "full_name": "Avery Faculty",
+            "campus_id": 3,
+            "department": "Informatics",
+            "program_id": 4,
+            "email": "retry@example.com",
+        },
+    )
+
+    result = main.verify_contact_admin_otp(
+        main.VerifyOtpRequest(email="retry@example.com", otp=code),
+        BackgroundTasks(),
+        db,
+    )
+
+    assert result["status"] == "pending"
+    assert declined_request.status == "pending"
+    assert declined_request.full_name == "Avery Faculty"
+    assert declined_request.campus_id == 3
+    assert declined_request.department == "Informatics"
+    assert declined_request.program_id == 4
+    assert db.added == []
+    assert db.commits == 1
+
+
 def test_contact_admin_otp_clears_pending_code_when_email_fails(monkeypatch):
     db = FakeSession()
     monkeypatch.setattr(main, "DEMO_EMAIL_VERIFICATION", False)
