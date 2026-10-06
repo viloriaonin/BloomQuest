@@ -37,7 +37,7 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed
       </div>
 
       <nav onClick={onNavigate} className="flex-1 px-2.5 space-y-1 overflow-y-auto pb-4">
-        {departmentAdmin && <DashboardBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />}
+        <DashboardBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
         <AcademicMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
         {departmentAdmin ? (
           <>
