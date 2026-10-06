@@ -58,6 +58,7 @@ const ContactAdmin = () => {
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
+  const [demoOtp, setDemoOtp] = useState("");
   
   // State management for requests status alerts
   const [error, setError] = useState("");
@@ -227,6 +228,7 @@ const ContactAdmin = () => {
       }
 
       if (!otpSent) {
+        setDemoOtp(typeof data.demo_otp === "string" && /^\d{6}$/.test(data.demo_otp) ? data.demo_otp : "");
         setOtpSent(true);
         setError("");
         return;
@@ -251,6 +253,7 @@ const ContactAdmin = () => {
       setDepartment("");
       setOtp("");
       setOtpSent(false);
+      setDemoOtp("");
       setProgramId("");
     } catch (err) {
       setError("Unable to connect to the server. Please verify your backend application is running.");
@@ -473,8 +476,15 @@ const ContactAdmin = () => {
           )}
 
           {otpSent && (
-            <div className="mb-4 border border-[#D9E1EC] bg-[#F5F8FC] px-4 py-3 text-sm" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
-              <p>A six-digit verification code was sent to your email. Check your inbox and spam folder, then enter it below to submit your request.</p>
+            <div className={`mb-4 border px-4 py-3 text-sm ${demoOtp ? "border-amber-300 bg-amber-50 text-amber-900" : "border-[#D9E1EC] bg-[#F5F8FC]"}`} style={{ color: demoOtp ? undefined : textMuted, fontFamily: 'Inter, sans-serif' }}>
+              {demoOtp ? (
+                <>
+                  <p className="font-semibold">Demo Verification Code: <span className="font-mono text-lg tracking-widest">{demoOtp}</span></p>
+                  <p className="mt-1">Demo Mode — use this code to continue verification.</p>
+                </>
+              ) : (
+                <p>A six-digit verification code was sent to your email. Check your inbox and spam folder, then enter it below to submit your request.</p>
+              )}
             </div>
           )}
 

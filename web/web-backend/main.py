@@ -2213,7 +2213,7 @@ def request_contact_admin_otp(payload: ContactAdminOtpRequest, background_tasks:
             detail="We couldn't send the verification email. Please try again shortly.",
         )
 
-    return {
+    response = {
         "message": (
             "Demo verification code generated. Retrieve it from the backend logs."
             if DEMO_EMAIL_VERIFICATION
@@ -2221,6 +2221,9 @@ def request_contact_admin_otp(payload: ContactAdminOtpRequest, background_tasks:
         ),
         "status": "otp-sent",
     }
+    if DEMO_EMAIL_VERIFICATION:
+        response["demo_otp"] = code
+    return response
 
 
 @app.post("/api/contact-admin/verify-otp")

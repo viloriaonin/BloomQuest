@@ -184,7 +184,7 @@ def test_contact_admin_otp_sends_email_before_reporting_success(monkeypatch):
     )
 
     assert result["status"] == "otp-sent"
-    assert "demo_code" not in result
+    assert "demo_otp" not in result
     assert len(sent_emails) == 1
     assert sent_emails[0][0] == "avery@example.com"
     assert main.contact_admin_otp_store["avery@example.com"]["otp"] == sent_emails[0][1]
@@ -220,9 +220,9 @@ def test_contact_admin_otp_demo_mode_logs_code_without_sending_email(monkeypatch
     code = main.contact_admin_otp_store["demo@example.com"]["otp"]
     expires_at = main.contact_admin_otp_store["demo@example.com"]["expires_at"]
     assert result["status"] == "otp-sent"
+    assert result["demo_otp"] == code
     assert "backend logs" in result["message"]
     assert code not in result["message"]
-    assert "demo_code" not in result
     assert code.isdigit() and len(code) == 6
     assert expires_at > main.utc_now()
     assert f"[DEMO] Contact-admin verification code for demo@example.com: {code}" in caplog.text
