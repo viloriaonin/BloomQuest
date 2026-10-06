@@ -959,6 +959,7 @@ SENDER_EMAIL = os.getenv("SENDER_EMAIL", "")
 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "")
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
 EMAIL_FROM = os.getenv("EMAIL_FROM", "").strip()
+DEMO_EMAIL_VERIFICATION = os.getenv("DEMO_EMAIL_VERIFICATION", "").strip().lower() == "true"
 
 
 def require_email_delivery_configured() -> None:
@@ -2187,7 +2188,8 @@ def request_contact_admin_otp(payload: ContactAdminOtpRequest, background_tasks:
             detail="An account request already exists for this email address.",
         )
 
-    require_email_delivery_configured()
+    if not DEMO_EMAIL_VERIFICATION:
+        require_email_delivery_configured()
     code = f"{random.randint(0, 999999):06d}"
     contact_admin_pending_requests[normalized_email] = {
         "full_name": payload.full_name,
@@ -2201,7 +2203,9 @@ def request_contact_admin_otp(payload: ContactAdminOtpRequest, background_tasks:
         "expires_at": utc_now() + timedelta(minutes=10),
     }
     logger.info("[OTP] Generated contact-admin verification code for %s", normalized_email)
-    if not send_contact_admin_otp_email(normalized_email, code):
+    if DEMO_EMAIL_VERIFICATION:
+        logger.warning("[DEMO] Contact-admin verification code for %s: %s", normalized_email, code)
+    elif not send_contact_admin_otp_email(normalized_email, code):
         contact_admin_otp_store.pop(normalized_email, None)
         contact_admin_pending_requests.pop(normalized_email, None)
         raise HTTPException(
@@ -2210,7 +2214,11 @@ def request_contact_admin_otp(payload: ContactAdminOtpRequest, background_tasks:
         )
 
     return {
-        "message": "OTP sent successfully. Please verify the code to continue.",
+        "message": (
+            "Demo verification code generated. Retrieve it from the backend logs."
+            if DEMO_EMAIL_VERIFICATION
+            else "OTP sent successfully. Please verify the code to continue."
+        ),
         "status": "otp-sent",
     }
 

@@ -160,6 +160,7 @@ def test_send_email_uses_resend_https_api(monkeypatch):
 def test_contact_admin_otp_sends_email_before_reporting_success(monkeypatch):
     db = FakeSession()
     sent_emails = []
+    monkeypatch.setattr(main, "DEMO_EMAIL_VERIFICATION", False)
     monkeypatch.setattr(main, "RESEND_API_KEY", "")
     monkeypatch.setattr(main, "SENDER_EMAIL", "noreply@example.com")
     monkeypatch.setattr(main, "SENDER_PASSWORD", "smtp-secret")
@@ -189,8 +190,47 @@ def test_contact_admin_otp_sends_email_before_reporting_success(monkeypatch):
     assert main.contact_admin_otp_store["avery@example.com"]["otp"] == sent_emails[0][1]
 
 
+def test_contact_admin_otp_demo_mode_logs_code_without_sending_email(monkeypatch, caplog):
+    db = FakeSession()
+    monkeypatch.setattr(main, "DEMO_EMAIL_VERIFICATION", True)
+    monkeypatch.setattr(main, "validate_account_request_scope", lambda *args: None)
+    monkeypatch.setattr(
+        main,
+        "require_email_delivery_configured",
+        lambda: pytest.fail("Demo mode should not require email configuration"),
+    )
+    monkeypatch.setattr(
+        main,
+        "send_contact_admin_otp_email",
+        lambda *args: pytest.fail("Demo mode must not send email"),
+    )
+
+    result = main.request_contact_admin_otp(
+        main.ContactAdminOtpRequest(
+            full_name="Avery Faculty",
+            campus_id=1,
+            department="Informatics",
+            program_id=1,
+            email="demo@example.com",
+        ),
+        BackgroundTasks(),
+        db,
+    )
+
+    code = main.contact_admin_otp_store["demo@example.com"]["otp"]
+    expires_at = main.contact_admin_otp_store["demo@example.com"]["expires_at"]
+    assert result["status"] == "otp-sent"
+    assert "backend logs" in result["message"]
+    assert code not in result["message"]
+    assert "demo_code" not in result
+    assert code.isdigit() and len(code) == 6
+    assert expires_at > main.utc_now()
+    assert f"[DEMO] Contact-admin verification code for demo@example.com: {code}" in caplog.text
+
+
 def test_contact_admin_otp_clears_pending_code_when_email_fails(monkeypatch):
     db = FakeSession()
+    monkeypatch.setattr(main, "DEMO_EMAIL_VERIFICATION", False)
     monkeypatch.setattr(main, "RESEND_API_KEY", "")
     monkeypatch.setattr(main, "SENDER_EMAIL", "noreply@example.com")
     monkeypatch.setattr(main, "SENDER_PASSWORD", "smtp-secret")

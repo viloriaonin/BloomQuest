@@ -11,6 +11,10 @@ For Railway deployments, configure a transactional email API because outbound SM
 
 Verify the sender domain with Resend before deploying, then add both variables to the backend service and redeploy. The existing Gmail SMTP settings (`SMTP_SERVER`, `SMTP_PORT`, `SENDER_EMAIL`, and `SENDER_PASSWORD`) remain available for local development and Railway Pro deployments. Never commit API keys or SMTP passwords.
 
+### Capstone demo without email delivery
+
+For a temporary demonstration only, set `DEMO_EMAIL_VERIFICATION=true` in the backend service environment. Contact Admin OTPs will still be generated, stored, expire after 10 minutes, and be validated normally, but they will not be emailed. The generated OTP is written to the backend logs. Anyone with log access can see these temporary codes, so disable this setting after the demo by setting it to `false` or removing it, then redeploy.
+
 ## Windows
 
 From this directory, create and install into a virtual environment:
