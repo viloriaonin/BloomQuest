@@ -1,17 +1,4 @@
-"""
-Predictive + prescriptive analytics for Table of Specification (TOS) completion.
-
-Predictive: compares the TOS's TARGET Bloom-level distribution (already
-computed by compute_tos() in tos_utils.py and stored on
-TableOfSpecification.tos_data) against the ACTUAL distribution of
-GeneratedQuestion rows written so far for that TOS, to forecast whether the
-exam will be Bloom-balanced by the time it's finished.
-
-Prescriptive: turns any gap found above into a concrete, ranked list of
-"add N more <bloom level> question(s) on <topic>" recommendations, and a
-separate ML-powered endpoint recommends reusing existing Question Bank
-content instead of writing new questions from scratch.
-"""
+"""Progress and recommendations for authenticated users' Table of Specifications."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -20,7 +7,9 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 import models
+from routers.questions import _assert_upload_access
 from routers.tos_utils import BLOOM_LEVELS
+from security import get_current_user
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
 
@@ -35,26 +24,58 @@ def _empty_bloom_counts():
     return {level: 0 for level in BLOOM_LEVELS}
 
 
-@router.get("/tos-list")
-def list_tos_records(db: Session = Depends(get_db)):
-    """Quick lookup helper: lists every TOS record's id alongside enough
-    context (subject, exam type, total items, question count so far) to
-    find the right tos_id to test /tos/{tos_id}/forecast with -- since the
-    frontend doesn't currently surface tos_id anywhere in the UI.
-    """
+def _get_authorized_tos(tos_id: int, db: Session, current_user):
+    tos = db.query(models.TableOfSpecification).filter(
+        models.TableOfSpecification.id == tos_id
+    ).first()
+    if not tos or not tos.upload_id:
+        raise HTTPException(status_code=404, detail="Table of Specification not found")
+    _assert_upload_access(str(tos.upload_id), current_user, db)
+    return tos
+
+
+def _get_accessible_tos_records(db: Session, current_user):
     records = db.query(models.TableOfSpecification).order_by(
         models.TableOfSpecification.id.desc()
     ).all()
-
-    result = []
+    accessible = []
     for tos in records:
+        if not tos.upload_id:
+            continue
+        try:
+            _assert_upload_access(str(tos.upload_id), current_user, db)
+        except HTTPException as exc:
+            if exc.status_code in {403, 404}:
+                continue
+            raise
+        accessible.append(tos)
+    return accessible
+
+
+@router.get("/tos-list")
+def list_tos_records(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """List TOS records the signed-in user is authorized to analyze."""
+    result = []
+    for tos in _get_accessible_tos_records(db, current_user):
         question_count = db.query(models.GeneratedQuestion).filter(
             models.GeneratedQuestion.tos_id == tos.id,
             models.GeneratedQuestion.archived.is_(False),
         ).count()
+        upload = db.query(models.UploadedFile).filter(
+            models.UploadedFile.id == tos.upload_id
+        ).first()
+        subject_name = None
+        if upload and upload.subject_id:
+            subject_name = db.query(models.Subject.name).filter(
+                models.Subject.id == upload.subject_id
+            ).scalar()
         result.append({
             "tos_id": tos.id,
             "upload_id": tos.upload_id,
+            "subject_name": subject_name,
             "exam_type": tos.exam_type,
             "department": tos.department,
             "total_items_target": tos.total_items,
@@ -65,12 +86,12 @@ def list_tos_records(db: Session = Depends(get_db)):
 
 
 @router.get("/tos/{tos_id}/forecast")
-def get_tos_forecast(tos_id: int, db: Session = Depends(get_db)):
-    tos = db.query(models.TableOfSpecification).filter(
-        models.TableOfSpecification.id == tos_id
-    ).first()
-    if not tos:
-        raise HTTPException(status_code=404, detail="Table of Specification not found")
+def get_tos_forecast(
+    tos_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    tos = _get_authorized_tos(tos_id, db, current_user)
 
     target_topics = tos.tos_data or []
 
@@ -180,27 +201,13 @@ def get_tos_forecast(tos_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/tos/{tos_id}/reuse-suggestions")
-def get_reuse_suggestions(tos_id: int, db: Session = Depends(get_db)):
-    """ML-powered prescriptive recommendation.
-
-    For every Bloom-level/topic gap in this TOS, search the ENTIRE Question
-    Bank (across all subjects/TOS, not just this one) for existing, active
-    questions that are:
-      (a) classified at the exact Bloom level the gap needs (your trained
-          classifier's output -- see classify_question_ml), and
-      (b) topically similar to the gap's topic, via TF-IDF + cosine
-          similarity over the candidate pool.
-
-    Recommends reusing/adapting an existing question instead of generating
-    a new one from scratch. This is a content-based recommender system:
-    real ML (vector-space similarity), not a lookup table, and it directly
-    builds on top of the Bloom classifier's output.
-    """
-    tos = db.query(models.TableOfSpecification).filter(
-        models.TableOfSpecification.id == tos_id
-    ).first()
-    if not tos:
-        raise HTTPException(status_code=404, detail="Table of Specification not found")
+def get_reuse_suggestions(
+    tos_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Recommend accessible questions using saved Bloom labels and TF-IDF similarity."""
+    tos = _get_authorized_tos(tos_id, db, current_user)
 
     target_topics = tos.tos_data or []
 
@@ -233,9 +240,13 @@ def get_reuse_suggestions(tos_id: int, db: Session = Depends(get_db)):
     # Candidate pool: non-archived (i.e. not deleted) questions from OTHER
     # TOS records (reusing a question already in this exam doesn't make
     # sense). Archived questions are excluded from the candidate pool.
+    accessible_tos_ids = [
+        record.id for record in _get_accessible_tos_records(db, current_user)
+    ]
     candidates = db.query(models.GeneratedQuestion).filter(
         models.GeneratedQuestion.archived.is_(False),
         models.GeneratedQuestion.tos_id != tos_id,
+        models.GeneratedQuestion.tos_id.in_(accessible_tos_ids),
     ).all()
 
     if not candidates:

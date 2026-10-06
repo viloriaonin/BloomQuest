@@ -37,6 +37,122 @@ def db_session():
         engine.dispose()
 
 
+def test_assessment_analytics_requires_auth_and_scopes_tos_and_reuse_candidates():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    session = session_factory()
+    campus = models.Campus(name="Analytics Campus", code="ANALYTICS")
+    session.add(campus)
+    session.flush()
+    faculty = models.User(
+        email="analytics_faculty@example.com",
+        password="hashed",
+        role="faculty",
+        campus_id=campus.id,
+    )
+    other_faculty = models.User(
+        email="analytics_other@example.com",
+        password="hashed",
+        role="faculty",
+        campus_id=campus.id,
+    )
+    session.add_all([faculty, other_faculty])
+    session.flush()
+
+    def add_tos(owner, subject_name, tos_data):
+        subject = models.Subject(name=subject_name, code=subject_name[:8], user_id=owner.id)
+        session.add(subject)
+        session.flush()
+        upload = models.UploadedFile(user_id=owner.id, subject_id=subject.id)
+        session.add(upload)
+        session.flush()
+        tos = models.TableOfSpecification(
+            upload_id=upload.id,
+            tos_data=tos_data,
+            total_items=1,
+            exam_type="Quiz",
+        )
+        session.add(tos)
+        session.flush()
+        return tos
+
+    target = add_tos(
+        faculty,
+        "Target Course",
+        [{"topic_name": "Database Design", "bloom_counts": {"Apply": 1}}],
+    )
+    accessible_source = add_tos(faculty, "Other Course", [])
+    hidden_source = add_tos(other_faculty, "Hidden Course", [])
+    session.add_all([
+        models.GeneratedQuestion(
+            tos_id=accessible_source.id,
+            user_id=faculty.id,
+            topic_name="Database Design",
+            bloom_level="Apply",
+            question_type="MCQ",
+            question="Which design best avoids duplicate data?",
+        ),
+        models.GeneratedQuestion(
+            tos_id=hidden_source.id,
+            user_id=other_faculty.id,
+            topic_name="Database Design",
+            bloom_level="Apply",
+            question_type="MCQ",
+            question="Hidden question from another faculty.",
+        ),
+    ])
+    session.commit()
+
+    def override_db():
+        yield session
+
+    previous_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[get_db] = override_db
+    try:
+        with TestClient(app) as client:
+            unauthenticated = client.get("/api/analytics/tos-list")
+            assert unauthenticated.status_code == 401
+
+            app.dependency_overrides[get_current_user] = lambda: faculty
+            records = client.get("/api/analytics/tos-list")
+            assert records.status_code == 200
+            assert {item["tos_id"] for item in records.json()} == {
+                target.id,
+                accessible_source.id,
+            }
+
+            forecast = client.get(f"/api/analytics/tos/{target.id}/forecast")
+            assert forecast.status_code == 200
+            forecast_data = forecast.json()["predictive"]
+            assert forecast_data["overall_completion_pct"] == 0
+            assert forecast_data["overall_target_total"] == 1
+            assert forecast_data["at_risk_bloom_levels"] == []
+
+            suggestions = client.get(
+                f"/api/analytics/tos/{target.id}/reuse-suggestions"
+            )
+            assert suggestions.status_code == 200
+            matches = suggestions.json()["suggestions"][0]["matches"]
+            assert [match["question"] for match in matches] == [
+                "Which design best avoids duplicate data?"
+            ]
+
+            hidden_forecast = client.get(
+                f"/api/analytics/tos/{hidden_source.id}/forecast"
+            )
+            assert hidden_forecast.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous_overrides)
+        session.close()
+        engine.dispose()
+
+
 def test_super_admin_can_access_any_campus():
     user = SimpleNamespace(role="super_admin", campus_id=None)
 
