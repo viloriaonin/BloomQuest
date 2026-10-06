@@ -1934,11 +1934,14 @@ async def approve_account_request(payload: AccountActionRequest, background_task
             "archived": created_user.archived,
         }
 
-    return {
+    response = {
         "status": "success",
         "message": f"Account approved successfully. Credentials dispatched to {payload.email}.",
         "created_user": formatted,
     }
+    if DEMO_EMAIL_VERIFICATION:
+        response["demo_temporary_password"] = temp_password
+    return response
 
 @app.put("/api/users/update-password")
 def update_user_password(payload: UpdatePasswordRequest, db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):

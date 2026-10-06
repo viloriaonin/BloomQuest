@@ -1,3 +1,4 @@
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -371,6 +372,44 @@ def test_contact_admin_otp_clears_pending_code_when_email_fails(monkeypatch):
     assert error.value.status_code == 503
     assert "failed@example.com" not in main.contact_admin_otp_store
     assert "failed@example.com" not in main.contact_admin_pending_requests
+
+
+@pytest.mark.parametrize("demo_mode", [True, False])
+def test_approval_response_includes_temporary_password_only_in_demo_mode(monkeypatch, demo_mode):
+    request = SimpleNamespace(
+        id=10,
+        full_name="Avery Faculty",
+        department="Informatics",
+        campus_id=1,
+        program_id=2,
+        email="avery@example.com",
+    )
+    created_user = SimpleNamespace(
+        id=23,
+        name=request.full_name,
+        email=request.email,
+        role="faculty",
+        department=request.department,
+        program_id=request.program_id,
+        archived=False,
+    )
+    db = FakeSession(account_request=request, user_results=[None, created_user])
+    monkeypatch.setattr(main, "DEMO_EMAIL_VERIFICATION", demo_mode)
+    monkeypatch.setattr(main, "generate_temporary_password", lambda: "TempPass1!")
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+
+    result = asyncio.run(
+        main.approve_account_request(
+            SimpleNamespace(email=request.email),
+            SimpleNamespace(add_task=lambda *args, **kwargs: None),
+            db,
+            _admin=SimpleNamespace(id=1, role="super_admin"),
+        )
+    )
+
+    assert ("demo_temporary_password" in result) is demo_mode
+    if demo_mode:
+        assert result["demo_temporary_password"] == "TempPass1!"
 
 
 @pytest.mark.asyncio

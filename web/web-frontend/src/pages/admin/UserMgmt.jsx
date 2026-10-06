@@ -134,9 +134,12 @@ export const UserMgmtContent = () => {
         throw new Error(errorData.detail || "Backend approval failed.");
       }
 
-      await response.json();
+      const approvalData = await response.json();
+      const successMessage = approvalData.demo_temporary_password
+        ? `Account Approved — Temporary Password: ${approvalData.demo_temporary_password}\n\nPlease provide these credentials to ${email}. This password is shown only once.`
+        : `Success! Account created and credentials securely emailed to ${email}.`;
 
-      await showAlert(`Success! Account created and credentials securely emailed to ${email}.`, "Approved");
+      await showAlert(successMessage, "Approved");
       setRequests((prev) => prev.filter((req) => req.email !== email));
 
       await fetchUsers();
