@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 import os
@@ -61,13 +62,12 @@ def test_convert_docx_to_pdf_uses_libreoffice_on_linux(tmp_path, monkeypatch):
     assert pdf_path.read_bytes() == b"%PDF-test"
 
 
-@pytest.mark.asyncio
-async def test_read_upload_bytes_rejects_image_content_even_with_allowed_extension():
+def test_read_upload_bytes_rejects_image_content_even_with_allowed_extension():
     png_bytes = b"\x89PNG\r\n\x1a\n" + b"fake-image-data"
     file = UploadFile(filename="report.pdf", file=io.BytesIO(png_bytes))
 
     with pytest.raises(Exception):
-        await read_upload_bytes(file, "module_file")
+        asyncio.run(read_upload_bytes(file, "module_file"))
 
 
 def test_tos_generation_payload_accepts_frontend_question_types():
@@ -468,7 +468,7 @@ def test_direct_generation_api_enforces_maximum_and_daily_limit(monkeypatch):
         "user_id": current_user.id,
         "subject": {"name": "Biology", "code": "BIO"},
         "topics": [{"name": "Cell Structure", "ilo": "Describe cell components."}],
-        "module_text": "Cell membranes control transport.",
+        "module_text": "Cell structure includes membranes that control transport.",
     }
 
     def override_db():
@@ -712,6 +712,164 @@ def test_invalid_and_empty_gemini_responses_are_retried(monkeypatch):
     assert tracker.token_totals() == (30, 6, 36)
 
 
+def test_response_validation_reports_missing_question_array():
+    assert ai_service.response_validation_errors({}, expected_question_count=1) == [
+        "response is missing the 'questions' array"
+    ]
+
+
+def test_response_validation_reports_invalid_mcq_options():
+    response = {
+        "questions": [{
+            "bloom_level": "Remember",
+            "question_type": "MCQ",
+            "question": "Which option is correct?",
+            "options": ["A", "B"],
+            "correct_answer": "A",
+            "explanation": "The module states this.",
+        }]
+    }
+
+    assert ai_service.response_validation_errors(response, expected_question_count=1) == [
+        "question 1 MCQ must have exactly four options"
+    ]
+
+
+def test_retry_prompt_includes_previous_validation_feedback(monkeypatch):
+    generated_response = {
+        "questions": [{
+            "bloom_level": "Remember",
+            "question_type": "MCQ",
+            "question": "Which option is correct?",
+            "options": ["A", "B", "C", "D"],
+            "correct_answer": "A",
+            "explanation": "The module states this.",
+        }]
+    }
+    prompts = []
+    responses = iter([
+        json.dumps({"questions": []}),
+        json.dumps(generated_response),
+    ])
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            prompts.append(kwargs["contents"])
+            return SimpleNamespace(text=next(responses))
+
+    monkeypatch.setattr(ai_service, "client", SimpleNamespace(models=FakeModels()))
+    monkeypatch.setattr(ai_service, "MAX_RETRIES", 2)
+    monkeypatch.setattr(ai_service.time, "sleep", lambda _: None)
+
+    result = ai_service.generate_with_retry(
+        "Generate one MCQ.",
+        expected_question_count=1,
+    )
+
+    assert result == generated_response
+    assert len(prompts) == 2
+    assert "'questions' array is empty" in prompts[1]
+
+
+def test_generation_rejects_selected_topics_missing_from_module(monkeypatch):
+    upload_id = "topic-module-mismatch"
+    questions_router.FILE_CACHE[f"{upload_id}_metadata"] = {
+        "subject": {"name": "Biology", "code": "BIO"},
+        "topics": [
+            {"topic_name": "Cell Structure"},
+            {"topic_name": "Database Normalization"},
+        ],
+        "module_text": "## Cell Structure\nCell membranes control transport.",
+    }
+    monkeypatch.setattr(questions_router, "_assert_upload_access", lambda *_args: None)
+    monkeypatch.setattr(
+        questions_router,
+        "compute_tos",
+        lambda **_kwargs: [
+            {"topic_name": "Cell Structure", "items": 1},
+            {"topic_name": "Database Normalization", "items": 1},
+        ],
+    )
+    monkeypatch.setattr(
+        questions_router,
+        "reserve_ai_generation",
+        lambda *_args, **_kwargs: pytest.fail("Unsupported topics must not reserve AI usage."),
+    )
+    payload = TOSGenerationPayload(
+        upload_id=upload_id,
+        total_items=1,
+        whole_total_points=1,
+        selected_topic_indices=[0],
+    )
+
+    try:
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(questions_router.generate_preview(
+                payload,
+                db=object(),
+                current_user=SimpleNamespace(id=7),
+            ))
+
+        assert error.value.status_code == 422
+        assert error.value.detail["code"] == "TOPICS_NOT_IN_MODULE"
+        assert error.value.detail["topics"] == ["Database Normalization"]
+    finally:
+        questions_router.FILE_CACHE.pop(f"{upload_id}_metadata", None)
+
+
+def test_tos_generation_never_calls_ai_for_unsupported_topic(monkeypatch):
+    monkeypatch.setattr(
+        ai_service,
+        "generate_questions_for_topic",
+        lambda *_args, **_kwargs: pytest.fail("Unsupported topic reached question generation."),
+    )
+
+    with pytest.raises(ValueError, match="does not provide identifiable content"):
+        ai_service.generate_questions_from_tos(
+            subject={"name": "Machine Learning", "code": "ML"},
+            module_text="Supervised machine learning uses regression to predict continuous values.",
+            tos_data=[{
+                "topic_name": "Supervised Machine Learning Classification",
+                "question_distribution": {"Remember": ["MCQ"]},
+            }],
+        )
+
+
+def test_tos_pdf_builder_returns_pdf_document():
+    from pypdf import PdfReader
+
+    pdf_data = questions_router._build_tos_pdf(
+        tos_data=[{
+            "topic_name": "Cell Structure",
+            "ilo": "Describe cell components",
+            "hours_a": 2,
+            "weight": 100,
+            "items": 1,
+            "bloom_counts": {
+                "Remember": 1,
+                "Understand": 0,
+                "Apply": 0,
+                "Analyze": 0,
+                "Evaluate": 0,
+                "Create": 0,
+            },
+        }],
+        course_code="BIO101",
+        course_title="Biology",
+        total_items=1,
+        exam_type="Quiz",
+        semester="First Semester",
+        academic_year="2026-2027",
+        instructor_name="Instructor",
+        department="Science",
+    )
+
+    assert pdf_data.startswith(b"%PDF-")
+    pdf_text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf_data)).pages)
+    assert "TABLE OF SPECIFICATIONS" in pdf_text
+    assert "Cell Structure" in pdf_text
+
+
 def test_over_count_gemini_response_is_retried_until_exact_count(monkeypatch):
     question = {
         "bloom_level": "Remember",
@@ -864,6 +1022,20 @@ def test_answer_key_uses_option_letters_for_mcq_and_matching_type():
     )
     assert _format_answer_key_value(mcq) == "C"
 
+    true_false = SimpleNamespace(
+        question_type="True or False",
+        options=["True", "False"],
+        correct_answer="True",
+    )
+    assert _format_answer_key_value(true_false) == "True"
+
+    saved_true_false = SimpleNamespace(
+        question_type="True or False",
+        options=["True", "False"],
+        correct_answer='["False"]',
+    )
+    assert _format_answer_key_value(saved_true_false) == "False"
+
     matching = SimpleNamespace(
         question_type="Matching Type",
         options={
@@ -944,6 +1116,67 @@ def test_assessment_docx_includes_matching_type_table_for_options_payloads():
     assert any("Definition A" in cell for row in table_rows for cell in row)
     assert any("1. Concept A" in cell for row in table_rows for cell in row)
     assert any("A. Definition A" in cell for row in table_rows for cell in row)
+
+
+def test_assessment_answer_key_matches_grouped_exam_question_numbers():
+    from docx import Document
+    from routers.assessment import build_assessment_docx
+
+    questions = [
+        SimpleNamespace(question="Select the first answer.", question_type="MCQ", options=["Alpha", "Bravo"], correct_answer="Alpha"),
+        SimpleNamespace(question="Select the second answer.", question_type="MCQ", options=["Alpha", "Bravo"], correct_answer="Bravo"),
+        SimpleNamespace(question="The statement is accurate.", question_type="True or False", options=["True", "False"], correct_answer='["False"]'),
+        SimpleNamespace(question="The statement is accurate.", question_type="True or False", options=["True", "False"], correct_answer='["True"]'),
+    ]
+    docx_path = build_assessment_docx(
+        SimpleNamespace(name="Course Title", code="CS 101"),
+        questions,
+    )
+    try:
+        document = Document(docx_path)
+    finally:
+        assessment_router.cleanup_file(docx_path)
+
+    paragraphs = [paragraph.text for paragraph in document.paragraphs]
+    answer_key_index = paragraphs.index("Answer Key")
+    answer_key = paragraphs[answer_key_index + 1:]
+
+    assert answer_key == [
+        "I. Multiple Choice",
+        "1. A",
+        "2. B",
+        "II. True or False",
+        "3. False",
+        "4. True",
+    ]
+
+
+def test_saved_assessment_export_restores_exam_type_and_academic_year():
+    from docx import Document
+
+    upload = SimpleNamespace(
+        subject=SimpleNamespace(code="CS 101", name="Course Title")
+    )
+    tos_record = SimpleNamespace(
+        exam_type="Midterm Exam",
+        semester="First Semester",
+        academic_year="2026-2027",
+    )
+
+    metadata = questions_router._saved_assessment_metadata(upload, tos_record)
+    content = questions_router._build_assessment_docx(
+        [{"question": "What is a database?", "question_type": "Essay"}],
+        metadata["subject"]["name"],
+        metadata["subject"]["code"],
+        exam_type=metadata["exam_type"],
+        semester=metadata["semester"],
+        academic_year=metadata["academic_year"],
+    )
+    document = Document(io.BytesIO(content))
+    document_text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+
+    assert "Midterm Exam" in document_text
+    assert "First Semester, Academic Year 2026-2027" in document_text
 
 
 def test_preview_saved_file_handles_merged_cells_in_spreadsheet_downloads():

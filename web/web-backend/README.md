@@ -2,6 +2,18 @@
 
 The backend runs on Windows and Linux. It requires a reachable PostgreSQL database configured with `DATABASE_URL` in `database.env`.
 
+## Railway Deployment
+
+Configure the Railway backend service root directory as `web/web-backend`. Railway uses the `railway.json` in that directory to build with Nixpacks, start Uvicorn on Railway's assigned `$PORT`, and health-check the existing `/` route. Set `DATABASE_URL` in the service variables to a reachable PostgreSQL database before deployment.
+
+The frontend is a separate service/build from `web/web-frontend`; set `REACT_APP_API_BASE_URL` to the deployed backend URL when building it.
+
+After saving an assessment in New Analysis, faculty can download the Table of Specifications as Excel or PDF, and the test as DOCX or PDF. The PDF TOS export is served by `GET /api/questions/export/tos/pdf` and uses the saved assessment record.
+
+## Department Dean Accounts
+
+A campus administrator can create a Department Dean account from Academic Management by opening the department's Leadership section. The account is assigned to that department and campus, and its generated initial password is sent to the dean's email using the configured Resend or SMTP delivery settings. This provisions the account only; a dean-specific dashboard and additional permissions are managed separately.
+
 ## OTP Email Delivery
 
 For Railway deployments, configure a transactional email API because outbound SMTP is disabled on Free, Trial, and Hobby plans. The backend supports Resend over HTTPS:

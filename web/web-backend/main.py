@@ -161,6 +161,11 @@ with engine.begin() as connection:
         ("department", "VARCHAR(255)"),
     ):
         add_column_if_missing(connection, "table_of_specification", column, definition)
+    if connection.dialect.name == "postgresql" and any(
+        column["name"] == "user_id" and not column["nullable"]
+        for column in inspect(connection).get_columns("ai_usage")
+    ):
+        connection.execute(text("ALTER TABLE ai_usage ALTER COLUMN user_id DROP NOT NULL"))
 
 
 def log_activity(db: Session, action: str, details: str, type: str, status: str = "success", user_id: int = None, actor_id: int = None, target_user_id: int = None):
@@ -2548,6 +2553,9 @@ def permanent_delete_user(email: str, db: Session = Depends(get_db), admin: mode
     user = db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
+    assert_admin_can_access_user(db, admin, user)
+    if str(user.role).lower() in {"admin", "campus_admin", "super_admin"}:
+        raise HTTPException(status_code=403, detail="Administrative accounts must be managed by a Super Admin.")
 
     db.query(models.ActivityLog).filter(models.ActivityLog.user_id == user.id).update(
         {models.ActivityLog.user_id: None}, synchronize_session=False
@@ -2567,11 +2575,38 @@ def permanent_delete_user(email: str, db: Session = Depends(get_db), admin: mode
     db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.user_id == user.id).update(
         {models.GeneratedQuestion.user_id: None}, synchronize_session=False
     )
+    db.query(models.AIUsage).filter(models.AIUsage.user_id == user.id).update(
+        {models.AIUsage.user_id: None}, synchronize_session=False
+    )
+    db.query(models.Department).filter(models.Department.dean_id == user.id).update(
+        {models.Department.dean_id: None}, synchronize_session=False
+    )
+    db.query(models.Program).filter(models.Program.chair_id == user.id).update(
+        {models.Program.chair_id: None}, synchronize_session=False
+    )
+    db.query(models.UserChangeRequest).filter(
+        models.UserChangeRequest.reviewed_by == user.id
+    ).update({models.UserChangeRequest.reviewed_by: None}, synchronize_session=False)
+    db.query(models.UserChangeRequest).filter(
+        models.UserChangeRequest.user_id == user.id
+    ).delete(synchronize_session=False)
+    db.query(models.DepartmentAcademicChangeRequest).filter(
+        models.DepartmentAcademicChangeRequest.reviewed_by == user.id
+    ).update(
+        {models.DepartmentAcademicChangeRequest.reviewed_by: None},
+        synchronize_session=False,
+    )
+    db.query(models.DepartmentAcademicChangeRequest).filter(
+        models.DepartmentAcademicChangeRequest.submitted_by == user.id
+    ).delete(synchronize_session=False)
+    db.query(models.UserHiddenSubject).filter(
+        models.UserHiddenSubject.user_id == user.id
+    ).delete(synchronize_session=False)
     db.query(models.UserSession).filter(models.UserSession.user_id == user.id).delete(synchronize_session=False)
 
     db.delete(user)
     db.commit()
-    log_activity(db, "User Permanently Deleted", f"Admin {admin.id} permanently deleted user {normalized_email}.", "security", actor_id=admin.id, target_user_id=user.id)
+    log_activity(db, "User Permanently Deleted", f"Admin {admin.id} permanently deleted user {normalized_email}.", "security", actor_id=admin.id)
     return {"message": "User permanently deleted successfully.", "status": "deleted"}
 
 @app.post("/api/contact-admin/decline")

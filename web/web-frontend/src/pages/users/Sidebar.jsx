@@ -47,6 +47,7 @@ const Sidebar = ({ collapsed, mobileOpen, onToggleCollapsed, onNavigate }) => {
   };
 
   const handleLogout = async () => {
+    if (!window.confirm("Are you sure you want to log out?")) return;
     await fetch(`${API_URL}/logout`, { method: "POST" }).catch(() => {});
     localStorage.removeItem("token");
     navigate("/");

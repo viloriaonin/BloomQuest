@@ -182,7 +182,7 @@ class ActivityLog(Base):
 class AIUsage(Base):
     __tablename__ = "ai_usage"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     campus_id = Column(Integer, ForeignKey("campuses.id"), nullable=True, index=True)
     generated_at = Column(DateTime, nullable=False, server_default=func.now(), index=True)
     request_type = Column(String(32), nullable=False)

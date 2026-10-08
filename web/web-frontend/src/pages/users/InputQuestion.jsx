@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { UploadCloud, FileText, FileSpreadsheet, Presentation, X, CheckCircle2, AlertCircle, Sparkles, PencilLine, FolderUp, RotateCcw, RefreshCw, Tags } from 'lucide-react';
+import { UploadCloud, FileText, FileSpreadsheet, Presentation, X, CheckCircle2, AlertCircle, Sparkles, PencilLine, FolderUp, RotateCcw, RefreshCw, Tags, Loader2 } from 'lucide-react';
 import { usePopup } from '../../components/PopupProvider';
 import { API_URL } from '../../config/api';
 
@@ -54,6 +54,7 @@ const FILE_POLICIES = {
 };
 
 const INPUT_QUESTION_SESSION_KEY = 'bloomquest_input_question_session';
+const INPUT_QUESTION_VALIDATION_VERSION = 2;
 
 const serializeFile = (file) => {
   if (!file) return null;
@@ -358,6 +359,7 @@ const InputQuestion = () => {
   const [previewBloomTab, setPreviewBloomTab] = useState('Remember'); // Syntax Error Fixed Here
   const [generationProgress, setGenerationProgress] = useState(0);
   const [previewAction, setPreviewAction] = useState(null);
+  const [downloadingFile, setDownloadingFile] = useState(null);
   const uploadAbortControllerRef = useRef(null);
   const generationRequestInFlightRef = useRef(false);
   const maxQuestionsPerGeneration = Number(uploadResult?.max_questions_per_generation) || MAX_QUESTIONS_PER_GENERATION;
@@ -406,6 +408,12 @@ const InputQuestion = () => {
       }
 
       const parsed = JSON.parse(stored);
+      if (parsed.validationVersion !== INPUT_QUESTION_VALIDATION_VERSION) {
+        sessionStorage.removeItem(INPUT_QUESTION_SESSION_KEY);
+        setError('Your saved analysis was cleared after a material validation update. Upload the module and course information sheet again before generating questions.');
+        return;
+      }
+
       if (parsed.activeTab) setActiveTab(parsed.activeTab);
       if (parsed.wizardStep) setWizardStep(parsed.wizardStep);
       if (parsed.moduleFile) setModuleFile(restoreFile(parsed.moduleFile));
@@ -439,6 +447,7 @@ const InputQuestion = () => {
 
   const persistInputQuestionSession = React.useCallback((overrides = {}) => {
     const snapshot = {
+      validationVersion: INPUT_QUESTION_VALIDATION_VERSION,
       activeTab,
       wizardStep,
       moduleFile: serializeFile(moduleFile),
@@ -1013,6 +1022,7 @@ const InputQuestion = () => {
     });
     setGenerationProgress(10); // Start progress bar
 
+    let topicMismatchRedirect = false;
     try {
       const payload = {
         upload_id: uploadResult.upload_id,
@@ -1043,6 +1053,38 @@ const InputQuestion = () => {
 
       if (!previewResponse.ok) {
         const errData = await parseApiResponse(previewResponse);
+        if (errData?.detail?.code === 'TOPICS_NOT_IN_MODULE') {
+          topicMismatchRedirect = true;
+          const unmatchedTopics = Array.isArray(errData.detail.topics)
+            ? errData.detail.topics.join(', ')
+            : 'one or more selected topics';
+          await showAlert(
+            `The uploaded module does not contain identifiable content for ${unmatchedTopics}. Please upload a module that covers the selected topics. You will be returned to the upload step.`,
+            'Selected topic not found in module'
+          );
+          setModuleFile(null);
+          setSyllabusFile(null);
+          setUploadResult(null);
+          setGenerationResult(null);
+          setExcludedQuestionIds([]);
+          setSelectedTopics([]);
+          setSubcolumnAValues({});
+          setWizardStep(1);
+          setError('');
+          persistInputQuestionSession({
+            activeTab: 'upload',
+            moduleFile: null,
+            syllabusFile: null,
+            uploadResult: null,
+            generationResult: null,
+            excludedQuestionIds: [],
+            selectedTopics: [],
+            subcolumnAValues: {},
+            wizardStep: 1,
+            error: '',
+          });
+          return;
+        }
         const message = getErrorMessage(errData) || `Generation failed with server status code: ${previewResponse.status}`;
         if (previewResponse.status === 502) {
           throw new Error(message || 'The AI Service is currently rate-limited or timed out. Please wait a few moments and try generating again.');
@@ -1081,6 +1123,18 @@ const InputQuestion = () => {
         setGenerationProgress(0);
       }, 500);
       persistInputQuestionSession({
+        ...(topicMismatchRedirect ? {
+          activeTab: 'upload',
+          moduleFile: null,
+          syllabusFile: null,
+          uploadResult: null,
+          generationResult: null,
+          excludedQuestionIds: [],
+          selectedTopics: [],
+          subcolumnAValues: {},
+          wizardStep: 1,
+          error: '',
+        } : {}),
         activeTab: 'upload',
         uploading: false,
         generating: false,
@@ -1162,21 +1216,37 @@ const InputQuestion = () => {
     try {
       const userId = localStorage.getItem('user_id');
       const userParam = userId ? `&user_id=${encodeURIComponent(userId)}` : '';
-      const tosParams = endpoint === 'tos'
+      const tosParams = endpoint === 'tos' || endpoint === 'tos/pdf'
         ? `&exam_type=${encodeURIComponent(examType)}&semester=${encodeURIComponent(semester)}&academic_year=${encodeURIComponent(academicYear.trim())}`
         : '';
       const response = await fetch(`${API_URL}/questions/export/${endpoint}?upload_id=${encodeURIComponent(uploadResult.upload_id)}${userParam}${tosParams}`, {
         method: 'GET',
       });
-      if (!response.ok) throw new Error('Failed to retrieve file asset binary records.');
+      if (!response.ok) {
+        const errorResponse = await parseApiResponse(response);
+        throw new Error(getErrorMessage(errorResponse) || 'Failed to retrieve the requested file.');
+      }
       const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = window.URL.createObjectURL(blob);
+      link.href = objectUrl;
       link.download = filename;
+      document.body.appendChild(link);
       link.click();
+      link.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 1000);
     } catch (err) {
-      setError(`Download failed: ${err.message}`);
+      setError(`Download failed: ${getErrorMessage(err)}`);
+    } finally {
+      setDownloadingFile(null);
     }
+  };
+
+  const startDownload = (endpoint, filename) => {
+    if (downloadingFile) return;
+    setError('');
+    setDownloadingFile(endpoint);
+    void downloadFile(endpoint, filename);
   };
 
   const downloadSubjectCode = (uploadResult?.subject?.code || uploadResult?.subject?.name || 'assessment').trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
@@ -1651,18 +1721,27 @@ const InputQuestion = () => {
 
             {/* Output Previews & Download Links */}
             {generationResult && (
-              <div className="rounded-lg p-5 space-y-6" style={{ backgroundColor: 'rgba(220, 252, 231, 0.35)', border: `1px solid rgba(34, 197, 94, 0.25)` }}>
+              <div className="bq-analysis-preview rounded-lg p-5 space-y-6" style={{ backgroundColor: 'rgba(220, 252, 231, 0.35)', border: `1px solid rgba(34, 197, 94, 0.25)` }}>
                   <div className="flex flex-col justify-between gap-3 border-b pb-4 sm:flex-row sm:items-center">
                   <div>
                     <h3 className="font-bold text-green-800 text-sm">{generationResult.saved ? '✓ Questions Saved to the Question Bank' : 'Review Generated Questions'}</h3>
                     <p className="text-xs text-gray-500">{generationResult.saved ? 'The selected questions are available in the Question Bank.' : 'Similar questions are marked below. Exclude any question you do not want to save.'}</p>
                   </div>
                   {generationResult.saved && <div className="flex flex-wrap items-center justify-end gap-3">
-                    <button onClick={() => downloadFile('tos', `${downloadSubjectCode}-${downloadExamType}-TOS.xlsx`)} className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download TOS (.xlsx)</button>
+                    <button type="button" onClick={() => startDownload('tos', `${downloadSubjectCode}-${downloadExamType}-TOS.xlsx`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
+                      {downloadingFile === 'tos' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Downloading TOS…</> : 'Download TOS (.xlsx)'}
+                    </button>
+                    <button type="button" onClick={() => startDownload('tos/pdf', `${downloadSubjectCode}-${downloadExamType}-TOS.pdf`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 bg-blue-800 hover:bg-blue-900 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
+                      {downloadingFile === 'tos/pdf' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Downloading TOS…</> : 'Download TOS (.pdf)'}
+                    </button>
                     <div className="flex flex-wrap items-center gap-2 border-l border-slate-200 pl-3">
                       <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">Assessment</span>
-                      <button onClick={() => downloadFile('assessment/docx', `${downloadSubjectCode}-${downloadExamType}-Test.docx`)} className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.docx)</button>
-                      <button onClick={() => downloadFile('assessment/pdf', `${downloadSubjectCode}-${downloadExamType}-Test.pdf`)} className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors">Download Test (.pdf)</button>
+                      <button type="button" onClick={() => startDownload('assessment/docx', `${downloadSubjectCode}-${downloadExamType}-Test.docx`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
+                        {downloadingFile === 'assessment/docx' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Downloading Test…</> : 'Download Test (.docx)'}
+                      </button>
+                      <button type="button" onClick={() => startDownload('assessment/pdf', `${downloadSubjectCode}-${downloadExamType}-Test.pdf`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
+                        {downloadingFile === 'assessment/pdf' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Downloading Test…</> : 'Download Test (.pdf)'}
+                      </button>
                     </div>
                   </div>}
                 </div>

@@ -28,6 +28,7 @@ from security import (
 from ai_service import (
     GeminiUsageTracker,
     MODEL_NAME,
+    find_topics_without_module_content,
     generate_questions_from_tos,
     generate_questions_for_topic,
     build_preview,
@@ -830,6 +831,18 @@ def _build_assessment_pdf(questions, course_title, course_code, exam_type="Final
         cleanup_file(pdf_path)
 
 
+def _saved_assessment_metadata(upload, tos_record):
+    subject = upload.subject
+    if not subject or not tos_record:
+        return None
+    return {
+        "subject": {"code": subject.code, "name": subject.name},
+        "exam_type": tos_record.exam_type or "Final Examination",
+        "semester": tos_record.semester or "",
+        "academic_year": tos_record.academic_year or "",
+    }
+
+
 # --- STEP 1: UPLOAD ENDPOINT ---
 @router.post("/upload")
 async def upload_and_analyze_syllabus(
@@ -1118,6 +1131,24 @@ async def generate_preview(
         question_types=payload.question_types,
         question_type_items=payload.question_type_items,
     )
+    unsupported_topics = find_topics_without_module_content(
+        meta["module_text"],
+        selected_topics_data,
+    )
+    if unsupported_topics:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "TOPICS_NOT_IN_MODULE",
+                "message": (
+                    "The uploaded module does not contain identifiable content for "
+                    "the selected topic(s). Upload learning material that covers "
+                    "these topics before generating questions."
+                ),
+                "topics": unsupported_topics,
+            },
+        )
+
     requested_count = sum(topic.get("items", 0) for topic in selected_topics_data)
     if requested_count > MAX_QUESTIONS_PER_GENERATION:
         raise HTTPException(
@@ -1267,6 +1298,24 @@ async def recreate_preview_question(payload: PreviewQuestionActionPayload, db: S
     usage_tracker = GeminiUsageTracker()
 
     topic_name = question.get("topic_name") or "General course content"
+    unsupported_topics = find_topics_without_module_content(
+        metadata.get("module_text", ""),
+        [{"topic_name": topic_name}],
+    )
+    if unsupported_topics:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "TOPICS_NOT_IN_MODULE",
+                "message": (
+                    "The uploaded module does not contain identifiable content for "
+                    f"'{topic_name}'. Upload learning material that covers this topic "
+                    "before generating a replacement question."
+                ),
+                "topics": unsupported_topics,
+            },
+        )
+
     target_level = question.get("bloom_level", "Understand")
     module_text = metadata.get("module_text", "")
     subject = metadata["subject"]
@@ -1459,6 +1508,13 @@ async def confirm_generation(
         raise HTTPException(status_code=500, detail="Question generation completed, but the saved question count could not be verified.")
 
     FILE_CACHE[f"{payload.upload_id}_questions"] = generated_questions
+    metadata = FILE_CACHE.get(f"{payload.upload_id}_metadata")
+    if metadata:
+        metadata.update({
+            "exam_type": exam_type,
+            "semester": semester,
+            "academic_year": academic_year,
+        })
     record_activity(db, "Generated Question Set", f"Generated {len(generated_questions)} questions for {subject_row.name}.", "generate", user_id=user_id)
 
     creator = db.query(models.User).filter(models.User.id == user_id).first() if user_id else None
@@ -1712,6 +1768,209 @@ async def export_institutional_tos(
     )
 
 
+def _build_tos_pdf(tos_data, course_code, course_title, total_items, exam_type, semester, academic_year, instructor_name, department):
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.lib.pagesizes import landscape, letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import inch
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from xml.sax.saxutils import escape
+
+    stream = io.BytesIO()
+    document = SimpleDocTemplate(
+        stream,
+        pagesize=landscape(letter),
+        leftMargin=0.35 * inch,
+        rightMargin=0.35 * inch,
+        topMargin=0.35 * inch,
+        bottomMargin=0.35 * inch,
+        title=f"{course_code} Table of Specifications",
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "TOSPDFTitle",
+        parent=styles["Title"],
+        alignment=TA_CENTER,
+        fontSize=15,
+        leading=18,
+        spaceAfter=5,
+    )
+    info_style = ParagraphStyle(
+        "TOSPDFInfo",
+        parent=styles["Normal"],
+        fontSize=8,
+        leading=11,
+        alignment=TA_LEFT,
+    )
+    cell_style = ParagraphStyle(
+        "TOSPDFCell",
+        parent=styles["Normal"],
+        fontSize=7,
+        leading=9,
+    )
+    header_style = ParagraphStyle(
+        "TOSPDFHeader",
+        parent=cell_style,
+        textColor=colors.white,
+        alignment=TA_CENTER,
+        fontName="Helvetica-Bold",
+    )
+
+    story = [
+        Paragraph("TABLE OF SPECIFICATIONS", title_style),
+        Paragraph(
+            f"<b>Subject:</b> {escape(course_code or '')} - {escape(course_title or '')}"
+            f"&nbsp;&nbsp; <b>Exam:</b> {escape(exam_type or '')}"
+            f"&nbsp;&nbsp; <b>Semester:</b> {escape(semester or '')}"
+            f"&nbsp;&nbsp; <b>Academic Year:</b> {escape(academic_year or '')}",
+            info_style,
+        ),
+        Paragraph(
+            f"<b>Instructor:</b> {escape(instructor_name or '')}"
+            f"&nbsp;&nbsp; <b>Department:</b> {escape(department or '')}"
+            f"&nbsp;&nbsp; <b>Total Items:</b> {int(total_items or 0)}",
+            info_style,
+        ),
+        Spacer(1, 10),
+    ]
+
+    levels = ("Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create")
+    headers = ["Main Topic", "Learning Outcome", "Hours", "Weight"]
+    headers.extend(levels)
+    headers.append("Total")
+    data = [[Paragraph(escape(header), header_style) for header in headers]]
+    totals = {level: 0 for level in levels}
+    total_topic_items = 0
+
+    for topic in tos_data:
+        counts = topic.get("bloom_counts") or {}
+        items = int(topic.get("items") or 0)
+        total_topic_items += items
+        for level in levels:
+            totals[level] += int(counts.get(level, 0) or 0)
+        row = [
+            Paragraph(escape(str(topic.get("topic_name") or "")), cell_style),
+            Paragraph(escape(str(topic.get("ilo") or topic.get("ilo_description") or "")), cell_style),
+            f"{float(topic.get('hours_a') or 0):g}",
+            f"{float(topic.get('weight') or 0):g}%",
+        ]
+        row.extend(str(int(counts.get(level, 0) or 0)) for level in levels)
+        row.append(str(items))
+        data.append(row)
+
+    total_row = [
+        Paragraph("<b>TOTAL</b>", cell_style),
+        "",
+        "",
+        "",
+        *(str(totals[level]) for level in levels),
+        str(total_topic_items),
+    ]
+    data.append(total_row)
+    column_widths = [1.35 * inch, 2.1 * inch, 0.48 * inch, 0.58 * inch]
+    column_widths.extend([0.62 * inch] * len(levels))
+    column_widths.append(0.52 * inch)
+    table = Table(data, colWidths=column_widths, repeatRows=1, hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#8F1424")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#F1F5F9")),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#CBD5E1")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (2, 1), (-1, -1), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(table)
+    document.build(story)
+    return stream.getvalue()
+
+
+@router.get("/export/tos/pdf")
+async def export_institutional_tos_pdf(
+    upload_id: str,
+    user_id: int | None = None,
+    exam_type: str | None = None,
+    semester: str | None = None,
+    academic_year: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    _assert_upload_access(upload_id, current_user, db)
+    if not upload_id.isdigit():
+        raise HTTPException(status_code=404, detail="Saved TOS not found. Save the assessment before downloading its TOS.")
+
+    upload = db.query(models.UploadedFile).filter(
+        models.UploadedFile.id == int(upload_id)
+    ).first()
+    tos_record = db.query(models.TableOfSpecification).filter(
+        models.TableOfSpecification.upload_id == int(upload_id)
+    ).order_by(models.TableOfSpecification.id.desc()).first()
+    subject = upload.subject if upload else None
+    if not upload or not tos_record or not subject:
+        raise HTTPException(status_code=404, detail="Saved TOS not found. Save the assessment before downloading its TOS.")
+
+    tos_data = tos_record.tos_data or []
+    if _bloom_question_numbers_missing(tos_data):
+        saved_questions = db.query(models.GeneratedQuestion).filter(
+            models.GeneratedQuestion.tos_id == tos_record.id
+        ).order_by(models.GeneratedQuestion.id.asc()).all()
+        _ensure_bloom_question_numbers(
+            tos_data,
+            [
+                {"topic_name": question.topic_name, "bloom_level": question.bloom_level}
+                for question in saved_questions
+            ],
+        )
+
+    creator = db.query(models.User).filter(models.User.id == upload.user_id).first() if upload.user_id else None
+    department_name = tos_record.department or (creator.department if creator and creator.department else "")
+    leadership = _resolve_department_leadership(
+        db,
+        creator=creator,
+        subject=subject,
+        department_name=department_name,
+    )
+    download_exam_type = exam_type or tos_record.exam_type or "Final Exam"
+    download_semester = semester or tos_record.semester or "First Semester"
+    download_academic_year = academic_year or tos_record.academic_year or ""
+    pdf_data = _build_tos_pdf(
+        tos_data=tos_data,
+        course_code=subject.code,
+        course_title=subject.name,
+        total_items=tos_record.total_items or 0,
+        exam_type=download_exam_type,
+        semester=download_semester,
+        academic_year=download_academic_year,
+        instructor_name=tos_record.instructor_name or ((creator.name or creator.email) if creator else ""),
+        department=leadership["department_name"],
+    )
+    subject_code = re.sub(r"[^A-Za-z0-9]+", "-", subject.code or subject.name or "assessment").strip("-")
+    exam_filename = re.sub(r"[^A-Za-z0-9]+", "-", download_exam_type).strip("-")
+    filename = f"{subject_code}-{exam_filename}-TOS.pdf"
+    record_download(
+        db,
+        "Downloaded TOS",
+        f"Downloaded '{filename}'.",
+        filename,
+        "application/pdf",
+        pdf_data,
+        user_id=current_user.id,
+    )
+    return StreamingResponse(
+        io.BytesIO(pdf_data),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )
+
+
 @router.get("/export/assessment/docx")
 async def export_assessment_docx(upload_id: str, user_id: int | None = None, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     _assert_upload_access(upload_id, current_user, db)
@@ -1732,8 +1991,7 @@ async def export_assessment_docx(upload_id: str, user_id: int | None = None, db:
                 }
                 for question in db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.tos_id == tos_record.id).order_by(models.GeneratedQuestion.id).all()
             ]
-            subject = upload.subject
-            meta = {"subject": {"code": subject.code, "name": subject.name}} if subject else None
+            meta = _saved_assessment_metadata(upload, tos_record)
     if not questions or not meta:
         raise HTTPException(status_code=404, detail="Generated assessment not found or session expired.")
 
@@ -1780,8 +2038,7 @@ async def export_assessment_pdf(upload_id: str, user_id: int | None = None, db: 
                 }
                 for question in db.query(models.GeneratedQuestion).filter(models.GeneratedQuestion.tos_id == tos_record.id).order_by(models.GeneratedQuestion.id).all()
             ]
-            subject = upload.subject
-            meta = {"subject": {"code": subject.code, "name": subject.name}} if subject else None
+            meta = _saved_assessment_metadata(upload, tos_record)
     if not questions or not meta:
         raise HTTPException(status_code=404, detail="Generated assessment not found or session expired.")
 

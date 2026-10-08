@@ -22,7 +22,9 @@ export const UserMgmtContent = () => {
   const [filterOpen, setFilterOpen] = useState(false);
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [programFilter, setProgramFilter] = useState("all");
-  const [joinedFilter, setJoinedFilter] = useState("all");
+  const [academicDepartments, setAcademicDepartments] = useState([]);
+  const [academicPrograms, setAcademicPrograms] = useState([]);
+  const [taxonomyError, setTaxonomyError] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [userView, setUserView] = useState("active");
   const [activityUser, setActivityUser] = useState(null);
@@ -98,11 +100,36 @@ export const UserMgmtContent = () => {
     }
   }, []);
 
+  const fetchAcademicOptions = useCallback(async () => {
+    setTaxonomyError("");
+    try {
+      const response = await fetch(`${API_URL}/academic-hierarchy`, {
+        cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+        },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Could not load department and program options.");
+      }
+      const departments = (data.campuses || []).flatMap((campus) => campus.departments || []);
+      setAcademicDepartments(departments.map((department) => department.name).filter(Boolean));
+      setAcademicPrograms(departments.flatMap((department) => (
+        (department.programs || []).map((program) => program.name).filter(Boolean)
+      )));
+    } catch (err) {
+      console.error(err);
+      setTaxonomyError(err.message || "Could not load department and program options.");
+    }
+  }, []);
+
   useEffect(() => {
     fetchPendingRequests();
     fetchChangeRequests();
     fetchUsers();
-  }, [fetchPendingRequests, fetchChangeRequests, fetchUsers]);
+    fetchAcademicOptions();
+  }, [fetchPendingRequests, fetchChangeRequests, fetchUsers, fetchAcademicOptions]);
 
   useEffect(() => {
     fetchChangeRequests(changeRequestStatus);
@@ -297,6 +324,9 @@ export const UserMgmtContent = () => {
     try {
       const response = await fetch(`${API_URL}/users/${encodeURIComponent(email)}`, {
         method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+        },
       });
 
       if (!response.ok) {
@@ -322,11 +352,8 @@ export const UserMgmtContent = () => {
   };
 
   const matchesUserFilters = (user) => {
-    const joinedDate = user.joined || user.created_at;
-    const joinedTime = joinedDate ? new Date(joinedDate).getTime() : NaN;
-    const now = Date.now();
-    const joinedMatches = joinedFilter === "all" || (joinedFilter === "30" && joinedTime >= now - 30 * 24 * 60 * 60 * 1000) || (joinedFilter === "90" && joinedTime >= now - 90 * 24 * 60 * 60 * 1000) || (joinedFilter === "year" && new Date(joinedDate).getFullYear() === new Date().getFullYear());
-    return (departmentFilter === "all" || user.department === departmentFilter) && (programFilter === "all" || user.program === programFilter) && joinedMatches;
+    return (departmentFilter === "all" || user.department === departmentFilter)
+      && (programFilter === "all" || user.program === programFilter);
   };
 
   const formatActivityDate = (value) => {
@@ -363,8 +390,14 @@ export const UserMgmtContent = () => {
   const filteredActiveUsers = activeUsers.filter((user) => matchesSearch(user) && matchesUserFilters(user));
   const filteredArchivedUsers = archivedUsers.filter((user) => matchesSearch(user) && matchesUserFilters(user));
   const allUsers = [...activeUsers, ...archivedUsers];
-  const departmentOptions = [...new Set(allUsers.map((user) => user.department).filter(Boolean))].sort();
-  const programOptions = [...new Set(allUsers.map((user) => user.program).filter(Boolean))].sort();
+  const departmentOptions = [...new Set([
+    ...academicDepartments,
+    ...allUsers.map((user) => user.department).filter((department) => department && department !== "N/A"),
+  ])].sort((left, right) => left.localeCompare(right));
+  const programOptions = [...new Set([
+    ...academicPrograms,
+    ...allUsers.map((user) => user.program).filter((program) => program && program !== "N/A"),
+  ])].sort((left, right) => left.localeCompare(right));
 
   const visibleUsers = filteredActiveUsers;
   const usersPerPage = 15;
@@ -373,7 +406,7 @@ export const UserMgmtContent = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, departmentFilter, programFilter, joinedFilter, userView]);
+  }, [searchTerm, departmentFilter, programFilter, userView]);
 
   return (
     <div className="bq-admin-user-management bq-attached-user-ui relative space-y-4 page-transition">
@@ -396,16 +429,16 @@ export const UserMgmtContent = () => {
         <div className="relative rounded-md border border-gray-200 bg-white p-2 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row">
             <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search users, email, department, or program..." className="bq-field min-w-0 flex-1 px-3 py-1.5 text-sm" />
-            <button type="button" onClick={() => setFilterOpen((open) => !open)} className={`inline-flex items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-sm font-semibold transition ${filterOpen || departmentFilter !== "all" || programFilter !== "all" || joinedFilter !== "all" ? "border-[#B4454A] bg-red-50 text-[#B4454A]" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"}`}><Filter size={15} /> Filter</button>
+            <button type="button" onClick={() => setFilterOpen((open) => !open)} className={`inline-flex items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-sm font-semibold transition ${filterOpen || departmentFilter !== "all" || programFilter !== "all" ? "border-[#B4454A] bg-red-50 text-[#B4454A]" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"}`}><Filter size={15} /> Filter</button>
           </div>
           {filterOpen && <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-xs font-semibold text-gray-600">Department<select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)} className="bq-field mt-1 w-full px-2 py-2 text-sm"><option value="all">All departments</option>{departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}</select></label>
             <label className="text-xs font-semibold text-gray-600">Program<select value={programFilter} onChange={(event) => setProgramFilter(event.target.value)} className="bq-field mt-1 w-full px-2 py-2 text-sm"><option value="all">All programs</option>{programOptions.map((program) => <option key={program} value={program}>{program}</option>)}</select></label>
-            <label className="text-xs font-semibold text-gray-600">Date joined<select value={joinedFilter} onChange={(event) => setJoinedFilter(event.target.value)} className="bq-field mt-1 w-full px-2 py-2 text-sm"><option value="all">Any date</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="year">This year</option></select></label>
             </div>
+            {taxonomyError && <p role="alert" className="mt-2 text-xs text-red-700">{taxonomyError}</p>}
             <div className="mt-3 flex justify-end">
-              <button type="button" onClick={() => { setDepartmentFilter("all"); setProgramFilter("all"); setJoinedFilter("all"); }} className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 transition hover:bg-gray-100">Clear filters</button>
+              <button type="button" onClick={() => { setDepartmentFilter("all"); setProgramFilter("all"); }} className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 transition hover:bg-gray-100">Clear filters</button>
             </div>
           </div>}
         </div>
@@ -413,8 +446,8 @@ export const UserMgmtContent = () => {
         {[
           ["pending", "Pending requests", requests.length],
           ["changes", "User requests", changeRequests.length],
-          ["active", "Active users", activeUsers.length],
-          ["archived", "Archived users", archivedUsers.length],
+          ["active", "Active users", filteredActiveUsers.length],
+          ["archived", "Archived users", filteredArchivedUsers.length],
         ].map(([view, label, count]) => (
           <button
             key={view}

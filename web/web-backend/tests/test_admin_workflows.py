@@ -1,9 +1,12 @@
 import asyncio
 import json
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
 from fastapi import BackgroundTasks, HTTPException
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
 
 import main
 import models
@@ -489,7 +492,7 @@ def test_delete_user_archives_instead_of_permanently_deleting(monkeypatch):
 
 
 def test_permanent_delete_user_removes_account_record(monkeypatch):
-    user = SimpleNamespace(id=23, email="faculty@example.com", archived=True)
+    user = SimpleNamespace(id=23, email="faculty@example.com", role="faculty", archived=True)
     db = FakeSession(user_results=[user], department=SimpleNamespace(name="Engineering"))
     monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
 
@@ -498,6 +501,46 @@ def test_permanent_delete_user_removes_account_record(monkeypatch):
     assert user in db.deleted
     assert db.commits == 1
     assert result["message"] == "User permanently deleted successfully."
+
+
+def test_permanent_delete_user_preserves_anonymized_ai_usage():
+    engine = create_engine("sqlite://")
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(connection, _record):
+        connection.execute("PRAGMA foreign_keys=ON")
+
+    models.Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    db = session_factory()
+    admin = models.User(email="super@example.com", password="hashed", role="super_admin")
+    user = models.User(email="faculty@example.com", password="hashed", role="faculty", archived=True)
+    db.add_all([admin, user])
+    db.flush()
+    usage = models.AIUsage(
+        user_id=user.id,
+        generated_at=datetime.utcnow(),
+        request_type="question_generation",
+        status="success",
+    )
+    db.add(usage)
+    db.commit()
+    user_id = user.id
+    usage_id = usage.id
+
+    result = main.permanent_delete_user(user.email, db, admin=admin)
+
+    assert result["status"] == "deleted"
+    assert db.get(models.User, user_id) is None
+    preserved_usage = db.get(models.AIUsage, usage_id)
+    assert preserved_usage is not None
+    assert preserved_usage.user_id is None
+    deletion_log = db.query(models.ActivityLog).filter_by(action="User Permanently Deleted").one()
+    assert deletion_log.actor_id == admin.id
+    assert deletion_log.target_user_id is None
+
+    db.close()
+    engine.dispose()
 
 
 def test_delete_campus_admin_rejects_active_account():

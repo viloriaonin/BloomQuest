@@ -489,7 +489,7 @@ def _format_answer_key_value(question):
         )
 
     if isinstance(answer, str):
-        if isinstance(options, list):
+        if question.question_type == "MCQ" and isinstance(options, list):
             option_letter = _match_option_letter(options, answer)
             if option_letter:
                 return option_letter
@@ -869,15 +869,15 @@ def build_assessment_docx(
             doc.add_page_break()
         doc.add_heading("Answer Key", level=1)
 
+        answer_item_number = 1
         for section_index, group in enumerate(grouped_questions, start=1):
             question_type = _normalize_question_type(group["type"])
             doc.add_heading(f"{_roman_numeral(section_index)}. {_question_type_label(question_type)}", level=2)
 
-            item_number = 1
-            for q in questions:
+            for q in group["questions"]:
                 answer = _format_answer_key_value(q)
-                doc.add_paragraph(f"{item_number}. {answer}")
-                item_number += 1
+                doc.add_paragraph(f"{answer_item_number}. {answer}")
+                answer_item_number += 1
 
     _apply_document_font(doc)
     file_path = os.path.join(TEMP_DIR, f"assessment_{uuid.uuid4().hex}.docx")

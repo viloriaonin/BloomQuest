@@ -1,4 +1,5 @@
 from material_alignment import validate_material_alignment
+from ai_service import find_topics_without_module_content
 
 
 def test_matching_module_and_cis_course_code_and_topic_are_accepted():
@@ -71,3 +72,51 @@ def test_missing_cis_topics_cannot_be_verified():
 
     assert reason is not None
     assert "CIS topics could not be identified" in reason
+
+
+def test_topic_without_matching_module_content_is_reported():
+    unsupported = find_topics_without_module_content(
+        "Cell structure, membranes, and biological systems.",
+        [{"topic_name": "Database Normalization"}],
+    )
+
+    assert unsupported == ["Database Normalization"]
+
+
+def test_topic_with_only_partial_keyword_overlap_is_reported():
+    unsupported = find_topics_without_module_content(
+        "Database systems support reliable storage.",
+        [{"topic_name": "Database Normalization"}],
+    )
+
+    assert unsupported == ["Database Normalization"]
+
+
+def test_topic_terms_split_across_unrelated_paragraphs_are_rejected():
+    unsupported = find_topics_without_module_content(
+        "Supervised machine learning predicts outcomes.\n\n"
+        "Regression predicts continuous values.\n\n"
+        "Classification is mentioned as a separate method.",
+        [{"topic_name": "Supervised Machine Learning Classification"}],
+    )
+
+    assert unsupported == ["Supervised Machine Learning Classification"]
+
+
+def test_classification_topic_is_rejected_for_regression_module():
+    unsupported = find_topics_without_module_content(
+        "Supervised machine learning uses regression to predict continuous values.",
+        [{"topic_name": "Supervised Machine Learning Classification"}],
+    )
+
+    assert unsupported == ["Supervised Machine Learning Classification"]
+
+
+def test_topic_with_matching_module_content_is_not_reported():
+    unsupported = find_topics_without_module_content(
+        "## Cell Structure\n\n"
+        "Cell structure includes membranes that control transport.",
+        [{"topic_name": "Cell Structure"}, {"topic_name": "Cell Membranes"}],
+    )
+
+    assert unsupported == []

@@ -307,7 +307,7 @@ const AdminDashboard = () => {
   };
 
   return (
-    <div className={`bq-shell bq-admin-shell ${adminTheme === "light" ? "bq-admin-light" : "bq-admin-dark"} h-screen w-full overflow-hidden`}>
+    <div className={`bq-shell bq-admin-shell ${activeTab === "academic" ? "bq-admin-shell-academic" : ""} ${adminTheme === "light" ? "bq-admin-light" : "bq-admin-dark"} h-screen w-full overflow-hidden`}>
       {mobileSidebarOpen && (
         <button
           type="button"
@@ -354,7 +354,7 @@ const AdminDashboard = () => {
             </div>
           </div>
         </header>
-        <div className="bq-page flex-1">
+        <div className={`bq-page flex-1 ${activeTab === "academic" || (isDepartmentAdmin && activeTab !== "dashboard" && activeTab !== "settings") ? "bq-page-academic" : ""}`}>
           <div className="bq-page-inner">
             {renderTabContent()}
           </div>

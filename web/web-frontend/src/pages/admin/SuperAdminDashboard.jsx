@@ -566,7 +566,7 @@ const SuperAdminDashboard = () => {
           <div className="flex items-center gap-3"><button type="button" onClick={toggleSidebar} className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white" aria-label="Toggle navigation"><Menu size={18} /></button><div><p className="bq-admin-eyebrow">UNIVERSITY ADMINISTRATION</p><h1 className="bq-admin-title">{metadata?.[1] || "Dashboard"}</h1></div></div>
           <div className="flex items-center gap-3"><DataRefreshButton className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white/10 hover:text-white" /><div className="text-right"><p className="text-sm font-medium">Super Admin</p><p className="bq-admin-mono">{localStorage.getItem("email") || ""}</p></div></div>
         </header>
-        <div className="bq-page flex-1"><div className="bq-page-inner space-y-4">
+        <div className={`bq-page flex-1 ${activeTab === "academic" ? "bq-page-academic" : ""}`}><div className="bq-page-inner space-y-4">
           {error && <div role="alert" className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
           {notice && <div role="status" className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>}
           {renderContent()}

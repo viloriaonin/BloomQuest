@@ -6,6 +6,7 @@ const LogoutBtn = ({ collapsed = false }) => {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
+    if (!window.confirm("Are you sure you want to log out?")) return;
     await fetch(`${API_URL}/logout`, { method: "POST" }).catch(() => {});
     localStorage.removeItem("token");
     localStorage.removeItem("role");

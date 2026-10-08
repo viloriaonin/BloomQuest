@@ -204,6 +204,13 @@
   background: #0b0c10 !important;
 }
 
+.bq-admin-shell.bq-admin-shell-academic {
+  position: fixed;
+  inset: 0;
+  height: 100vh;
+  min-height: 0;
+}
+
 .bq-admin-sidebar {
   flex: 0 0 14rem;
   width: 14rem;
@@ -257,6 +264,11 @@
   min-width: 0;
   min-height: 0;
   visibility: visible;
+}
+
+.bq-admin-main > .bq-page.bq-page-academic {
+  flex: 0 0 auto;
+  min-height: 0;
 }
 
 .bq-admin-main .bq-page-inner {
@@ -1476,3 +1488,20 @@
 .bq-admin-light .bq-admin-user-management table tbody td { border-color: rgba(15, 23, 42, 0.1) !important; }
 .bq-admin-light .bq-admin-user-management table tbody tr:hover { background: #f8fafc !important; }
 .bq-admin-light .bq-admin-user-management .bq-user-stat-icon { background: #f8fafc !important; }
+
+/* Keep analysis results legible where legacy page colors bypass the theme tokens. */
+.bq-user-dark .bq-analysis-preview {
+  background: #142018 !important;
+  border-color: rgba(74, 222, 128, 0.28) !important;
+  color: var(--user-text);
+}
+.bq-user-dark .bq-analysis-preview > .rounded-lg.bg-white,
+.bq-user-dark .bq-analysis-preview .bg-white { background: var(--user-panel) !important; }
+.bq-user-dark .bq-analysis-preview .bg-gray-50\/50,
+.bq-user-dark .bq-analysis-preview [style*="#F8FAFC"] { background: var(--user-raised) !important; }
+.bq-user-dark .bq-analysis-preview .bg-gray-100\/50 { background: var(--user-raised) !important; }
+.bq-user-dark .bq-analysis-preview .text-green-800,
+.bq-user-dark .bq-analysis-preview .text-green-700 { color: #86efac !important; }
+.bq-user-dark .bq-analysis-preview .border-b,
+.bq-user-dark .bq-analysis-preview .border-gray-200,
+.bq-user-dark .bq-analysis-preview .border-slate-200 { border-color: var(--user-border) !important; }

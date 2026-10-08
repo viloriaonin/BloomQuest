@@ -382,16 +382,29 @@ def extract_topic_section(
 
         return "\n\n".join(selected_paragraphs)
 
-    try:
-        idx = all_topic_names.index(topic_name)
-    except ValueError:
-        idx = 0
+    return ""
 
-    topic_count = max(1, len(all_topic_names))
-    chunk_size = max(1, (len(module_text) + topic_count - 1) // topic_count)
-    start = idx * chunk_size
-    end = min(len(module_text), start + chunk_size)
-    return _limit_context(module_text[start:end], window_chars)
+
+def find_topics_without_module_content(module_text: str, topics: list[dict]) -> list[str]:
+    topic_names = [topic.get("topic_name", "") for topic in topics]
+    paragraphs = [
+        set(re.findall(r"[a-z]+", paragraph.casefold()))
+        for paragraph in re.split(r"\n\s*\n+", clean_extracted_text(module_text or ""))
+        if paragraph.strip()
+    ]
+    unsupported_topics = []
+    for topic_name in topic_names:
+        keywords = {keyword.casefold() for keyword in _topic_keywords(topic_name)}
+        has_topic_evidence = bool(keywords) and any(
+            keywords.issubset(paragraph_words)
+            for paragraph_words in paragraphs
+        )
+        if (
+            not has_topic_evidence
+            or not extract_topic_section(module_text, topic_name, topic_names)
+        ):
+            unsupported_topics.append(topic_name)
+    return unsupported_topics
 
 
 # ============================================================
@@ -426,9 +439,15 @@ def build_prompt(subject, topic, ilo, module_text, bloom_distribution):
         f"Subject: {subject}\nTopic: {topic}\nLearning outcome: {ilo}\n\n"
         f"Material:\n{module_text}\n\n"
         f"Bloom targets:\n{json.dumps(bloom_guidance, separators=(',', ':'))}\n"
-        f"Generate exactly {total_questions} questions, one for each listed type:\n"
+        f"Generate exactly {total_questions} questions. For each Bloom target, create one question "
+        "for every occurrence of a question type in that target's list:\n"
         f"{chr(10).join(distribution_lines)}\n"
         f"Type requirements:\n{json.dumps(type_guidance, separators=(',', ':'))}\n"
+        "For every question, set bloom_level and question_type to the exact values assigned above. "
+        "For MCQ, include an options array of exactly four strings. For Matching Type, include "
+        "left_items and right_items arrays with at least five unique strings each, and a "
+        "correct_answer object mapping every left item to its exact right item. "
+        "Do not omit required fields or return fewer or more questions.\n"
         "Keep every question within the topic and supported by the material. Match its Bloom level and type; "
         "use college-level difficulty, distinct wording, plausible distractors, and reasoning for essays. "
         "Situational scenarios must be grounded in the material. Return exactly the requested count as valid JSON only.\n"
@@ -503,15 +522,19 @@ def parse_ai_response(response_text: str):
 # ============================================================
 
 def validate_question(question):
+    if not isinstance(question, dict):
+        logger.warning("Question entry must be a JSON object.")
+        return False
+
     required = ["bloom_level", "question_type", "question", "correct_answer", "explanation"]
     for field in required:
-        if field not in question:
+        if field not in question or question[field] is None:
             logger.warning(f"Missing field: {field}")
             return False
 
     if question["question_type"] == "MCQ":
         options = question.get("options", [])
-        if len(options) != 4:
+        if not isinstance(options, list) or len(options) != 4:
             logger.warning("MCQ does not have four options.")
             return False
 
@@ -539,17 +562,77 @@ def validate_question(question):
 # RESPONSE VALIDATION
 # ============================================================
 
+def response_validation_errors(data, expected_question_count=None):
+    if not isinstance(data, dict):
+        return ["response must be a JSON object"]
+    if "questions" not in data:
+        return ["response is missing the 'questions' array"]
+
+    questions = data["questions"]
+    if not isinstance(questions, list):
+        return ["'questions' must be a JSON array"]
+    if not questions:
+        return ["'questions' array is empty"]
+    if expected_question_count is not None and len(questions) != expected_question_count:
+        return [
+            f"received {len(questions)} question(s), expected {expected_question_count}"
+        ]
+
+    errors = []
+    required = ("bloom_level", "question_type", "question", "correct_answer", "explanation")
+    for index, question in enumerate(questions, start=1):
+        prefix = f"question {index}"
+        if not isinstance(question, dict):
+            errors.append(f"{prefix} must be a JSON object")
+            continue
+
+        missing = [
+            field for field in required
+            if field not in question or question[field] is None
+        ]
+        if missing:
+            errors.append(f"{prefix} is missing required field(s): {', '.join(missing)}")
+            continue
+
+        question_type = question["question_type"]
+        if not isinstance(question_type, str) or question_type not in QUESTION_TYPE_RULES:
+            errors.append(f"{prefix} has unsupported question_type")
+            continue
+
+        if question_type == "MCQ":
+            options = question.get("options")
+            if not isinstance(options, list) or len(options) != 4:
+                errors.append(f"{prefix} MCQ must have exactly four options")
+
+        if question_type == "Matching Type":
+            left_items = question.get("left_items")
+            right_items = question.get("right_items")
+            correct_answer = question.get("correct_answer")
+            if (
+                not isinstance(left_items, list)
+                or not isinstance(right_items, list)
+                or len(left_items) < 5
+                or len(left_items) != len(right_items)
+                or any(not isinstance(item, str) for item in left_items + right_items)
+                or len(set(left_items)) != len(left_items)
+                or len(set(right_items)) != len(right_items)
+                or not isinstance(correct_answer, dict)
+                or any(not isinstance(key, str) for key in correct_answer)
+                or any(not isinstance(value, str) for value in correct_answer.values())
+                or set(correct_answer) != set(left_items)
+                or set(correct_answer.values()) != set(right_items)
+            ):
+                errors.append(f"{prefix} Matching Type must have at least five unique, complete pairs")
+
+    return errors
+
+
 def validate_response(data, expected_question_count=None):
-    if "questions" not in data or not isinstance(data["questions"], list) or len(data["questions"]) == 0:
+    errors = response_validation_errors(data, expected_question_count)
+    if errors:
+        logger.warning("AI response validation failed: %s", "; ".join(errors))
         return False
-    if expected_question_count is not None and len(data["questions"]) != expected_question_count:
-        logger.warning(
-            "AI returned %s question(s), expected %s.",
-            len(data["questions"]),
-            expected_question_count,
-        )
-        return False
-    return all(validate_question(q) for q in data["questions"])
+    return True
 
 
 # ============================================================
@@ -563,21 +646,40 @@ def generate_with_retry(
     usage_tracker: GeminiUsageTracker | None = None,
 ):
     last_error = None
+    retry_prompt = prompt
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             logger.info(f"AI generation attempt {attempt}")
-            raw = ask_groq(prompt, max_tokens=max_tokens, usage_tracker=usage_tracker)
+            raw = ask_groq(retry_prompt, max_tokens=max_tokens, usage_tracker=usage_tracker)
             parsed = parse_ai_response(raw)
 
-            if validate_response(parsed, expected_question_count):
+            validation_errors = response_validation_errors(parsed, expected_question_count)
+            if not validation_errors:
                 logger.info("AI generation successful.")
                 return parsed
 
-            raise RuntimeError("Generated JSON failed validation.")
+            last_error = RuntimeError(
+                "Generated JSON failed validation: " + "; ".join(validation_errors)
+            )
+            logger.warning("Retry %s failed: %s", attempt, last_error)
+            retry_prompt = (
+                f"{prompt}\n\n"
+                "REPAIR REQUIREMENT: Your previous JSON response failed validation for these reasons: "
+                f"{'; '.join(validation_errors)}. Return corrected JSON only. "
+                "Preserve the requested question count and content constraints."
+            )
         except Exception as e:
             last_error = e
             logger.warning(f"Retry {attempt} failed: {e}")
+            if attempt < MAX_RETRIES and isinstance(e, (json.JSONDecodeError, ValueError)):
+                retry_prompt = (
+                    f"{prompt}\n\n"
+                    "REPAIR REQUIREMENT: Your previous response was not valid JSON. "
+                    "Return one complete JSON object matching the requested schema only."
+                )
+
+        if attempt < MAX_RETRIES:
             time.sleep(1)
 
     raise RuntimeError(f"Generation engine failed after execution limit retries.\n{last_error}")
@@ -659,6 +761,13 @@ def generate_parallel_jobs(jobs):
 # ============================================================
 
 def generate_questions_from_tos(subject, module_text, tos_data, usage_tracker: GeminiUsageTracker | None = None):
+    unsupported_topics = find_topics_without_module_content(module_text, tos_data)
+    if unsupported_topics:
+        raise ValueError(
+            "Cannot generate questions because the module does not provide identifiable "
+            f"content for: {', '.join(unsupported_topics)}."
+        )
+
     all_topic_names = [t["topic_name"] for t in tos_data]
     jobs = []
 

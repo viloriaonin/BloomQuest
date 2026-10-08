@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AcademicMgmtContent } from "./AcademicMgmt";
 
@@ -97,9 +97,43 @@ test("Department Admin is taken to the assigned department with management actio
   expect(await screen.findByRole("heading", { name: "CICS" })).toBeInTheDocument();
   expect(await screen.findByRole("button", { name: "Add Program" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Add Department" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Add Subject" })).toBeInTheDocument();
   expect(screen.getByText("Department Dean")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Edit Department Details" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Request a faculty account" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Request an academic change" })).toBeInTheDocument();
+});
+
+test("Campus Admin does not see the academic change request form", async () => {
+  renderAt("/admin/academic/campus/1/department/2");
+
+  expect(await screen.findByRole("heading", { name: "CICS" })).toBeInTheDocument();
+  const summary = screen.getByText("Programs");
+  const leadership = screen.getByRole("heading", { name: "Department Dean" });
+  expect(summary.compareDocumentPosition(leadership) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Add Program" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Add Subject" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Department faculty" })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Program for Ada Faculty")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Assign dean from department faculty")).not.toBeInTheDocument();
+  const programCard = screen.getByRole("heading", { name: "Computer Science" }).closest('[role="button"]');
+  fireEvent.click(programCard.querySelector("summary"));
+  expect(within(programCard).queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Request an academic change" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Submit change request" })).not.toBeInTheDocument();
+});
+
+test("department details dialog stays within the viewport and can scroll", async () => {
+  renderAt("/admin/academic/campus/1/department/2");
+
+  fireEvent.click(await screen.findByRole("button", { name: "Edit Department Details" }));
+
+  const dialog = screen.getByRole("heading", { name: "Edit Department Details" }).closest("form");
+  expect(dialog).toHaveClass("overflow-y-auto");
+  expect(dialog).toHaveClass("max-h-[calc(100vh-2rem)]");
+  expect(dialog.querySelector('button[type="submit"]')).toHaveTextContent("Save");
+  expect(dialog.closest(".bq-modal-overlay")).toHaveClass("fixed");
+  expect(dialog.closest(".page-transition")).toBeNull();
 });
 
 test("Department Admin can submit a faculty account request for a department program", async () => {
@@ -134,6 +168,28 @@ test("Department Admin can assign program and subject faculty", async () => {
     expect(global.fetch.mock.calls.some(([url, options]) => String(url).endsWith("/programs/3/chair") && JSON.parse(options.body).faculty_id === 44)).toBe(true);
     expect(global.fetch.mock.calls.some(([url, options]) => String(url).endsWith("/subjects/9/faculty") && JSON.parse(options.body).faculty_id === 44)).toBe(true);
   });
+
+});
+
+test("Campus Admin can view the program chair but cannot reassign it", async () => {
+  renderAt("/admin/academic/campus/1/department/2/program/3");
+
+  expect(await screen.findByText("Program Chair")).toBeInTheDocument();
+  expect(screen.getByText("Dr. Chair")).toBeInTheDocument();
+  expect(screen.queryByLabelText("Assign program chair")).not.toBeInTheDocument();
+  expect(screen.queryByRole("columnheader", { name: "Assigned Faculty" })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Faculty for Introduction to Computing")).not.toBeInTheDocument();
+});
+
+test("Department Admin retains dean faculty assignment and program editing", async () => {
+  localStorage.setItem("role", "department_admin");
+  localStorage.setItem("department_id", "2");
+  renderAt("/admin/academic/campus/1/department/2");
+
+  expect(await screen.findByLabelText("Assign dean from department faculty")).toBeInTheDocument();
+  const programCard = screen.getByRole("heading", { name: "Computer Science" }).closest('[role="button"]');
+  fireEvent.click(programCard.querySelector("summary"));
+  expect(within(programCard).getByRole("button", { name: "Edit" })).toBeInTheDocument();
 });
 
 test("Department Admin can associate a department-level subject with a program", async () => {
@@ -183,20 +239,11 @@ test("campus admin can create a dean login from the department leadership sectio
   expect(await screen.findByRole("status")).toHaveTextContent("credentials are queued for email delivery");
 });
 
-test("program list shows its chair and Add Program saves the Program Chair field", async () => {
+test("Campus Admin can view program chairs but cannot add programs", async () => {
   renderAt("/admin/academic/campus/1/department/2");
 
   expect(await screen.findByText(/Program Chair: Dr\. Chair/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Add Program" }));
-  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Information Technology" } });
-  fireEvent.change(screen.getByLabelText(/Code/), { target: { value: "BSIT" } });
-  fireEvent.change(screen.getByLabelText(/Program Chair/), { target: { value: "Dr. New Chair" } });
-  fireEvent.click(screen.getAllByRole("button", { name: "Save" }).at(-1));
-
-  await waitFor(() => {
-    const request = global.fetch.mock.calls.find(([url, options]) => String(url).endsWith("/programs") && options?.method === "POST");
-    expect(JSON.parse(request[1].body).chair_name).toBe("Dr. New Chair");
-  });
+  expect(screen.queryByRole("button", { name: "Add Program" })).not.toBeInTheDocument();
 });
 
 test("subject list displays each subject code beneath its name", async () => {
