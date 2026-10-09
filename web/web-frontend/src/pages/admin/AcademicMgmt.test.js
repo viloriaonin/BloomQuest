@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import ExcelJS from "exceljs";
 import { AcademicMgmtContent } from "./AcademicMgmt";
 
 const hierarchy = {
@@ -43,6 +44,8 @@ const createFetchMock = () => jest.fn(async (url, options = {}) => {
         program_id: 3,
         department_id: 2,
         creator_id: null,
+        has_cis: true,
+        cis_filename: "IT101-CIS.pdf",
       }, {
         id: 10,
         name: "Academic Foundations",
@@ -71,7 +74,9 @@ const createFetchMock = () => jest.fn(async (url, options = {}) => {
           id: 22,
           full_name: "Active Faculty",
           email: "active.faculty@example.edu",
+          faculty_number: "000345",
           department: "CICS",
+          program_id: 3,
           program: "Computer Science",
           created_at: "2026-09-01T09:15:00",
         }],
@@ -79,8 +84,10 @@ const createFetchMock = () => jest.fn(async (url, options = {}) => {
           id: 23,
           full_name: "Archived Faculty",
           email: "archived.faculty@example.edu",
+          faculty_number: "000123",
           department: "CICS",
-          program: "Computer Science",
+          program_id: null,
+          program: "N/A",
           created_at: "2026-08-01T09:15:00",
         }],
       }),
@@ -95,6 +102,8 @@ beforeEach(() => {
 
 afterEach(() => {
   delete global.fetch;
+  delete URL.createObjectURL;
+  delete URL.revokeObjectURL;
   jest.restoreAllMocks();
   localStorage.removeItem("role");
   localStorage.removeItem("department_id");
@@ -127,15 +136,28 @@ test("Department Admin is taken to the assigned department with management actio
   renderAt("/admin/academic");
 
   expect(await screen.findByRole("heading", { name: "CICS" })).toBeInTheDocument();
-  expect(await screen.findByRole("button", { name: "Add Program" })).toBeInTheDocument();
+  const addProgramButton = await screen.findByRole("button", { name: "Add Program" });
+  const addSubjectButton = screen.getByRole("button", { name: "Add Subject" });
+  expect(addSubjectButton).toBeInTheDocument();
+  expect(addProgramButton.compareDocumentPosition(addSubjectButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Add Department" })).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Add Subject" })).toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Department Dean" })).not.toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Create dean login" })).not.toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Department-level subjects" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Edit Department Details" })).not.toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Request a faculty account" })).not.toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Request an academic change" })).not.toBeInTheDocument();
+});
+
+test("Department Admin can add a subject from the department header and must choose its program", async () => {
+  localStorage.setItem("role", "department_admin");
+  localStorage.setItem("department_id", "2");
+  renderAt("/admin/academic/campus/1/department/2");
+
+  fireEvent.click(await screen.findByRole("button", { name: "Add Subject" }));
+  expect(screen.getByLabelText("Program")).toBeRequired();
+  expect(screen.getByLabelText(/Course Information Sheet/)).toBeRequired();
+  expect(screen.getAllByRole("button", { name: "Save" }).at(-1)).toBeDisabled();
 });
 
 test("Campus Admin does not see the academic change request form", async () => {
@@ -153,8 +175,8 @@ test("Campus Admin does not see the academic change request form", async () => {
   expect(screen.queryByLabelText("Program for Ada Faculty")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("Assign dean from department faculty")).not.toBeInTheDocument();
   const programCard = screen.getByRole("heading", { name: "Computer Science" }).closest('[role="button"]');
-  fireEvent.click(programCard.querySelector("summary"));
-  expect(within(programCard).queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+  fireEvent.click(programCard.querySelector('button[aria-label="More actions"]'));
+  expect(screen.queryByRole("menuitem", { name: "Edit" })).not.toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Request an academic change" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Submit change request" })).not.toBeInTheDocument();
 });
@@ -176,18 +198,20 @@ test("department details dialog stays within the viewport and can scroll", async
 test("Department Admin must provide a program and CIS when creating a subject", async () => {
   localStorage.setItem("role", "department_admin");
   localStorage.setItem("department_id", "2");
-  renderAt("/admin/academic/campus/1/department/2");
+  renderAt("/admin/academic/campus/1/department/2/program/3", "academic");
 
   fireEvent.click(await screen.findByRole("button", { name: "Add Subject" }));
   expect(screen.getByLabelText(/Course Information Sheet/)).toBeRequired();
   expect(screen.getByLabelText("Program")).toBeRequired();
   expect(screen.getByLabelText(/Code/)).toBeRequired();
+  expect(screen.getAllByRole("button", { name: "Save" }).at(-1)).toBeDisabled();
 
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "New Course" } });
   fireEvent.change(screen.getByLabelText(/Code/), { target: { value: "NC101" } });
   fireEvent.change(screen.getByLabelText("Program"), { target: { value: "3" } });
   const cis = new File(["Course Information Sheet"], "NC101.docx", { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
   fireEvent.change(screen.getByLabelText(/Course Information Sheet/), { target: { files: [cis] } });
+  expect(screen.getAllByRole("button", { name: "Save" }).at(-1)).toBeEnabled();
   fireEvent.click(screen.getAllByRole("button", { name: "Save" }).at(-1));
 
   await waitFor(() => {
@@ -201,6 +225,135 @@ test("Department Admin must provide a program and CIS when creating a subject", 
   });
 });
 
+test("Department Admin cannot save a subject without a valid department program and accepted CIS file", async () => {
+  localStorage.setItem("role", "department_admin");
+  localStorage.setItem("department_id", "2");
+  renderAt("/admin/academic/campus/1/department/2/program/3");
+
+  fireEvent.click(await screen.findByRole("button", { name: "Add Subject" }));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "New Course" } });
+  fireEvent.change(screen.getByLabelText(/Code/), { target: { value: "NC101" } });
+
+  const fileInput = screen.getByLabelText(/Course Information Sheet/);
+  const saveButton = screen.getAllByRole("button", { name: "Save" }).at(-1);
+  fireEvent.change(screen.getByLabelText("Program"), { target: { value: "" } });
+  fireEvent.change(fileInput, {
+    target: { files: [new File(["not a CIS"], "notes.txt", { type: "text/plain" })] },
+  });
+  expect(screen.getByRole("alert")).toHaveTextContent("Choose a PDF, DOCX, or XLSX file.");
+  expect(saveButton).toBeDisabled();
+
+  fireEvent.change(fileInput, {
+    target: { files: [new File(["CIS"], "NC101.pdf", { type: "application/pdf" })] },
+  });
+  expect(saveButton).toBeDisabled();
+
+  fireEvent.change(screen.getByLabelText("Program"), { target: { value: "3" } });
+  expect(saveButton).toBeEnabled();
+});
+
+test("Department Admin can view the current CIS and open a CIS-only replacement form", async () => {
+  localStorage.setItem("role", "department_admin");
+  localStorage.setItem("department_id", "2");
+  global.fetch.mockImplementation(async (url, options = {}) => {
+    if (String(url).endsWith("/subjects/9/cis")) {
+      return {
+        ok: true,
+        json: async () => ({
+          subject_name: "Introduction to Computing",
+          filename: "IT101-CIS.pdf",
+          media_type: "application/pdf",
+          extracted_text: "Course information",
+          uploaded_at: "2026-10-01T00:00:00",
+        }),
+      };
+    }
+    if (String(url).endsWith("/subjects/9/cis/file")) {
+      return { ok: true, blob: async () => new Blob(["PDF data"], { type: "application/pdf" }) };
+    }
+    return createFetchMock()(url, options);
+  });
+  URL.createObjectURL = jest.fn().mockReturnValue("blob:cis-preview");
+  URL.revokeObjectURL = jest.fn();
+  renderAt("/admin/academic/campus/1/department/2/program/3");
+
+  const subjectRow = await screen.findByText("Introduction to Computing");
+  const openActions = () => fireEvent.click(subjectRow.closest("tr").querySelector('button[aria-label="More actions"]'));
+  openActions();
+  expect(screen.getByRole("menu").parentElement).toBe(document.body);
+  expect(screen.getByRole("menu").classList.contains("fixed")).toBe(true);
+  fireEvent.click(screen.getByRole("menuitem", { name: "View CIS" }));
+  expect(subjectRow.closest("tr").querySelector('button[aria-label="More actions"]')).toHaveAttribute("aria-expanded", "false");
+  expect(await screen.findByRole("dialog", { name: "Course Information Sheet" })).toBeInTheDocument();
+  expect(await screen.findByText("IT101-CIS.pdf")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /IT101-CIS\.pdf/ }));
+  expect(screen.getByTitle("Preview of IT101-CIS.pdf")).toHaveAttribute("src", "blob:cis-preview");
+  expect(screen.getByRole("link", { name: "Download original" })).toHaveAttribute("download", "IT101-CIS.pdf");
+  fireEvent.click(screen.getByRole("button", { name: "Close CIS preview" }));
+
+  openActions();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Replace CIS" }));
+  expect(await screen.findByRole("heading", { name: "Replace Course Information Sheet" })).toBeInTheDocument();
+  expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
+  expect(screen.getAllByRole("button", { name: "Replace CIS" }).at(-1)).toBeDisabled();
+
+  const replacement = new File(["replacement"], "replacement.pdf", { type: "application/pdf" });
+  fireEvent.change(screen.getByLabelText(/Course Information Sheet/), { target: { files: [replacement] } });
+  expect(screen.getAllByRole("button", { name: "Replace CIS" }).at(-1)).toBeEnabled();
+  fireEvent.click(screen.getAllByRole("button", { name: "Replace CIS" }).at(-1));
+  await waitFor(() => {
+    expect(global.fetch.mock.calls.some(([url, options]) => String(url).endsWith("/subjects/9/cis") && options?.method === "PUT")).toBe(true);
+  });
+  expect(global.fetch.mock.calls.some(([url, options]) => String(url).endsWith("/subjects/9") && options?.method === "PUT")).toBe(false);
+
+  openActions();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Edit subject" }));
+  expect(await screen.findByRole("heading", { name: "Edit subject" })).toBeInTheDocument();
+  expect(screen.queryByLabelText(/Course Information Sheet/)).not.toBeInTheDocument();
+});
+
+test("Department Admin can click an XLSX CIS filename to preview its original worksheet", async () => {
+  localStorage.setItem("role", "department_admin");
+  localStorage.setItem("department_id", "2");
+  const workbook = new ExcelJS.Workbook();
+  workbook.addWorksheet("Course Info").addRows([
+    ["Course Code", "Course Title"],
+    ["IT332", "Integrative Programming"],
+  ]);
+  const workbookBytes = await workbook.xlsx.writeBuffer();
+  global.fetch.mockImplementation(async (url) => {
+    if (String(url).endsWith("/subjects/9/cis")) {
+      return {
+        ok: true,
+        json: async () => ({
+          subject_name: "Introduction to Computing",
+          filename: "IT332-CIS.xlsx",
+          media_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          extracted_text: "Course Code IT332",
+          uploaded_at: "2026-10-01T00:00:00",
+        }),
+      };
+    }
+    if (String(url).endsWith("/subjects/9/cis/file")) {
+      const fileBlob = new Blob([workbookBytes]);
+      fileBlob.arrayBuffer = async () => workbookBytes;
+      return { ok: true, blob: async () => fileBlob };
+    }
+    return createFetchMock()(url);
+  });
+  URL.createObjectURL = jest.fn().mockReturnValue("blob:cis-xlsx");
+  URL.revokeObjectURL = jest.fn();
+  renderAt("/admin/academic/campus/1/department/2/program/3");
+  const subjectRow = await screen.findByText("Introduction to Computing");
+  fireEvent.click(subjectRow.closest("tr").querySelector('button[aria-label="More actions"]'));
+  fireEvent.click(screen.getByRole("menuitem", { name: "View CIS" }));
+
+  fireEvent.click(await screen.findByRole("button", { name: /IT332-CIS\.xlsx/ }));
+  expect(await screen.findByText("Integrative Programming")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Course Info" })).toBeInTheDocument();
+  expect(screen.getByText("Original file preview")).toBeInTheDocument();
+});
+
 test("Department Admin can directly add a faculty account for a department program", async () => {
   localStorage.setItem("role", "department_admin");
   localStorage.setItem("department_id", "2");
@@ -209,7 +362,8 @@ test("Department Admin can directly add a faculty account for a department progr
   fireEvent.click(await screen.findByRole("button", { name: "Add faculty member" }));
   fireEvent.change(await screen.findByLabelText("Full name"), { target: { value: "New Faculty" } });
   fireEvent.change(screen.getByLabelText("Email"), { target: { value: "new-faculty@example.com" } });
-  fireEvent.change(screen.getByLabelText("Program"), { target: { value: "3" } });
+  fireEvent.change(screen.getByLabelText("Number for faculty member 1"), { target: { value: "000345" } });
+  fireEvent.change(screen.getByLabelText("Program for faculty member 1"), { target: { value: "3" } });
   fireEvent.click(screen.getByRole("button", { name: "Add 1 & send email", exact: true }));
 
   await waitFor(() => {
@@ -217,6 +371,7 @@ test("Department Admin can directly add a faculty account for a department progr
     expect(JSON.parse(request[1].body)).toEqual({
       full_name: "New Faculty",
       email: "new-faculty@example.com",
+      faculty_number: "000345",
       program_id: 3,
     });
   });
@@ -233,7 +388,8 @@ test("Department Admin sees an email delivery failure after the faculty account 
   fireEvent.click(await screen.findByRole("button", { name: "Add faculty member" }));
   fireEvent.change(await screen.findByLabelText("Full name"), { target: { value: "New Faculty" } });
   fireEvent.change(screen.getByLabelText("Email"), { target: { value: "new-faculty@example.com" } });
-  fireEvent.change(screen.getByLabelText("Program"), { target: { value: "3" } });
+  fireEvent.change(screen.getByLabelText("Number for faculty member 1"), { target: { value: "000345" } });
+  fireEvent.change(screen.getByLabelText("Program for faculty member 1"), { target: { value: "3" } });
   const defaultFetch = global.fetch.getMockImplementation();
   global.fetch.mockImplementation((url, options) => {
     if (String(url).endsWith("/department-admin/faculty-accounts") && options.method === "POST") {
@@ -259,13 +415,14 @@ test("Department Admin can add multiple faculty members with the plus action", a
   fireEvent.click(await screen.findByRole("button", { name: "Add faculty member" }));
   fireEvent.change(await screen.findByLabelText("Full name"), { target: { value: "Faculty One" } });
   fireEvent.change(screen.getByLabelText("Email"), { target: { value: "faculty-one@example.com" } });
-  fireEvent.change(screen.getByLabelText("Program"), { target: { value: "3" } });
+  fireEvent.change(screen.getByLabelText("Number for faculty member 1"), { target: { value: "000001" } });
+  fireEvent.change(screen.getByLabelText("Program for faculty member 1"), { target: { value: "3" } });
   fireEvent.click(screen.getByRole("button", { name: "Add another" }));
 
   fireEvent.change(screen.getAllByLabelText("Full name")[1], { target: { value: "Faculty Two" } });
   fireEvent.change(screen.getAllByLabelText("Email")[1], { target: { value: "faculty-two@example.com" } });
-  const programs = screen.getAllByLabelText("Program");
-  fireEvent.change(programs[1], { target: { value: "3" } });
+  fireEvent.change(screen.getByLabelText("Number for faculty member 2"), { target: { value: "000002" } });
+  fireEvent.change(screen.getByLabelText("Program for faculty member 2"), { target: { value: "3" } });
   fireEvent.click(screen.getByRole("button", { name: "Add 2 & send emails" }));
 
   await waitFor(() => {
@@ -276,6 +433,10 @@ test("Department Admin can add multiple faculty members with the plus action", a
     expect(requests.map(([, options]) => JSON.parse(options.body).email)).toEqual([
       "faculty-one@example.com",
       "faculty-two@example.com",
+    ]);
+    expect(requests.map(([, options]) => JSON.parse(options.body).faculty_number)).toEqual([
+      "000001",
+      "000002",
     ]);
   });
   await waitFor(() => {
@@ -375,17 +536,54 @@ test("Department Admin Faculty Management only shows active and archived account
   );
   fireEvent.click(screen.getByRole("tab", { name: "Active (1)" }));
   expect(await screen.findByText("Active Faculty")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Archive" })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Archive" }));
-  await waitFor(() => {
-    const archive = global.fetch.mock.calls.find(([url, options]) =>
-      String(url).endsWith("/department-admin/faculty-accounts/archive") && options?.method === "POST",
-    );
-    expect(JSON.parse(archive[1].body)).toEqual({ email: "active.faculty@example.edu" });
-  });
+  expect(screen.queryByRole("button", { name: "Archive" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "View profile" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("tab", { name: "Archived (1)" }));
   expect(await screen.findByText("Archived Faculty")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Restore" })).toBeInTheDocument();
+});
+
+test("Department Admin can filter faculty accounts by search, program, and assignment", async () => {
+  localStorage.setItem("role", "department_admin");
+  localStorage.setItem("department_id", "2");
+  renderAt("/admin/academic/campus/1/department/2", "faculty");
+
+  expect(await screen.findByText("Active Faculty")).toBeInTheDocument();
+  const facultyHeaders = screen.getAllByRole("columnheader").map((header) => header.textContent.trim());
+  expect(facultyHeaders.indexOf("Number")).toBeLessThan(facultyHeaders.indexOf("Name"));
+  expect(screen.getByText("000345")).toBeInTheDocument();
+  expect(screen.getByText("Showing 1 of 1")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Clear filters" })).toBeEnabled();
+  fireEvent.change(screen.getByLabelText("Search faculty by number, name, or email"), {
+    target: { value: "000345" },
+  });
+  expect(screen.getByText("Active Faculty")).toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText("Search faculty by number, name, or email"), {
+    target: { value: "not a faculty member" },
+  });
+  expect(screen.getByText("No faculty match these filters.")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+  expect(screen.getByLabelText("Search faculty by number, name, or email")).toHaveValue("");
+  expect(screen.getByRole("button", { name: "Clear filters" })).toBeEnabled();
+
+  fireEvent.change(screen.getByLabelText("Filter faculty accounts by program"), {
+    target: { value: "3" },
+  });
+  expect(screen.getByText("Active Faculty")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Filter faculty by assignment"), {
+    target: { value: "unassigned" },
+  });
+  expect(screen.getByText("No faculty match these filters.")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+
+  fireEvent.click(screen.getByRole("tab", { name: "Archived (1)" }));
+  expect(await screen.findByText("Archived Faculty")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Filter faculty by assignment"), {
+    target: { value: "unassigned" },
+  });
+  expect(screen.getByText("Archived Faculty")).toBeInTheDocument();
+  expect(screen.getByText("Showing 1 of 1")).toBeInTheDocument();
 });
 
 test.skip("Legacy Department Admin user change request review is removed", async () => {
@@ -443,6 +641,17 @@ test("Campus Admin can view the program chair but cannot reassign it", async () 
   expect(screen.queryByLabelText("Faculty for Introduction to Computing")).not.toBeInTheDocument();
 });
 
+test("Department Admin program subjects are not assigned to one faculty member", async () => {
+  localStorage.setItem("role", "department_admin");
+  localStorage.setItem("department_id", "2");
+  renderAt("/admin/academic/campus/1/department/2/program/3", "academic");
+
+  expect(await screen.findByText("Introduction to Computing")).toBeInTheDocument();
+  expect(screen.queryByRole("columnheader", { name: /Assigned Faculty|Faculty/ })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Faculty for Introduction to Computing")).not.toBeInTheDocument();
+  expect(screen.queryByText("Assign in Faculty Management")).not.toBeInTheDocument();
+});
+
 test("Department Admin manages dean details on Leadership Management, not Academic Management", async () => {
   localStorage.setItem("role", "department_admin");
   localStorage.setItem("department_id", "2");
@@ -452,8 +661,8 @@ test("Department Admin manages dean details on Leadership Management, not Academ
   expect(screen.queryByLabelText("Assign dean from department faculty")).not.toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Department Dean" })).not.toBeInTheDocument();
   const programCard = screen.getByRole("heading", { name: "Computer Science" }).closest('[role="button"]');
-  fireEvent.click(programCard.querySelector("summary"));
-  expect(within(programCard).getByRole("button", { name: "Edit" })).toBeInTheDocument();
+  fireEvent.click(programCard.querySelector('button[aria-label="More actions"]'));
+  expect(await screen.findByRole("menuitem", { name: "Edit" })).toBeInTheDocument();
 });
 
 test("Department Admin does not see department-level subject management", async () => {

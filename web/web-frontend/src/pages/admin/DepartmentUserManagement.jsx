@@ -279,8 +279,9 @@ const DepartmentUserManagement = ({ initialUserId = null, onClose }) => {
                   </div>
                 </div>
               </div>
-              <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-5">
                 {[
+                  { label: "Number", value: detail.faculty_number },
                   { label: "Department", value: detail.department },
                   { label: "Program", value: detail.program },
                   { label: "Date joined", value: formatDate(detail.created_at) },

@@ -63,6 +63,7 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed
               <span className="text-sm font-medium tracking-wide">Faculty Management</span>
             </button>
             <AcademicMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
+            <QuestionBankBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
           </>
         ) : (
           <>

@@ -6,6 +6,8 @@ import {
   Building2,
   Check,
   ChevronRight,
+  Download,
+  Eye,
   GraduationCap,
   Layers3,
   LoaderCircle,
@@ -13,6 +15,7 @@ import {
   MoreHorizontal,
   Plus,
   RotateCcw,
+  Search,
   Save,
   Users,
 } from "lucide-react";
@@ -21,9 +24,25 @@ import { API_URL } from "../../config/api";
 import DepartmentUserManagement from "./DepartmentUserManagement";
 
 const ACADEMIC_API = API_URL;
+const CIS_MAX_SIZE_BYTES = 10 * 1024 * 1024;
+const CIS_ALLOWED_EXTENSIONS = new Set([".pdf", ".docx", ".xlsx"]);
+const CIS_PREVIEW_ROW_LIMIT = 150;
+const CIS_PREVIEW_COLUMN_LIMIT = 24;
 
 const pluralize = (count, singular, plural = `${singular}s`) =>
   `${count} ${count === 1 ? singular : plural}`;
+
+const getCisFileError = (file) => {
+  if (!file) return "Choose a Course Information Sheet to continue.";
+  const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+  if (!CIS_ALLOWED_EXTENSIONS.has(extension)) {
+    return "Choose a PDF, DOCX, or XLSX file.";
+  }
+  if (file.size > CIS_MAX_SIZE_BYTES) {
+    return "The Course Information Sheet must be 10 MB or smaller.";
+  }
+  return "";
+};
 
 const formatRequestDate = (value) => {
   if (!value) return "—";
@@ -39,32 +58,127 @@ const getProgramChairName = (program) =>
   program.chair?.name ||
   "";
 
-const OverflowMenu = ({ onEdit, onArchive, onDelete, readOnly = false }) => {
+const OverflowMenu = ({
+  onEdit,
+  editLabel = "Edit",
+  onViewCis,
+  onReplaceCis,
+  replaceCisLabel = "Replace CIS",
+  onArchive,
+  onDelete,
+  readOnly = false,
+}) => {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const [position, setPosition] = React.useState({ top: 0, left: 0 });
+  const triggerRef = React.useRef(null);
+  const menuRef = React.useRef(null);
+
+  const actionCount = [onViewCis, onReplaceCis, onEdit, onArchive, onDelete].filter(Boolean).length;
+  const positionMenu = React.useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const menuHeight = menuRef.current?.getBoundingClientRect().height || actionCount * 36 + 20;
+    const menuWidth = menuRef.current?.getBoundingClientRect().width || 176;
+    const gap = 8;
+    const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
+    const hasRoomBelow = rect.bottom + gap + menuHeight <= window.innerHeight - 8;
+    const top = hasRoomBelow
+      ? rect.bottom + gap
+      : Math.max(8, rect.top - menuHeight - gap);
+    setPosition({ top, left });
+  }, [actionCount]);
+
+  React.useLayoutEffect(() => {
+    if (!isOpen || readOnly) return undefined;
+    positionMenu();
+    const closeOnOutsideClick = (event) => {
+      if (!menuRef.current?.contains(event.target) && !triggerRef.current?.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("resize", positionMenu);
+    window.addEventListener("scroll", positionMenu, true);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("resize", positionMenu);
+      window.removeEventListener("scroll", positionMenu, true);
+    };
+  }, [isOpen, positionMenu, readOnly]);
+
   if (readOnly) return null;
 
+  const runAction = (action) => () => {
+    action();
+    setIsOpen(false);
+  };
+
   return (
-    <details className="relative" onClick={(event) => event.stopPropagation()}>
-      <summary className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 [&::-webkit-details-marker]:hidden">
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label="More actions"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        onClick={(event) => {
+          event.stopPropagation();
+          setIsOpen((open) => !open);
+        }}
+        className={`flex h-8 w-8 items-center justify-center rounded-lg transition ${isOpen ? "bg-slate-100 text-slate-700" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700"}`}
+      >
         <MoreHorizontal size={17} />
-      </summary>
-      <div className="absolute right-0 top-9 z-20 min-w-32 rounded-xl border border-slate-200 bg-white p-1.5 text-left shadow-lg">
-        {onEdit && (
-          <button type="button" onClick={onEdit} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50">
-            Edit
-          </button>
-        )}
-        {onArchive && (
-          <button type="button" onClick={onArchive} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50">
-            Archive
-          </button>
-        )}
-        {onDelete && (
-          <button type="button" onClick={onDelete} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-medium" style={{ color: "var(--bq-danger)", background: "transparent" }}>
-            Delete
-          </button>
-        )}
-      </div>
-    </details>
+      </button>
+      {isOpen && createPortal(
+        <div
+          ref={menuRef}
+          role="menu"
+          className="fixed z-[90] min-w-44 rounded-xl border border-slate-200 bg-white p-1.5 text-left shadow-xl ring-1 ring-black/5"
+          style={{ top: position.top, left: position.left }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {(onViewCis || onReplaceCis) && (
+            <div className="space-y-0.5">
+              {onViewCis && (
+                <button type="button" role="menuitem" onClick={runAction(onViewCis)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50 focus:bg-slate-50 focus:outline-none">
+                  <Eye size={13} className="text-slate-400" /> View CIS
+                </button>
+              )}
+              {onReplaceCis && (
+                <button type="button" role="menuitem" onClick={runAction(onReplaceCis)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50 focus:bg-slate-50 focus:outline-none">
+                  {replaceCisLabel}
+                </button>
+              )}
+            </div>
+          )}
+          {onEdit && (
+            <button type="button" role="menuitem" onClick={runAction(onEdit)} className={`block w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50 focus:bg-slate-50 focus:outline-none ${onViewCis || onReplaceCis ? "mt-1 border-t border-slate-100 pt-2.5" : ""}`}>
+              {editLabel}
+            </button>
+          )}
+          {onArchive && (
+            <button type="button" role="menuitem" onClick={runAction(onArchive)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-600 transition hover:bg-amber-50 hover:text-amber-800 focus:bg-amber-50 focus:outline-none">
+              Archive
+            </button>
+          )}
+          {onDelete && (
+            <button type="button" role="menuitem" onClick={runAction(onDelete)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-medium transition hover:bg-red-50 focus:bg-red-50 focus:outline-none" style={{ color: "var(--bq-danger)" }}>
+              Delete
+            </button>
+          )}
+        </div>,
+        document.body,
+      )}
+    </>
   );
 };
 
@@ -165,6 +279,9 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
   const [saveState, setSaveState] = React.useState({ status: "idle", message: "" });
   const [accountForm, setAccountForm] = React.useState({ full_name: "", email: "" });
   const [accountState, setAccountState] = React.useState({ saving: false, message: "", error: "" });
+  const hasDeanLogin = ["department_dean", "department_admin"].includes(
+    String(department?.dean?.role || "").toLowerCase(),
+  );
 
   React.useEffect(() => {
     setForm({
@@ -246,7 +363,7 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
               setSaveState({ status: "idle", message: "" });
             }}
             placeholder="Enter dean name"
-            disabled={readOnly || department?.dean?.role === "department_dean"}
+            disabled={readOnly || hasDeanLogin}
             className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-rose-400 focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
             style={{ borderColor: "var(--bq-border)" }}
           />
@@ -272,12 +389,12 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
               ))}
             </select>
           )}
-          {department?.dean?.role === "department_dean" && (
+          {hasDeanLogin && (
             <p className="mt-3 rounded-lg bg-white px-3 py-2 text-xs text-slate-600">Login account: {department.dean.email}</p>
           )}
         </div>
 
-        {!readOnly && onSave && department?.dean?.role !== "department_dean" && (
+        {!readOnly && onSave && !hasDeanLogin && (
           <form onSubmit={handleSubmit} className="mt-4 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-h-5 text-sm" aria-live="polite">
               {saveState.status === "saving" && (
@@ -344,7 +461,7 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
           </div>
         </form>
       )}
-      {!readOnly && department?.dean_id && department?.dean?.role !== "department_dean" && (
+      {!readOnly && department?.dean_id && !hasDeanLogin && (
         <p className="mt-5 border-t border-slate-200 pt-4 text-xs text-amber-700">
           Clear and save the current dean assignment before creating a separate dean login.
         </p>
@@ -542,19 +659,23 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
   const [subjects, setSubjects] = React.useState([]);
   const [programTab, setProgramTab] = React.useState("subjects");
   const [modal, setModal] = React.useState(null);
+  const [cisPreview, setCisPreview] = React.useState(null);
   const [cisFile, setCisFile] = React.useState(null);
   const [form, setForm] = React.useState({ name: "", code: "", campus_id: "", department_id: "", program_id: "", dean_name: "", chair_name: "" });
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
   const [notice, setNotice] = React.useState("");
   const [facultyAccountView, setFacultyAccountView] = React.useState("active");
+  const [facultyAccountSearch, setFacultyAccountSearch] = React.useState("");
+  const [facultyProgramFilter, setFacultyProgramFilter] = React.useState("");
+  const [facultyAssignmentFilter, setFacultyAssignmentFilter] = React.useState("all");
   const [facultyAccounts, setFacultyAccounts] = React.useState({ active: [], archived: [] });
   const [facultyAccountsLoading, setFacultyAccountsLoading] = React.useState(false);
   const [facultyAccountsError, setFacultyAccountsError] = React.useState("");
   const [facultyActionEmail, setFacultyActionEmail] = React.useState("");
   const [selectedFacultyProfileId, setSelectedFacultyProfileId] = React.useState(null);
   const [showFacultyForm, setShowFacultyForm] = React.useState(false);
-  const [facultyForms, setFacultyForms] = React.useState([{ full_name: "", email: "", program_id: "" }]);
+  const [facultyForms, setFacultyForms] = React.useState([{ full_name: "", email: "", faculty_number: "", program_id: "" }]);
   const [creatingFaculty, setCreatingFaculty] = React.useState(false);
   const [programChairDrafts, setProgramChairDrafts] = React.useState({});
   const [savingProgramChairId, setSavingProgramChairId] = React.useState(null);
@@ -564,6 +685,10 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
   const isSuperAdmin = currentRole === "super_admin";
   const isDepartmentAdmin = currentRole === "department_admin";
   const departmentAdminSection = isDepartmentAdmin ? activeSection || "academic" : null;
+  React.useEffect(() => () => {
+    if (cisPreview?.fileUrl) URL.revokeObjectURL(cisPreview.fileUrl);
+  }, [cisPreview?.fileUrl]);
+
   const authHeaders = React.useCallback(
     () => ({ Authorization: `Bearer ${localStorage.getItem("token") || ""}` }),
     [],
@@ -645,6 +770,16 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
   const selectedCampus = visibleCampuses.find((campus) => campus.id === selectedCampusId) || null;
   const selectedDepartment = selectedCampus?.departments?.find((department) => department.id === selectedDepartmentId) || null;
   const selectedProgram = selectedDepartment?.programs?.find((program) => program.id === selectedProgramId) || null;
+  const visibleFacultyAccounts = facultyAccounts[facultyAccountView].filter((account) => {
+    const searchTerm = facultyAccountSearch.trim().toLowerCase();
+    const matchesSearch = !searchTerm || [account.full_name, account.email, account.faculty_number]
+      .some((value) => String(value || "").toLowerCase().includes(searchTerm));
+    const matchesProgram = !facultyProgramFilter || String(account.program_id || "") === facultyProgramFilter;
+    const assigned = Boolean(account.program_id);
+    const matchesAssignment = facultyAssignmentFilter === "all" ||
+      (facultyAssignmentFilter === "assigned" ? assigned : !assigned);
+    return matchesSearch && matchesProgram && matchesAssignment;
+  });
   React.useEffect(() => {
     if (isDepartmentAdmin && programId && departmentAdminSection !== "academic" && selectedCampusId && selectedDepartmentId) {
       navigate(`${basePath}/campus/${selectedCampusId}/department/${selectedDepartmentId}`, { replace: true });
@@ -661,7 +796,9 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
   const listedDepartments = selectedCampus
     ? (selectedCampus.departments || []).map((department) => ({ ...department, campus_id: selectedCampus.id, campus_name: selectedCampus.name }))
     : allDepartments;
-  const modalTitle = modal?.type === "department_details"
+  const modalTitle = modal?.cisOnly
+    ? "Replace Course Information Sheet"
+    : modal?.type === "department_details"
     ? "Edit Department Details"
     : `${modal?.item ? "Edit" : "Add"} ${modal?.type || ""}`;
   const departmentSubjects = subjects.filter((subject) =>
@@ -676,11 +813,27 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
       subject.program_id === selectedProgramId &&
       !subject.archived,
   );
+  const creatingDepartmentSubject =
+    modal?.type === "subject" && isDepartmentAdmin && !modal.item;
+  const managingDepartmentSubjectCis =
+    modal?.type === "subject" && isDepartmentAdmin && (creatingDepartmentSubject || modal.cisOnly);
+  const selectedSubjectProgramExists = departmentPrograms.some(
+    (program) => String(program.id) === String(form.program_id),
+  );
+  const cisFileError = cisFile ? getCisFileError(cisFile) : "";
+  const canSaveDepartmentSubject =
+    !managingDepartmentSubjectCis ||
+    (Boolean(cisFile) &&
+      !cisFileError &&
+      (modal?.cisOnly ||
+        (form.name.trim().length >= 2 &&
+          form.code.trim().length > 0 &&
+          selectedSubjectProgramExists)));
 
   const chooseDepartment = (department) => navigate(`${basePath}/campus/${department.campus_id || selectedCampus.id}/department/${department.id}`);
   const chooseProgram = (program) => navigate(`${basePath}/campus/${selectedCampus.id}/department/${selectedDepartment.id}/program/${program.id}`);
 
-  const openModal = (type, item = null, parent = null) => {
+  const openModal = (type, item = null, parent = null, cisOnly = false) => {
     setForm({
       name: item?.name || "",
       code: item?.code || "",
@@ -691,8 +844,83 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
       chair_name: item?.chair_name || item?.chair?.name || "",
     });
     setCisFile(null);
-    setModal({ type, item });
+    setModal({ type, item, cisOnly });
     setError("");
+  };
+
+  const openCisPreview = async (subject) => {
+    setCisPreview({ subject, loading: true, error: "", details: null, fileUrl: "" });
+    try {
+      const detailsResponse = await fetch(`${ACADEMIC_API}/subjects/${subject.id}/cis`, {
+        headers: authHeaders(),
+      });
+      const details = await detailsResponse.json().catch(() => ({}));
+      if (!detailsResponse.ok) throw new Error(details.detail || "Could not load CIS information.");
+      const fileResponse = await fetch(`${ACADEMIC_API}/subjects/${subject.id}/cis/file`, {
+        headers: authHeaders(),
+      });
+      if (!fileResponse.ok) {
+        const result = await fileResponse.json().catch(() => ({}));
+        throw new Error(result.detail || "Could not open the current CIS file.");
+      }
+      const fileBlob = await fileResponse.blob();
+      const fileUrl = URL.createObjectURL(fileBlob);
+      setCisPreview({
+        subject,
+        loading: false,
+        error: "",
+        details,
+        fileBlob,
+        fileUrl,
+        previewMode: "extracted",
+        originalPreview: null,
+        previewLoading: false,
+        previewError: "",
+      });
+    } catch (previewError) {
+      setCisPreview({ subject, loading: false, error: previewError.message || "Could not load CIS information.", details: null, fileUrl: "" });
+    }
+  };
+
+  const showOriginalCisPreview = async () => {
+    if (!cisPreview || cisPreview.loading || cisPreview.previewLoading) return;
+    setCisPreview((current) => ({ ...current, previewMode: "original", previewLoading: true, previewError: "" }));
+    try {
+      const extension = cisPreview.details.filename.split(".").pop()?.toLowerCase();
+      let originalPreview = cisPreview.originalPreview;
+      if (extension === "xlsx" && !originalPreview) {
+        const excelModule = await import("exceljs");
+        const ExcelJS = excelModule.default || excelModule;
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(await cisPreview.fileBlob.arrayBuffer());
+        originalPreview = workbook.worksheets.map((worksheet) => {
+          const rowCount = Math.min(worksheet.rowCount, CIS_PREVIEW_ROW_LIMIT);
+          const columnCount = Math.min(worksheet.columnCount, CIS_PREVIEW_COLUMN_LIMIT);
+          return {
+            name: worksheet.name,
+            rowCount: worksheet.rowCount,
+            columnCount: worksheet.columnCount,
+            rows: Array.from({ length: rowCount }, (_, rowIndex) =>
+              Array.from({ length: columnCount }, (_, columnIndex) =>
+                worksheet.getCell(rowIndex + 1, columnIndex + 1).text || "",
+              ),
+            ),
+          };
+        });
+      }
+      setCisPreview((current) => ({
+        ...current,
+        previewMode: "original",
+        originalPreview,
+        previewLoading: false,
+      }));
+    } catch (previewError) {
+      setCisPreview((current) => ({
+        ...current,
+        previewLoading: false,
+        previewError: previewError.message || "Could not preview the original CIS file.",
+      }));
+    }
   };
 
   const submit = async (event) => {
@@ -704,7 +932,11 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
       setError("Upload the subject's Course Information Sheet before creating it.");
       return;
     }
-    if (type === "subject" && isDepartmentAdmin && (!form.code.trim() || !form.program_id)) {
+    if (type === "subject" && isDepartmentAdmin && cisFile && getCisFileError(cisFile)) {
+      setError(getCisFileError(cisFile));
+      return;
+    }
+    if (type === "subject" && isDepartmentAdmin && !modal.cisOnly && (!form.code.trim() || !selectedSubjectProgramExists)) {
       setError("Enter a subject code and assign the subject to a program so faculty can use it.");
       return;
     }
@@ -718,18 +950,23 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
 
     try {
       let response;
-      if (type === "subject" && isDepartmentAdmin && !item) {
+      if (type === "subject" && isDepartmentAdmin && (!item || modal.cisOnly)) {
         const body = new FormData();
-        body.append("name", form.name.trim());
-        body.append("code", form.code.trim());
-        body.append("department_id", String(selectedDepartment.id));
-        body.append("program_id", String(form.program_id));
+        if (!item) {
+          body.append("name", form.name.trim());
+          body.append("code", form.code.trim());
+          body.append("department_id", String(selectedDepartment.id));
+          body.append("program_id", String(form.program_id));
+        }
         body.append("cis_file", cisFile);
-        response = await fetch(`${ACADEMIC_API}/subjects/with-cis`, {
-          method: "POST",
+        response = await fetch(
+          item ? `${ACADEMIC_API}/subjects/${item.id}/cis` : `${ACADEMIC_API}/subjects/with-cis`,
+          {
+          method: item ? "PUT" : "POST",
           headers: authHeaders(),
           body,
-        });
+          },
+        );
       } else {
         const suffix = type === "department_details" ? `/${item.id}/details` : `${item ? `/${item.id}` : ""}`;
         response = await fetch(`${ACADEMIC_API}/${endpointName}${suffix}`, {
@@ -740,17 +977,6 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
       }
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.detail || `Could not save ${type.replace("_", " ")}.`);
-      if (type === "subject" && isDepartmentAdmin && item && cisFile) {
-        const body = new FormData();
-        body.append("cis_file", cisFile);
-        const cisResponse = await fetch(`${ACADEMIC_API}/subjects/${item.id}/cis`, {
-          method: "PUT",
-          headers: authHeaders(),
-          body,
-        });
-        const cisResult = await cisResponse.json().catch(() => ({}));
-        if (!cisResponse.ok) throw new Error(cisResult.detail || "Could not save the Course Information Sheet.");
-      }
       setModal(null);
       await loadData();
     } catch (saveError) {
@@ -896,6 +1122,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
           body: JSON.stringify({
             full_name: facultyForm.full_name,
             email: facultyForm.email,
+            faculty_number: facultyForm.faculty_number,
             program_id: Number(facultyForm.program_id),
           }),
         });
@@ -922,7 +1149,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
 
     setFacultyForms(creationFailures.length
       ? creationFailures.map(({ row: _row, ...facultyForm }) => facultyForm)
-      : [{ full_name: "", email: "", program_id: "" }]);
+      : [{ full_name: "", email: "", faculty_number: "", program_id: "" }]);
     setFacultyAccountView("active");
 
     const summaries = [];
@@ -968,21 +1195,6 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
       setFacultyAccountsError(err.message || `Could not ${action} faculty account.`);
     } finally {
       setFacultyActionEmail("");
-    }
-  };
-
-  const assignSubjectFaculty = async (subjectId, facultyId) => {
-    try {
-      const response = await fetch(`${ACADEMIC_API}/subjects/${subjectId}/faculty`, {
-        method: "PUT",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ faculty_id: facultyId ? Number(facultyId) : null }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.detail || "Could not assign faculty to the subject.");
-      await loadData();
-    } catch (err) {
-      setError(err.message || "Could not assign faculty to the subject.");
     }
   };
 
@@ -1060,19 +1272,19 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
               <Plus size={16} /> Add Department
             </button>
           )}
-          {isDepartmentAdmin && departmentAdminSection === "academic" && departmentId && !programId && (
-            <button type="button" onClick={() => openModal("program", null, selectedDepartment)} className="inline-flex items-center gap-2 self-start rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition" style={{ background: "var(--bq-accent-strong)" }}>
-              <Plus size={16} /> Add Program
-            </button>
+          {isDepartmentAdmin && departmentAdminSection === "academic" && departmentId && !programId && selectedDepartment && (
+            <div className="flex flex-col items-end gap-2">
+              <button type="button" onClick={() => openModal("program", null, selectedDepartment)} className="inline-flex items-center gap-2 self-start rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition" style={{ background: "var(--bq-accent-strong)" }}>
+                <Plus size={16} /> Add Program
+              </button>
+              <button type="button" onClick={() => openModal("subject", null, { department_id: selectedDepartment.id })} className="inline-flex items-center gap-2 self-start rounded-xl border px-4 py-2 text-sm font-semibold transition" style={{ borderColor: "var(--bq-border)", color: "var(--bq-accent)" }}>
+                <Plus size={16} /> Add Subject
+              </button>
+            </div>
           )}
           {!isDepartmentAdmin && departmentAdminSection !== "faculty" && departmentId && !programId && !isSuperAdmin && selectedDepartment && (
             <button type="button" onClick={() => openModal("department_details", selectedDepartment)} className="inline-flex items-center gap-2 self-start rounded-xl border px-4 py-2 text-sm font-semibold transition" style={{ borderColor: "var(--bq-border)", color: "var(--bq-accent)" }}>
               Edit Department Details
-            </button>
-          )}
-          {isDepartmentAdmin && departmentAdminSection === "academic" && departmentId && !programId && selectedDepartment && (
-            <button type="button" onClick={() => openModal("subject", null, { department_id: selectedDepartment.id })} className="inline-flex items-center gap-2 self-start rounded-xl border px-4 py-2 text-sm font-semibold transition" style={{ borderColor: "var(--bq-border)", color: "var(--bq-accent)" }}>
-              <Plus size={16} /> Add Subject
             </button>
           )}
         </div>
@@ -1184,7 +1396,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                     <SummaryStat icon={Users} label="Department faculty" value={departmentFaculty.length} />
                     <SummaryStat icon={GraduationCap} label="Program assignments" value={`${departmentFaculty.filter((member) => member.program_id).length}/${departmentFaculty.length}`} />
                     <SummaryStat icon={GraduationCap} label="Program chairs assigned" value={`${departmentPrograms.filter((program) => program.chair_id).length}/${departmentPrograms.length}`} />
-                    <SummaryStat icon={BookOpen} label="Subjects with faculty" value={`${departmentSubjects.filter((subject) => subject.creator_id).length}/${departmentSubjects.length}`} />
+                    <SummaryStat icon={BookOpen} label="Subjects" value={departmentSubjects.length} />
                   </div>
                 ) : !isDepartmentAdmin || departmentAdminSection === "academic" ? (
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -1266,7 +1478,11 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                                   </button>
                                 )}
                               </div>
-                              <div className="grid gap-3 sm:grid-cols-3">
+                              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                <label className="text-xs font-semibold text-slate-600">
+                                  Number
+                                  <input required aria-label={`Number for faculty member ${index + 1}`} type="text" inputMode="numeric" pattern="[0-9]+" maxLength={50} value={facultyForm.faculty_number} onChange={(event) => setFacultyForms((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, faculty_number: event.target.value, error: "" } : row))} className="bq-field mt-1 w-full px-3 py-2.5 text-sm" placeholder="Enter faculty number" />
+                                </label>
                                 <label className="text-xs font-semibold text-slate-600">
                                   Full name
                                   <input required minLength={2} maxLength={100} value={facultyForm.full_name} onChange={(event) => setFacultyForms((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, full_name: event.target.value, error: "" } : row))} className="bq-field mt-1 w-full px-3 py-2.5 text-sm" placeholder="Enter full name" />
@@ -1277,7 +1493,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                                 </label>
                                 <label className="text-xs font-semibold text-slate-600">
                                   Program
-                                  <select required value={facultyForm.program_id} onChange={(event) => setFacultyForms((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, program_id: event.target.value, error: "" } : row))} className="bq-field mt-1 w-full px-3 py-2.5 text-sm">
+                                  <select required aria-label={`Program for faculty member ${index + 1}`} value={facultyForm.program_id} onChange={(event) => setFacultyForms((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, program_id: event.target.value, error: "" } : row))} className="bq-field mt-1 w-full px-3 py-2.5 text-sm">
                                     <option value="">Select program</option>
                                     {departmentPrograms.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
                                   </select>
@@ -1288,7 +1504,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                           ))}
                         </div>
                         <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-                          <button type="button" disabled={creatingFaculty} onClick={() => setFacultyForms((current) => [...current, { full_name: "", email: "", program_id: "" }])} className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-800 hover:bg-rose-50 disabled:opacity-60">
+                          <button type="button" disabled={creatingFaculty} onClick={() => setFacultyForms((current) => [...current, { full_name: "", email: "", faculty_number: "", program_id: "" }])} className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-800 hover:bg-rose-50 disabled:opacity-60">
                             <Plus size={15} />
                             Add another
                           </button>
@@ -1296,7 +1512,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                           <button type="button" disabled={creatingFaculty} onClick={() => {
                             setShowFacultyForm(false);
                             setFacultyAccountsError("");
-                            setFacultyForms([{ full_name: "", email: "", program_id: "" }]);
+                            setFacultyForms([{ full_name: "", email: "", faculty_number: "", program_id: "" }]);
                           }} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
                             Cancel
                           </button>
@@ -1309,17 +1525,82 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                       </form>
                     )}
                     {facultyAccountsError && <p role="alert" className="border-b border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{facultyAccountsError}</p>}
+                    {facultyAccounts[facultyAccountView].length > 0 && (
+                      <div className="flex flex-col gap-3 border-b bg-slate-50/60 px-4 py-3 sm:flex-row sm:items-end" style={{ borderColor: "var(--bq-border)" }}>
+                        <label className="min-w-56 flex-1 text-xs font-semibold text-slate-600">
+                          Search number, name, or email
+                          <span className="relative mt-1 block">
+                            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                            <input
+                              type="search"
+                              aria-label="Search faculty by number, name, or email"
+                              value={facultyAccountSearch}
+                              onChange={(event) => setFacultyAccountSearch(event.target.value)}
+                              placeholder="Type a number, name, or email"
+                              className="bq-field w-full py-2 pl-9 pr-3 text-sm"
+                            />
+                          </span>
+                        </label>
+                        <label className="min-w-48 text-xs font-semibold text-slate-600">
+                          Program
+                          <select
+                            aria-label="Filter faculty accounts by program"
+                            value={facultyProgramFilter}
+                            onChange={(event) => setFacultyProgramFilter(event.target.value)}
+                            className="bq-field mt-1 w-full px-3 py-2 text-sm"
+                          >
+                            <option value="">All programs</option>
+                            {(selectedDepartment?.programs || []).map((program) => (
+                              <option key={program.id} value={program.id}>{program.name}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="min-w-44 text-xs font-semibold text-slate-600">
+                          Assignment filter
+                          <select
+                            aria-label="Filter faculty by assignment"
+                            value={facultyAssignmentFilter}
+                            onChange={(event) => setFacultyAssignmentFilter(event.target.value)}
+                            className="bq-field mt-1 w-full px-3 py-2 text-sm"
+                          >
+                            <option value="all">All faculty</option>
+                            <option value="assigned">Assigned to a program</option>
+                            <option value="unassigned">Unassigned</option>
+                          </select>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFacultyAccountSearch("");
+                            setFacultyProgramFilter("");
+                            setFacultyAssignmentFilter("all");
+                          }}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                        >
+                          Clear filters
+                        </button>
+                        <span className="pb-2 text-xs text-slate-500" aria-live="polite">
+                          Showing {visibleFacultyAccounts.length} of {facultyAccounts[facultyAccountView].length}
+                        </span>
+                      </div>
+                    )}
                     {facultyAccountsLoading ? (
                       <p className="p-5 text-sm text-slate-500">Loading faculty accounts...</p>
                     ) : facultyAccounts[facultyAccountView].length === 0 ? (
                       <p className="p-5 text-sm text-slate-500">
                         No {facultyAccountView} faculty accounts.
                       </p>
+                    ) : visibleFacultyAccounts.length === 0 ? (
+                      <div className="p-8 text-center">
+                        <p className="text-sm font-semibold text-slate-700">No faculty match these filters.</p>
+                        <p className="mt-1 text-xs text-slate-500">Try changing your search or clearing the filters.</p>
+                      </div>
                     ) : (
                       <div className="overflow-x-auto">
-                        <table className="w-full min-w-[720px] text-left">
+                        <table className="w-full min-w-[820px] text-left">
                           <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                             <tr>
+                              <th className="px-4 py-3">Number</th>
                               <th className="px-4 py-3">Name</th>
                               <th className="px-4 py-3">Email</th>
                               <th className="px-4 py-3">Department</th>
@@ -1329,8 +1610,9 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                            {facultyAccounts[facultyAccountView].map((account) => (
+                            {visibleFacultyAccounts.map((account) => (
                               <tr key={account.id} className="hover:bg-slate-50">
+                                <td className="px-4 py-3 text-sm text-slate-600">{account.faculty_number || "—"}</td>
                                 <td className="px-4 py-3 text-sm font-medium text-slate-800">{account.full_name || "—"}</td>
                                 <td className="px-4 py-3 text-sm text-slate-600">{account.email}</td>
                                 <td className="px-4 py-3 text-sm text-slate-600">{account.department || selectedDepartment.name}</td>
@@ -1339,9 +1621,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                                 <td className="px-4 py-3">
                                   <div className="flex items-center gap-2">
                                   <button type="button" onClick={() => setSelectedFacultyProfileId(account.id)} className="rounded-lg border px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">View profile</button>
-                                  {facultyAccountView === "active" ? (
-                                    <button type="button" disabled={facultyActionEmail === account.email} onClick={() => updateFacultyAccount("archive", account.email)} className="rounded-lg border px-3 py-1.5 text-xs font-semibold text-slate-600 disabled:opacity-60">Archive</button>
-                                  ) : (
+                                  {facultyAccountView === "archived" && (
                                     <button type="button" disabled={facultyActionEmail === account.email} onClick={() => updateFacultyAccount("restore", account.email)} className="rounded-lg border px-3 py-1.5 text-xs font-semibold text-slate-600 disabled:opacity-60">Restore</button>
                                   )}
                                   </div>
@@ -1499,20 +1779,12 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                     <p className="text-xs text-slate-500">Associate these subjects with a program when appropriate.</p>
                   </div>
                   {departmentLevelSubjects.length ? <div className="overflow-x-auto">
-                    <table className="w-full min-w-[600px] text-left">
-                      <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Subject</th><th className="px-4 py-3">Program</th><th className="px-4 py-3">Faculty</th><th className="px-4 py-3" /></tr></thead>
+                    <table className="w-full min-w-[420px] text-left">
+                      <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Subject</th><th className="px-4 py-3">Program</th><th className="px-4 py-3" /></tr></thead>
                       <tbody className="divide-y divide-slate-100">{departmentLevelSubjects.map((subject) => (
                         <tr key={subject.id}>
                           <td className="px-4 py-3 text-sm font-medium">{subject.name}{subject.code ? <span className="ml-2 text-xs text-slate-500">{subject.code}</span> : null}</td>
                           <td className="px-4 py-3"><button type="button" onClick={() => openModal("subject", subject, { department_id: selectedDepartment.id })} className="text-sm font-semibold" style={{ color: "var(--bq-accent)" }}>Associate with program</button></td>
-                          <td className="px-4 py-3">
-                            {isDepartmentAdmin
-                              ? <span className="text-sm text-slate-500">Assign in Faculty Management</span>
-                              : <select aria-label={`Faculty for ${subject.name}`} value={subject.creator_id || ""} onChange={(event) => assignSubjectFaculty(subject.id, event.target.value)} className="bq-field w-full min-w-40 px-3 py-2 text-sm">
-                                <option value="">Unassigned</option>
-                                {departmentFaculty.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
-                              </select>}
-                          </td>
                           <td className="px-4 py-3"><OverflowMenu onEdit={() => openModal("subject", subject, { department_id: selectedDepartment.id })} onArchive={() => remove("subjects", subject.id)} /></td>
                         </tr>
                       ))}</tbody>
@@ -1590,12 +1862,11 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
 
                 {programTab === "subjects" && (
                   <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-                    <table className="w-full min-w-[460px] text-left">
+                    <table className="w-full min-w-[380px] text-left">
                       <thead className="bg-slate-50 text-[11px] uppercase tracking-[0.12em] text-slate-500">
                         <tr>
                           <th className="px-4 py-3 font-semibold">Subject</th>
                           <th className="px-4 py-3 font-semibold">Status</th>
-                          {(isDepartmentAdmin || isSuperAdmin) && <th className="px-4 py-3 font-semibold">Assigned Faculty</th>}
                           <th className="px-4 py-3" />
                         </tr>
                       </thead>
@@ -1615,15 +1886,14 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                               <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Active</span>
                             </td>
                             <td className="px-4 py-3">
-                              {isDepartmentAdmin && departmentAdminSection === "faculty" ? (
-                                <select aria-label={`Faculty for ${subject.name}`} value={subject.creator_id || ""} onChange={(event) => assignSubjectFaculty(subject.id, event.target.value)} className="bq-field w-full min-w-48 px-3 py-2 text-sm">
-                                  <option value="">Unassigned</option>
-                                  {departmentFaculty.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
-                                </select>
-                              ) : subject.faculty_name || (isDepartmentAdmin ? "Assign in Faculty Management" : null)}
-                            </td>
-                            <td className="px-4 py-3">
-                              {!isSuperAdmin && <OverflowMenu onEdit={() => openModal("subject", subject, { id: selectedProgram.id, department_id: selectedDepartment.id })} onArchive={() => remove("subjects", subject.id)} />}
+                              {!isSuperAdmin && <OverflowMenu
+                                onViewCis={isDepartmentAdmin && subject.has_cis ? () => openCisPreview(subject) : undefined}
+                                onReplaceCis={isDepartmentAdmin ? () => openModal("subject", subject, { id: selectedProgram.id, department_id: selectedDepartment.id }, true) : undefined}
+                                replaceCisLabel={subject.has_cis ? "Replace CIS" : "Add CIS"}
+                                editLabel="Edit subject"
+                                onEdit={() => openModal("subject", subject, { id: selectedProgram.id, department_id: selectedDepartment.id })}
+                                onArchive={() => remove("subjects", subject.id)}
+                              />}
                             </td>
                           </tr>
                         ))}
@@ -1689,14 +1959,18 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
               <h3 className="text-lg font-bold text-slate-900">{modalTitle}</h3>
               <button type="button" onClick={() => setModal(null)} className="bq-secondary-button px-3 py-1 text-xs" aria-label="Close dialog">Close</button>
             </div>
-            <label className="mb-4 block text-sm font-semibold text-slate-700">
-              Name
-              <input required autoFocus value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} className="bq-field mt-1 w-full px-3" />
-            </label>
-            <label className="mb-4 block text-sm font-semibold text-slate-700">
-              Code {!isDepartmentAdmin && <span className="font-normal text-slate-400">(optional)</span>}
-              <input required={isDepartmentAdmin && modal.type === "subject"} value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))} className="bq-field mt-1 w-full px-3" />
-            </label>
+            {!modal.cisOnly && (
+              <>
+                <label className="mb-4 block text-sm font-semibold text-slate-700">
+                  Name
+                  <input required autoFocus value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} className="bq-field mt-1 w-full px-3" />
+                </label>
+                <label className="mb-4 block text-sm font-semibold text-slate-700">
+                  Code {!isDepartmentAdmin && <span className="font-normal text-slate-400">(optional)</span>}
+                  <input required={isDepartmentAdmin && modal.type === "subject"} value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))} className="bq-field mt-1 w-full px-3" />
+                </label>
+              </>
+            )}
             {modal.type === "department" && (
               <>
                 <label className="mb-4 block text-sm font-semibold text-slate-700">
@@ -1715,29 +1989,137 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                 {allDepartments.length > 1 && <label className="mb-4 block text-sm font-semibold text-slate-700">Department<select required value={form.department_id} onChange={(event) => setForm((current) => ({ ...current, department_id: event.target.value }))} className="bq-field mt-1 w-full px-3"><option value="">Select a department</option>{allDepartments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></label>}
               </>
             )}
-            {modal.type === "subject" && selectedDepartment && <label className="mb-4 block text-sm font-semibold text-slate-700">Program<select required={isDepartmentAdmin} value={form.program_id} onChange={(event) => setForm((current) => ({ ...current, program_id: event.target.value, department_id: selectedDepartment.id }))} className="bq-field mt-1 w-full px-3"><option value="">{isDepartmentAdmin ? "Select a program" : "Department-level (not linked to a program)"}</option>{departmentPrograms.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}</select></label>}
-            {modal.type === "subject" && isDepartmentAdmin && (
+            {modal.type === "subject" && !modal.cisOnly && selectedDepartment && <label className="mb-4 block text-sm font-semibold text-slate-700">Program<select required={isDepartmentAdmin} value={form.program_id} onChange={(event) => { setForm((current) => ({ ...current, program_id: event.target.value, department_id: selectedDepartment.id })); setError(""); }} className="bq-field mt-1 w-full px-3"><option value="">{isDepartmentAdmin ? "Select a program" : "Department-level (not linked to a program)"}</option>{departmentPrograms.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}</select></label>}
+            {modal.type === "subject" && isDepartmentAdmin && (creatingDepartmentSubject || modal.cisOnly) && (
               <div className="mb-4">
                 <label className="block text-sm font-semibold text-slate-700">
-                  Course Information Sheet (CIS) {modal.item?.has_cis && <span className="font-normal text-emerald-700">· Current CIS on file</span>}
+                  Course Information Sheet (CIS) {modal.item?.has_cis && <span className="font-normal text-emerald-700">· Current: {modal.item.cis_filename || "CIS on file"}</span>}
                   <input
                     type="file"
                     accept=".pdf,.docx,.xlsx"
                     required={!modal.item}
-                    onChange={(event) => setCisFile(event.target.files?.[0] || null)}
+                    aria-invalid={Boolean(cisFileError)}
+                    onChange={(event) => {
+                      setCisFile(event.target.files?.[0] || null);
+                      setError("");
+                    }}
                     className="bq-field mt-1 w-full px-3 py-2"
                   />
                 </label>
-                <p className="mt-1 text-xs text-slate-500">{modal.item ? "Upload a replacement CIS if the existing document has changed." : "Required before this subject can be created or used by faculty. Accepted formats: PDF, DOCX, or XLSX (10 MB max)."}</p>
+                <p className="mt-1 text-xs text-slate-500">{modal.cisOnly ? "Choose a new CIS file to replace the current document. The subject details will not be changed." : "Required before this subject can be created or used by faculty. Accepted formats: PDF, DOCX, or XLSX (10 MB max)."}</p>
                 {cisFile && <p className="mt-1 text-xs font-medium text-emerald-700">Selected: {cisFile.name}</p>}
-                {modal.item && !modal.item.has_cis && <p className="mt-1 text-xs font-medium text-amber-700">No CIS is on file; faculty cannot use this subject until one is uploaded.</p>}
+                {cisFileError && <p role="alert" className="mt-1 text-xs font-medium text-red-700">{cisFileError}</p>}
               </div>
             )}
+            {error && <p role="alert" className="mb-3 text-sm font-medium text-red-700">{error}</p>}
             <div className="mt-6 flex justify-end gap-2">
               <button type="button" onClick={() => setModal(null)} className="bq-secondary-button">Cancel</button>
-              <button type="submit" className="bq-primary-button">Save</button>
+              <button type="submit" disabled={!canSaveDepartmentSubject} className="bq-primary-button disabled:cursor-not-allowed disabled:opacity-50">{modal.cisOnly ? "Replace CIS" : "Save"}</button>
             </div>
             </form>
+          </div>
+        </div>,
+        document.body,
+      )}
+      {cisPreview && createPortal(
+        <div className={`bq-admin-${adminTheme}`}>
+          <div className="bq-modal-overlay fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto p-4">
+            <section role="dialog" aria-modal="true" aria-labelledby="cis-preview-title" className="bq-modal-panel my-auto flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col overflow-hidden p-6">
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h3 id="cis-preview-title" className="text-lg font-bold text-slate-900">Course Information Sheet</h3>
+                  <p className="mt-1 text-sm text-slate-600">{cisPreview.subject.name}</p>
+                </div>
+                <button type="button" onClick={() => setCisPreview(null)} className="bq-secondary-button px-3 py-1 text-xs" aria-label="Close CIS preview">Close</button>
+              </div>
+              {cisPreview.loading ? (
+                <p className="p-8 text-center text-sm text-slate-500">Loading current CIS...</p>
+              ) : cisPreview.error ? (
+                <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{cisPreview.error}</p>
+              ) : (
+                <>
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-3">
+                    <div className="min-w-0">
+                      <button type="button" onClick={showOriginalCisPreview} className="group flex max-w-full items-center gap-2 text-left text-sm font-semibold text-slate-800 hover:text-[var(--bq-accent)]" title="Preview the original file">
+                        <span className="truncate underline decoration-slate-300 underline-offset-2 group-hover:decoration-current">{cisPreview.details.filename}</span>
+                        <Eye size={14} className="shrink-0 text-slate-400 group-hover:text-[var(--bq-accent)]" />
+                      </button>
+                      <p className="mt-1 text-xs text-slate-500">Uploaded {cisPreview.details.uploaded_at ? formatRequestDate(cisPreview.details.uploaded_at) : "date unavailable"}</p>
+                    </div>
+                    <a href={cisPreview.fileUrl} download={cisPreview.details.filename} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                      <Download size={14} /> Download original
+                    </a>
+                  </div>
+                  {cisPreview.previewMode === "extracted" ? (
+                    <div className="min-h-48 flex-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500">Extracted CIS information</h4>
+                        <button type="button" onClick={showOriginalCisPreview} className="text-xs font-semibold text-[var(--bq-accent)] hover:underline">Preview original file</button>
+                      </div>
+                      <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-6 text-slate-700">{cisPreview.details.extracted_text || "No readable text was extracted."}</pre>
+                    </div>
+                  ) : (
+                    <div className="flex min-h-48 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2">
+                        <span className="text-xs font-semibold text-slate-600">Original file preview</span>
+                        <button type="button" onClick={() => setCisPreview((current) => ({ ...current, previewMode: "extracted" }))} className="text-xs font-semibold text-[var(--bq-accent)] hover:underline">Show extracted text</button>
+                      </div>
+                      {cisPreview.previewLoading ? (
+                        <p className="p-8 text-center text-sm text-slate-500">Preparing original file preview...</p>
+                      ) : cisPreview.previewError ? (
+                        <p role="alert" className="m-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{cisPreview.previewError}</p>
+                      ) : cisPreview.details.media_type === "application/pdf" ? (
+                        <iframe title={`Preview of ${cisPreview.details.filename}`} src={cisPreview.fileUrl} className="min-h-[55vh] w-full flex-1" />
+                      ) : cisPreview.details.filename.toLowerCase().endsWith(".xlsx") && cisPreview.originalPreview ? (
+                        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                          <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-200 bg-white px-3 pt-2">
+                            {cisPreview.originalPreview.map((sheet, index) => (
+                              <button
+                                key={sheet.name}
+                                type="button"
+                                onClick={() => setCisPreview((current) => ({ ...current, activeSheetIndex: index }))}
+                                className={`whitespace-nowrap rounded-t-lg px-3 py-2 text-xs font-semibold ${index === (cisPreview.activeSheetIndex || 0) ? "border border-b-0 border-slate-200 bg-slate-50 text-slate-800" : "text-slate-500 hover:bg-slate-50"}`}
+                              >
+                                {sheet.name}
+                              </button>
+                            ))}
+                          </div>
+                          {(() => {
+                            const sheet = cisPreview.originalPreview[cisPreview.activeSheetIndex || 0];
+                            if (!sheet) return <p className="p-6 text-sm text-slate-500">This workbook has no worksheets to preview.</p>;
+                            return (
+                              <div className="min-h-0 flex-1 overflow-auto">
+                                <table className="min-w-full border-collapse text-left text-xs">
+                                  <tbody>
+                                    {sheet.rows.map((row, rowIndex) => (
+                                      <tr key={rowIndex} className="odd:bg-white even:bg-slate-50">
+                                        <th className="sticky left-0 border border-slate-200 bg-slate-100 px-2 py-1 text-right font-medium text-slate-500">{rowIndex + 1}</th>
+                                        {row.map((value, columnIndex) => (
+                                          <td key={columnIndex} className="max-w-64 whitespace-pre-wrap break-words border border-slate-200 px-2 py-1 text-slate-700">{value}</td>
+                                        ))}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                                {(sheet.rowCount > CIS_PREVIEW_ROW_LIMIT || sheet.columnCount > CIS_PREVIEW_COLUMN_LIMIT) && (
+                                  <p className="border-t border-slate-200 bg-white p-2 text-center text-xs text-slate-500">Preview limited to the first {CIS_PREVIEW_ROW_LIMIT} rows and {CIS_PREVIEW_COLUMN_LIMIT} columns. Download the original to view the full workbook.</p>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      ) : (
+                        <div className="flex-1 overflow-y-auto p-4">
+                          <p className="mb-3 text-sm text-slate-600">A visual preview is not available for this Word document. Download the original file to view its formatting.</p>
+                          <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Extracted document text</h4>
+                          <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-6 text-slate-700">{cisPreview.details.extracted_text || "No readable text was extracted."}</pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
           </div>
         </div>,
         document.body,

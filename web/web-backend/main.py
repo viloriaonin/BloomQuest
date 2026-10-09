@@ -312,12 +312,18 @@ def serialize_question(question):
     }
 
 
-# Ensure the new archive, name, and department columns exist in the users table.
+# Ensure the archive, faculty profile, and faculty number columns exist in the users table.
 # SQLAlchemy's create_all does not alter existing tables, so we add missing columns explicitly.
 with engine.begin() as conn:
     add_column_if_missing(conn, "users", "archived", "BOOLEAN NOT NULL DEFAULT FALSE")
     add_column_if_missing(conn, "users", "name", "VARCHAR")
     add_column_if_missing(conn, "users", "department", "VARCHAR")
+    add_column_if_missing(conn, "users", "employee_id", "VARCHAR(50)")
+    add_column_if_missing(conn, "users", "faculty_number", "VARCHAR(50)")
+    conn.execute(text(
+        "UPDATE users SET faculty_number = employee_id "
+        "WHERE faculty_number IS NULL AND employee_id IS NOT NULL"
+    ))
     add_column_if_missing(conn, "users", "campus_id", "INTEGER REFERENCES campuses(id)")
     add_column_if_missing(conn, "users", "program_id", "INTEGER")
     add_column_if_missing(conn, "campuses", "is_active", "BOOLEAN NOT NULL DEFAULT TRUE")
@@ -894,6 +900,8 @@ class FacultyRequestCreatePayload(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=100)
     email: str = Field(..., min_length=5, max_length=255)
     program_id: int = Field(..., gt=0)
+    faculty_number: str | None = Field(default=None, max_length=50)
+    employee_id: str | None = Field(default=None, max_length=50)
 
     @field_validator("full_name")
     @classmethod
@@ -911,6 +919,20 @@ class FacultyRequestCreatePayload(BaseModel):
             raise ValueError("Please provide a valid email address.")
         return normalized
 
+    @field_validator("faculty_number")
+    @classmethod
+    def validate_faculty_number(cls, value: str | None) -> str | None:
+        cleaned = value.strip() if value else None
+        if cleaned and not cleaned.isdecimal():
+            raise ValueError("Faculty number must contain digits only.")
+        return cleaned or None
+
+    @field_validator("employee_id")
+    @classmethod
+    def normalize_legacy_employee_id(cls, value: str | None) -> str | None:
+        cleaned = value.strip() if value else None
+        return cleaned or None
+
 
 class DepartmentFacultyProgramPayload(BaseModel):
     program_id: int | None = Field(default=None, gt=0)
@@ -922,6 +944,28 @@ class DepartmentFacultyStatusPayload(BaseModel):
 
 class DepartmentFacultyCredentialEmailPayload(BaseModel):
     action: str = Field(..., pattern="^reset_password$")
+
+
+class CampusDeanCreateRequest(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=100)
+    email: str = Field(..., min_length=5, max_length=255)
+    department_id: int = Field(..., ge=1)
+
+    @field_validator("full_name")
+    @classmethod
+    def validate_full_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not SAFE_NAME_REGEX.fullmatch(cleaned):
+            raise ValueError("Please provide a valid full name.")
+        return cleaned
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = normalize_email(value)
+        if not EMAIL_REGEX.fullmatch(normalized):
+            raise ValueError("Please provide a valid email address.")
+        return normalized
 
 
 class DepartmentAcademicChangeRequestPayload(BaseModel):
@@ -2532,6 +2576,8 @@ def list_department_faculty_accounts(
             "id": user.id,
             "full_name": user.name or user.email.split("@", 1)[0],
             "email": user.email,
+            "faculty_number": user.faculty_number or user.employee_id,
+            "employee_id": user.employee_id or user.faculty_number,
             "department": user.department or department.name,
             "program_id": user.program_id,
             "program": programs.get(user.program_id, "N/A"),
@@ -2575,15 +2621,13 @@ def get_department_faculty_user(
     return user
 
 
-@app.post("/api/department-admin/users/{user_id}/credential-email")
-def reissue_department_faculty_credentials(
-    user_id: int,
-    payload: DepartmentFacultyCredentialEmailPayload,
-    db: Session = Depends(get_db),
-    admin: models.User = Depends(require_academic_admin),
-):
-    department = get_department_admin_scope(db, admin)
-    user = get_department_faculty_user(db, department, user_id)
+def send_faculty_credentials(
+    db: Session,
+    admin: models.User,
+    user: models.User,
+    department_name: str,
+    action: str,
+) -> dict:
     require_email_delivery_configured()
 
     temporary_password = generate_temporary_password()
@@ -2604,9 +2648,9 @@ def reissue_department_faculty_credentials(
         user.email,
         temporary_password,
         user.name or user.email.split("@", 1)[0],
-        department.name,
+        department_name,
         password_setup_url,
-        payload.action,
+        action,
     ):
         db.rollback()
         raise HTTPException(
@@ -2621,13 +2665,13 @@ def reissue_department_faculty_credentials(
         {models.UserSession.revoked_at: utc_now()},
         synchronize_session=False,
     )
-    action_label = "password reset email" if payload.action == "reset_password" else "faculty access email"
+    action_label = "password reset email" if action == "reset_password" else "faculty access email"
     db.commit()
     db.refresh(user)
     log_activity(
         db,
-        "Faculty Password Reset Email Sent" if payload.action == "reset_password" else "Faculty Access Email Resent",
-        f"Department Admin {admin.id} sent a {action_label} to {user.email}.",
+        "Faculty Password Reset Email Sent" if action == "reset_password" else "Faculty Access Email Resent",
+        f"{str(admin.role).replace('_', ' ').title()} {admin.id} sent a {action_label} to {user.email}.",
         "security",
         actor_id=admin.id,
         target_user_id=user.id,
@@ -2636,6 +2680,40 @@ def reissue_department_faculty_credentials(
         "message": f"The {action_label} was sent to {user.email}.",
         "email_status": "sent",
     }
+
+
+@app.post("/api/department-admin/users/{user_id}/credential-email")
+def reissue_department_faculty_credentials(
+    user_id: int,
+    payload: DepartmentFacultyCredentialEmailPayload,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_academic_admin),
+):
+    department = get_department_admin_scope(db, admin)
+    user = get_department_faculty_user(db, department, user_id)
+    return send_faculty_credentials(db, admin, user, department.name, payload.action)
+
+
+@app.post("/api/campus-admin/users/{user_id}/credential-email")
+def reissue_campus_admin_faculty_credentials(
+    user_id: int,
+    payload: DepartmentFacultyCredentialEmailPayload,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_academic_admin),
+):
+    if str(admin.role).lower() != "campus_admin":
+        raise HTTPException(status_code=403, detail="Campus Admin access is required.")
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user or str(user.role).lower() != "faculty":
+        raise HTTPException(status_code=404, detail="Faculty account not found.")
+    assert_admin_can_access_user(db, admin, user)
+    return send_faculty_credentials(
+        db,
+        admin,
+        user,
+        (user.department or "").strip() or "your department",
+        payload.action,
+    )
 
 
 @app.get("/api/department-admin/users")
@@ -2659,6 +2737,8 @@ def list_department_admin_users(
                 "id": user.id,
                 "full_name": user.name or user.email.split("@", 1)[0],
                 "email": user.email,
+                "faculty_number": user.faculty_number or user.employee_id,
+                "employee_id": user.employee_id or user.faculty_number,
                 "department": department.name,
                 "program_id": user.program_id,
                 "program": programs.get(user.program_id, "Unassigned"),
@@ -2710,6 +2790,8 @@ def get_department_admin_user_detail(
         "id": user.id,
         "full_name": user.name or user.email.split("@", 1)[0],
         "email": user.email,
+        "faculty_number": user.faculty_number or user.employee_id,
+        "employee_id": user.employee_id or user.faculty_number,
         "role": "Faculty",
         "department": department.name,
         "program_id": program.id if program else None,
@@ -2868,19 +2950,13 @@ def permanently_delete_department_admin_user(
     return {"message": "Faculty account permanently deleted.", "status": "deleted"}
 
 
-@app.post("/api/department-admin/faculty-accounts", status_code=201)
-def create_department_faculty_account(
+def create_faculty_account_for_program(
     payload: FacultyRequestCreatePayload,
-    db: Session = Depends(get_db),
-    admin: models.User = Depends(require_academic_admin),
+    db: Session,
+    admin: models.User,
+    department: models.Department,
+    program: models.Program,
 ):
-    department = get_department_admin_scope(db, admin)
-    program = db.query(models.Program).filter(
-        models.Program.id == payload.program_id,
-        models.Program.department_id == department.id,
-    ).first()
-    if not program:
-        raise HTTPException(status_code=404, detail="Program not found in your department.")
     require_email_delivery_configured()
 
     normalized_email = normalize_email(payload.email)
@@ -2902,6 +2978,7 @@ def create_department_faculty_account(
         campus_id=department.campus_id,
         name=payload.full_name,
         department=department.name,
+        faculty_number=payload.faculty_number or payload.employee_id,
         program_id=program.id,
         password_setup_token_hash=setup_token_hash,
         password_setup_token_expires_at=setup_expires_at,
@@ -2912,7 +2989,7 @@ def create_department_faculty_account(
     log_activity(
         db,
         "Faculty Account Created",
-        f"Department Admin {admin.id} created a faculty account for {normalized_email}.",
+        f"{str(admin.role).replace('_', ' ').title()} {admin.id} created a faculty account for {normalized_email}.",
         "security",
         actor_id=admin.id,
         target_user_id=user.id,
@@ -2928,6 +3005,8 @@ def create_department_faculty_account(
         "id": user.id,
         "full_name": user.name,
         "email": user.email,
+        "faculty_number": user.faculty_number or user.employee_id,
+        "employee_id": user.employee_id or user.faculty_number,
         "role": user.role,
         "program_id": program.id,
         "department": department.name,
@@ -2936,6 +3015,123 @@ def create_department_faculty_account(
     if DEMO_EMAIL_VERIFICATION:
         result["demo_temporary_password"] = temporary_password
     return result
+
+
+@app.post("/api/department-admin/faculty-accounts", status_code=201)
+def create_department_faculty_account(
+    payload: FacultyRequestCreatePayload,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_academic_admin),
+):
+    department = get_department_admin_scope(db, admin)
+    program = db.query(models.Program).filter(
+        models.Program.id == payload.program_id,
+        models.Program.department_id == department.id,
+    ).first()
+    if not program:
+        raise HTTPException(status_code=404, detail="Program not found in your department.")
+    return create_faculty_account_for_program(payload, db, admin, department, program)
+
+
+@app.post("/api/campus-admin/faculty-accounts", status_code=201)
+def create_campus_faculty_account(
+    payload: FacultyRequestCreatePayload,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_campus_admin),
+):
+    program_details = db.query(models.Program, models.Department).join(
+        models.Department,
+        models.Department.id == models.Program.department_id,
+    ).filter(
+        models.Program.id == payload.program_id,
+    ).first()
+    if not program_details:
+        raise HTTPException(status_code=404, detail="Program not found.")
+    program, department = program_details
+    assert_campus_access(admin, department.campus_id)
+    return create_faculty_account_for_program(payload, db, admin, department, program)
+
+
+@app.post("/api/campus-admin/department-admins", status_code=201)
+def create_campus_department_admin_for_dean(
+    payload: CampusDeanCreateRequest,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_campus_admin),
+):
+    department = db.query(models.Department).filter(
+        models.Department.id == payload.department_id
+    ).first()
+    if not department:
+        raise HTTPException(status_code=404, detail="Department not found.")
+    assert_campus_access(admin, department.campus_id)
+    campus = db.query(models.Campus).filter(
+        models.Campus.id == department.campus_id,
+        models.Campus.is_active.is_(True),
+    ).first()
+    if not campus:
+        raise HTTPException(status_code=404, detail="Active campus not found.")
+    if department.dean_id:
+        raise HTTPException(
+            status_code=409,
+            detail="This department already has a dean assigned. Clear the current assignment before adding a dean account.",
+        )
+
+    normalized_email = normalize_email(payload.email)
+    if db.query(models.User.id).filter(
+        func.lower(models.User.email) == normalized_email
+    ).first():
+        raise HTTPException(status_code=409, detail="An account with this email already exists.")
+    require_email_delivery_configured()
+
+    temporary_password = generate_temporary_password()
+    while validate_password_strength(temporary_password):
+        temporary_password = generate_temporary_password()
+    setup_token = secrets.token_urlsafe(32)
+    user = models.User(
+        email=normalized_email,
+        password=hash_password(temporary_password),
+        password_setup_token_hash=hashlib.sha256(setup_token.encode("utf-8")).hexdigest(),
+        password_setup_token_expires_at=utc_now() + timedelta(hours=24),
+        role="department_admin",
+        archived=False,
+        campus_id=campus.id,
+        admin_department_id=department.id,
+        name=payload.full_name,
+        department=department.name,
+    )
+    db.add(user)
+    db.flush()
+    department.dean_id = user.id
+    department.dean_name = user.name
+    db.commit()
+    db.refresh(user)
+
+    log_activity(
+        db,
+        "Department Dean Account Created",
+        f"Campus Admin {admin.id} created a Department Admin dean account for department '{department.name}'.",
+        "security",
+        actor_id=admin.id,
+        target_user_id=user.id,
+    )
+    email_sent = send_approval_email(
+        normalized_email,
+        temporary_password,
+        user.name,
+        department.name,
+        f"{os.getenv('FRONTEND_URL', 'http://localhost:3000').rstrip('/')}/set-password?token={setup_token}",
+    )
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": user.role,
+        "department_id": department.id,
+        "department": department.name,
+        "campus_id": campus.id,
+        "campus": campus.name,
+        "email_status": "sent" if email_sent else "failed",
+    }
 
 
 @app.post("/api/set-initial-password")
@@ -3971,6 +4167,7 @@ class DepartmentDeanCreateRequest(BaseModel):
         if not EMAIL_REGEX.fullmatch(normalized):
             raise ValueError("Please provide a valid email address.")
         return normalized
+
 
 class ProgramChairCreateRequest(DepartmentDeanCreateRequest):
     pass
@@ -5912,6 +6109,70 @@ async def create_subject_with_cis(
     }
 
 
+def get_department_admin_subject_cis(
+    subject_id: int,
+    db: Session,
+    current_user: models.User,
+) -> tuple[models.Subject, models.SubjectCIS]:
+    if str(current_user.role).lower() != "department_admin":
+        raise HTTPException(status_code=403, detail="Only a Department Admin can access department Course Information Sheets.")
+    subject = db.query(models.Subject).filter(
+        models.Subject.id == subject_id,
+        models.Subject.archived.is_(False),
+    ).first()
+    if not subject:
+        raise HTTPException(status_code=404, detail="Subject not found.")
+    department_id = subject.department_id
+    if department_id is None and subject.program_id:
+        department_id = db.query(models.Program.department_id).filter(
+            models.Program.id == subject.program_id
+        ).scalar()
+    department = db.query(models.Department).filter(
+        models.Department.id == department_id
+    ).first() if department_id else None
+    if not department:
+        raise HTTPException(status_code=404, detail="Subject department not found.")
+    assert_department_access(current_user, department)
+    cis = db.query(models.SubjectCIS).filter(
+        models.SubjectCIS.subject_id == subject.id
+    ).first()
+    if not cis:
+        raise HTTPException(status_code=404, detail="This subject does not have a Course Information Sheet.")
+    return subject, cis
+
+
+@app.get("/api/subjects/{subject_id}/cis")
+def get_subject_cis_details(
+    subject_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    subject, cis = get_department_admin_subject_cis(subject_id, db, current_user)
+    return {
+        "subject_id": subject.id,
+        "subject_name": subject.name,
+        "filename": cis.filename,
+        "media_type": cis.media_type or "application/octet-stream",
+        "extracted_text": cis.extracted_text,
+        "uploaded_at": cis.created_at.isoformat() if cis.created_at else None,
+    }
+
+
+@app.get("/api/subjects/{subject_id}/cis/file")
+def download_subject_cis_file(
+    subject_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    _, cis = get_department_admin_subject_cis(subject_id, db, current_user)
+    filename = os.path.basename(cis.filename or "course-information-sheet")
+    return Response(
+        content=cis.file_content,
+        media_type=cis.media_type or "application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.put("/api/subjects/{subject_id}/cis")
 async def replace_subject_cis(
     subject_id: int,
@@ -6549,7 +6810,15 @@ def get_questions(
             models.GeneratedQuestion.subject_id.is_(None),
             ~models.GeneratedQuestion.subject_id.in_(hidden_subject_ids),
         ))
-    if role in {"campus_admin", "super_admin"} and program_id is not None:
+    if role == "department_admin":
+        if program_id is not None and not db.query(models.Program.id).filter(
+            models.Program.id == program_id,
+            models.Program.department_id == current_user.admin_department_id,
+        ).first():
+            raise HTTPException(status_code=404, detail="Program not found in this department.")
+        department_subject_ids = accessible_subject_ids(db, current_user) or []
+        query = query.filter(models.GeneratedQuestion.subject_id.in_(department_subject_ids))
+    elif role in {"campus_admin", "super_admin"} and program_id is not None:
         target_program = db.query(models.Program).filter(models.Program.id == program_id).first()
         if not target_program:
             raise HTTPException(status_code=404, detail="Program not found.")

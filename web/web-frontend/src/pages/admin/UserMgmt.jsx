@@ -2,13 +2,14 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { usePopup } from "../../components/PopupProvider";
 import LoadingSpinner from "../../components/LoadingSpinner";
-import { Activity, FileText, Filter, History, X, Users } from "lucide-react";
+import { Activity, FileText, Filter, History, Plus, X, Users } from "lucide-react";
 import { API_URL } from "../../config/api";
 
 
 export const UserMgmtContent = () => {
   const { showAlert, showConfirm } = usePopup();
   const navigate = useNavigate();
+  const isCampusAdmin = String(localStorage.getItem("role") || "").toLowerCase() === "campus_admin";
   const [requests, setRequests] = useState([]);
   const [changeRequests, setChangeRequests] = useState([]);
   const [changeRequestStatus, setChangeRequestStatus] = useState("pending");
@@ -24,6 +25,13 @@ export const UserMgmtContent = () => {
   const [programFilter, setProgramFilter] = useState("all");
   const [academicDepartments, setAcademicDepartments] = useState([]);
   const [academicPrograms, setAcademicPrograms] = useState([]);
+  const [campusFacultyDepartments, setCampusFacultyDepartments] = useState([]);
+  const [showFacultyForm, setShowFacultyForm] = useState(false);
+  const [facultyForms, setFacultyForms] = useState([{ full_name: "", email: "", faculty_number: "", department_id: "", program_id: "", error: "" }]);
+  const [creatingFaculty, setCreatingFaculty] = useState(false);
+  const [showDeanForm, setShowDeanForm] = useState(false);
+  const [deanForm, setDeanForm] = useState({ full_name: "", email: "", department_id: "" });
+  const [creatingDean, setCreatingDean] = useState(false);
   const [taxonomyError, setTaxonomyError] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [userView, setUserView] = useState("active");
@@ -118,6 +126,7 @@ export const UserMgmtContent = () => {
       setAcademicPrograms(departments.flatMap((department) => (
         (department.programs || []).map((program) => program.name).filter(Boolean)
       )));
+      setCampusFacultyDepartments(departments);
     } catch (err) {
       console.error(err);
       setTaxonomyError(err.message || "Could not load department and program options.");
@@ -125,15 +134,18 @@ export const UserMgmtContent = () => {
   }, []);
 
   useEffect(() => {
-    fetchPendingRequests();
-    fetchChangeRequests();
+    if (!isCampusAdmin) {
+      fetchPendingRequests();
+      fetchChangeRequests();
+    }
     fetchUsers();
     fetchAcademicOptions();
-  }, [fetchPendingRequests, fetchChangeRequests, fetchUsers, fetchAcademicOptions]);
+  }, [fetchPendingRequests, fetchChangeRequests, fetchUsers, fetchAcademicOptions, isCampusAdmin]);
 
   useEffect(() => {
+    if (isCampusAdmin) return;
     fetchChangeRequests(changeRequestStatus);
-  }, [changeRequestStatus, fetchChangeRequests]);
+  }, [changeRequestStatus, fetchChangeRequests, isCampusAdmin]);
 
   const reviewChangeRequest = async (id, action) => {
     const response = await fetch(`${API_URL}/admin/user-change-requests/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
@@ -142,6 +154,114 @@ export const UserMgmtContent = () => {
     await showAlert(`Request ${action}d successfully.`, "User Request");
     await fetchChangeRequests();
     await fetchUsers();
+  };
+
+  const createFacultyAccounts = async (event) => {
+    event.preventDefault();
+    if (!isCampusAdmin || creatingFaculty) return;
+
+    setCreatingFaculty(true);
+    setErrorUsers("");
+    const created = [];
+    const emailFailures = [];
+    const creationFailures = [];
+
+    for (const [index, facultyForm] of facultyForms.entries()) {
+      try {
+        const response = await fetch(`${API_URL}/campus-admin/faculty-accounts`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+          },
+          body: JSON.stringify({
+            full_name: facultyForm.full_name,
+            email: facultyForm.email,
+            faculty_number: facultyForm.faculty_number,
+            program_id: Number(facultyForm.program_id),
+          }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          creationFailures.push({
+            ...facultyForm,
+            row: index,
+            error: result.detail || "Could not create this faculty account.",
+          });
+        } else if (result.email_status === "sent") {
+          created.push(result.email || facultyForm.email);
+        } else {
+          emailFailures.push(result.email || facultyForm.email);
+        }
+      } catch (error) {
+        creationFailures.push({
+          ...facultyForm,
+          row: index,
+          error: error.message || "Could not create this faculty account.",
+        });
+      }
+    }
+
+    const retainedForms = creationFailures.map(({ row: _row, ...facultyForm }) => facultyForm);
+    setFacultyForms(retainedForms.length
+      ? retainedForms
+      : [{ full_name: "", email: "", faculty_number: "", department_id: "", program_id: "", error: "" }]);
+    setCreatingFaculty(false);
+
+    if (created.length || emailFailures.length) {
+      await fetchUsers();
+      const messages = [];
+      if (created.length) {
+        messages.push(`Created ${created.length} ${created.length === 1 ? "faculty account" : "faculty accounts"} and sent the temporary password email to: ${created.join(", ")}.`);
+      }
+      if (emailFailures.length) {
+        messages.push(`Account created, but email could not be sent to: ${emailFailures.join(", ")}. Contact your system administrator to resend the invitation.`);
+      }
+      await showAlert(messages.join("\n\n"), emailFailures.length ? "Account created with email issue" : "Faculty account created");
+    }
+
+    if (creationFailures.length) {
+      await showAlert(
+        `Could not create ${creationFailures.length === 1 ? "one account" : `${creationFailures.length} accounts`}. Correct the highlighted rows and try again.`,
+        "Some accounts could not be created",
+      );
+    } else {
+      setShowFacultyForm(false);
+    }
+  };
+
+  const createDeanAccount = async (event) => {
+    event.preventDefault();
+    if (!isCampusAdmin || creatingDean) return;
+    setCreatingDean(true);
+    try {
+      const response = await fetch(`${API_URL}/campus-admin/department-admins`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+        },
+        body: JSON.stringify({
+          full_name: deanForm.full_name,
+          email: deanForm.email,
+          department_id: Number(deanForm.department_id),
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || "Could not create the dean account.");
+      setShowDeanForm(false);
+      setDeanForm({ full_name: "", email: "", department_id: "" });
+      await showAlert(
+        result.email_status === "sent"
+          ? `Dean account created for ${result.department}. A secure password setup link was emailed to ${result.email}.`
+          : `Dean account created for ${result.department}, but the setup email could not be sent to ${result.email}. Contact your system administrator.`,
+        result.email_status === "sent" ? "Dean account created" : "Dean account created with email issue",
+      );
+    } catch (error) {
+      await showAlert(error.message || "Could not create the dean account.", "Could not create dean account");
+    } finally {
+      setCreatingDean(false);
+    }
   };
 
 
@@ -189,7 +309,7 @@ export const UserMgmtContent = () => {
         const errorData = await response.json();
         throw new Error(errorData.detail || "Failed to decline request.");
       }
-      await fetchPendingRequests();
+      if (!isCampusAdmin) await fetchPendingRequests();
     } catch (err) {
       console.error(err);
       await showAlert(`Error: ${err.message}`, "Error");
@@ -415,13 +535,13 @@ export const UserMgmtContent = () => {
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/75">Administration</p>
             <h1 className="mt-1 text-xl font-bold">User management</h1>
-            <p className="mt-1 text-xs text-white/80">Review accounts, departments, activity, and access status.</p>
+            <p className="mt-1 text-xs text-white/80">{isCampusAdmin ? "Manage active and archived user accounts." : "Review accounts, departments, activity, and access status."}</p>
           </div>
           <Users className="h-8 w-8 shrink-0" />
         </div>
-        <div className="grid gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className={`grid gap-3 px-5 py-4 sm:grid-cols-2 ${isCampusAdmin ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
           <div><p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Total accounts</p><p className="mt-0.5 text-lg font-bold text-gray-900">{activeUsers.length + archivedUsers.length}</p></div>
-          <div><p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Pending review</p><p className="mt-0.5 text-lg font-bold text-amber-700">{requests.length}</p></div>
+          {!isCampusAdmin && <div><p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Pending review</p><p className="mt-0.5 text-lg font-bold text-amber-700">{requests.length}</p></div>}
           <div><p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Active accounts</p><p className="mt-0.5 text-lg font-bold text-emerald-700">{activeUsers.length}</p></div>
           <div><p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Archived accounts</p><p className="mt-0.5 text-lg font-bold text-gray-700">{archivedUsers.length}</p></div>
         </div>
@@ -444,8 +564,10 @@ export const UserMgmtContent = () => {
         </div>
       <div className="flex flex-wrap gap-1 rounded-md border border-gray-200 bg-white p-1 shadow-sm" role="tablist" aria-label="User management sections">
         {[
-          ["pending", "Pending requests", requests.length],
-          ["changes", "User requests", changeRequests.length],
+          ...(!isCampusAdmin ? [
+            ["pending", "Pending requests", requests.length],
+            ["changes", "User requests", changeRequests.length],
+          ] : []),
           ["active", "Active users", filteredActiveUsers.length],
           ["archived", "Archived users", filteredArchivedUsers.length],
         ].map(([view, label, count]) => (
@@ -583,9 +705,153 @@ export const UserMgmtContent = () => {
       </div>}
 
       {userView === "active" && <div className="bq-admin-user-section rounded-md bg-white border border-gray-200 p-4 shadow-sm overflow-hidden">
-        <div className="text-sm font-medium text-gray-500 mb-4">
-          {loadingUsers ? <LoadingSpinner label="Loading users..." spinnerColor="border-gray-500" /> : `Showing ${filteredActiveUsers.length} of ${activeUsers.length} active users`}
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm font-medium text-gray-500">
+            {loadingUsers ? <LoadingSpinner label="Loading users..." spinnerColor="border-gray-500" /> : `Showing ${filteredActiveUsers.length} of ${activeUsers.length} active users`}
+          </div>
+          {isCampusAdmin && (
+            <div className="flex flex-col items-stretch gap-2 sm:items-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowFacultyForm((visible) => !visible);
+                  setShowDeanForm(false);
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-red-700 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-800"
+              >
+                <Plus size={16} />
+                Add faculty member
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeanForm((visible) => !visible);
+                  setShowFacultyForm(false);
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-800 shadow-sm transition hover:bg-red-50"
+              >
+                <Plus size={16} />
+                Add dean
+              </button>
+            </div>
+          )}
         </div>
+        {showDeanForm && isCampusAdmin && (
+          <form onSubmit={createDeanAccount} className="mb-5 rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div className="mb-3">
+              <h3 className="text-sm font-semibold text-gray-900">Add a department dean</h3>
+              <p className="mt-1 text-xs text-gray-500">The dean will receive Department Admin access for the selected department and an email link to set a password.</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <label className="text-xs font-semibold text-gray-600">
+                Full name
+                <input required minLength={2} maxLength={100} value={deanForm.full_name} onChange={(event) => setDeanForm((current) => ({ ...current, full_name: event.target.value }))} className="bq-field mt-1 w-full px-3 py-2 text-sm" placeholder="Enter dean's full name" />
+              </label>
+              <label className="text-xs font-semibold text-gray-600">
+                Email
+                <input required type="email" maxLength={255} value={deanForm.email} onChange={(event) => setDeanForm((current) => ({ ...current, email: event.target.value }))} className="bq-field mt-1 w-full px-3 py-2 text-sm" placeholder="name@institution.edu" />
+              </label>
+              <label className="text-xs font-semibold text-gray-600">
+                Department
+                <select required value={deanForm.department_id} onChange={(event) => setDeanForm((current) => ({ ...current, department_id: event.target.value }))} className="bq-field mt-1 w-full px-3 py-2 text-sm">
+                  <option value="">Select department</option>
+                  {campusFacultyDepartments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
+                </select>
+              </label>
+            </div>
+            {taxonomyError && <p role="alert" className="mt-3 text-sm text-red-700">{taxonomyError}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" disabled={creatingDean} onClick={() => { setShowDeanForm(false); setDeanForm({ full_name: "", email: "", department_id: "" }); }} className="bq-secondary-button px-3 py-2 text-sm">Cancel</button>
+              <button type="submit" disabled={creatingDean || !campusFacultyDepartments.length} className="inline-flex items-center gap-2 rounded-md bg-red-700 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50">
+                {creatingDean ? "Creating dean..." : "Create dean account"}
+              </button>
+            </div>
+          </form>
+        )}
+        {showFacultyForm && isCampusAdmin && (
+          <form onSubmit={createFacultyAccounts} className="mb-5 rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div className="mb-3">
+              <h3 className="text-sm font-semibold text-gray-900">Add faculty accounts</h3>
+              <p className="mt-1 text-xs text-gray-500">Faculty will be assigned to a program in your campus and emailed a secure link to set a password.</p>
+            </div>
+            <div className="space-y-3">
+              {facultyForms.map((facultyForm, index) => {
+                const selectedDepartment = campusFacultyDepartments.find(
+                  (department) => String(department.id) === String(facultyForm.department_id),
+                );
+                const updateRow = (field, value) => setFacultyForms((current) => current.map(
+                  (row, rowIndex) => rowIndex === index
+                    ? { ...row, [field]: value, ...(field === "department_id" ? { program_id: "" } : {}), error: "" }
+                    : row,
+                ));
+                return (
+                  <div key={index} className="rounded-lg border border-gray-200 bg-white p-3">
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Faculty member {index + 1}</p>
+                      {facultyForms.length > 1 && (
+                        <button
+                          type="button"
+                          disabled={creatingFaculty}
+                          aria-label={`Remove faculty member ${index + 1}`}
+                          onClick={() => setFacultyForms((current) => current.filter((_, rowIndex) => rowIndex !== index))}
+                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                        >
+                          <X size={13} /> Remove
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      <label className="text-xs font-semibold text-gray-600">
+                        Number
+                        <input required aria-label={`Number for faculty member ${index + 1}`} type="text" inputMode="numeric" pattern="[0-9]+" maxLength={50} value={facultyForm.faculty_number} onChange={(event) => updateRow("faculty_number", event.target.value)} className="bq-field mt-1 w-full px-3 py-2 text-sm" placeholder="Enter faculty number" />
+                      </label>
+                      <label className="text-xs font-semibold text-gray-600">
+                        Full name
+                        <input required aria-label={`Full name for faculty member ${index + 1}`} minLength={2} maxLength={100} value={facultyForm.full_name} onChange={(event) => updateRow("full_name", event.target.value)} className="bq-field mt-1 w-full px-3 py-2 text-sm" placeholder="Enter full name" />
+                      </label>
+                      <label className="text-xs font-semibold text-gray-600">
+                        Email
+                        <input required aria-label={`Email for faculty member ${index + 1}`} type="email" maxLength={255} value={facultyForm.email} onChange={(event) => updateRow("email", event.target.value)} className="bq-field mt-1 w-full px-3 py-2 text-sm" placeholder="name@institution.edu" />
+                      </label>
+                      <label className="text-xs font-semibold text-gray-600">
+                        Department
+                        <select required aria-label={`Department for faculty member ${index + 1}`} value={facultyForm.department_id} onChange={(event) => updateRow("department_id", event.target.value)} className="bq-field mt-1 w-full px-3 py-2 text-sm">
+                          <option value="">Select department</option>
+                          {campusFacultyDepartments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
+                        </select>
+                      </label>
+                      <label className="text-xs font-semibold text-gray-600">
+                        Program
+                        <select required aria-label={`Program for faculty member ${index + 1}`} disabled={!selectedDepartment} value={facultyForm.program_id} onChange={(event) => updateRow("program_id", event.target.value)} className="bq-field mt-1 w-full px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100">
+                          <option value="">Select program</option>
+                          {(selectedDepartment?.programs || []).map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
+                        </select>
+                      </label>
+                    </div>
+                    {facultyForm.error && <p role="alert" className="mt-3 text-sm font-medium text-red-700">{facultyForm.error}</p>}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                disabled={creatingFaculty}
+                onClick={() => setFacultyForms((current) => [...current, { full_name: "", email: "", faculty_number: "", department_id: "", program_id: "", error: "" }])}
+                className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-800 hover:bg-red-50 disabled:opacity-50"
+              >
+                <Plus size={15} /> Add another
+              </button>
+              <div className="flex gap-2">
+                <button type="button" disabled={creatingFaculty} onClick={() => setShowFacultyForm(false)} className="bq-secondary-button px-3 py-2 text-sm">Cancel</button>
+                <button type="submit" disabled={creatingFaculty || !campusFacultyDepartments.length} className="rounded-md bg-red-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50">
+                  {creatingFaculty ? "Creating accounts..." : "Create faculty accounts"}
+                </button>
+              </div>
+            </div>
+            {taxonomyError && <p role="alert" className="mt-3 text-sm text-red-700">{taxonomyError}</p>}
+          </form>
+        )}
         {errorUsers ? (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errorUsers}</div>
         ) : null}

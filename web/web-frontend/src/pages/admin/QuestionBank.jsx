@@ -980,7 +980,9 @@ void LegacyQuestionBankContent;
 
 const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
   const navigate = useNavigate();
-  const isSuperAdmin = (localStorage.getItem("role") || "").toLowerCase() === "super_admin";
+  const currentRole = (localStorage.getItem("role") || "").toLowerCase();
+  const isSuperAdmin = currentRole === "super_admin";
+  const isDepartmentAdmin = currentRole === "department_admin";
   const [hierarchy, setHierarchy] = useState({ campuses: [] });
   const [allSubjects, setAllSubjects] = useState([]);
   const [subjects, setSubjects] = useState([]);
@@ -1006,7 +1008,20 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
         setHierarchy(hierarchyData);
         setAllSubjects(allSubjectsData);
         setSubjects(allSubjectsData);
-        if (!isSuperAdmin) {
+        if (isDepartmentAdmin) {
+          const assignedDepartmentId = Number(localStorage.getItem("department_id"));
+          const assignedDepartment = hierarchyData.campuses
+            .flatMap((campus) => campus.departments.map((department) => ({ campus, department })))
+            .find(({ department }) => department.id === assignedDepartmentId);
+          if (assignedDepartment) {
+            setSelection({
+              campusId: assignedDepartment.campus.id,
+              departmentId: assignedDepartment.department.id,
+              programId: null,
+              subjectId: null,
+            });
+          }
+        } else if (!isSuperAdmin) {
           setSelection({
             campusId: hierarchyData.campuses[0]?.id ?? null,
             departmentId: null,
@@ -1021,7 +1036,7 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
       }
     };
     loadAcademicData();
-  }, [isSuperAdmin]);
+  }, [isDepartmentAdmin, isSuperAdmin]);
 
   useEffect(() => {
     const loadProgramSubjects = async () => {
@@ -1080,15 +1095,15 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
     setSelection(nextSelection);
   };
   const backTo = (level) => {
-    if (level === "campus") choose({ campusId: isSuperAdmin ? null : hierarchy.campuses[0]?.id ?? null, departmentId: null, programId: null, subjectId: null });
-    if (level === "department") choose({ campusId: selection.campusId, departmentId: null, programId: null, subjectId: null });
+    if (level === "campus") choose({ campusId: isSuperAdmin ? null : hierarchy.campuses[0]?.id ?? null, departmentId: isDepartmentAdmin ? selection.departmentId : null, programId: null, subjectId: null });
+    if (level === "department") choose({ campusId: selection.campusId, departmentId: isDepartmentAdmin ? selection.departmentId : null, programId: null, subjectId: null });
     if (level === "program") choose({ campusId: selection.campusId, departmentId: selection.departmentId, programId: null, subjectId: null });
     if (level === "subject") choose({ ...selection, subjectId: null });
   };
   const goBack = () => {
     if (selection.subjectId) return backTo("subject");
     if (selection.programId) return backTo("program");
-    if (selection.departmentId) return backTo("department");
+    if (selection.departmentId && !isDepartmentAdmin) return backTo("department");
     if (selection.campusId) return backTo("campus");
     navigate(basePath);
   };
@@ -1113,16 +1128,16 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
     <div className="bq-admin-question-bank space-y-5">
       <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 shadow-sm">
         <nav className="mb-3 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500" aria-label="Question Bank navigation">
-          <button type="button" onClick={() => backTo("campus")} className="font-semibold hover:text-[#B4454A]">Question Bank</button>
+          <button type="button" onClick={() => backTo(isDepartmentAdmin ? "program" : "campus")} className="font-semibold hover:text-[#B4454A]">Question Bank</button>
           {selectedCampus && isSuperAdmin && <><ChevronRight size={13} /><button type="button" onClick={() => backTo("department")} className="hover:text-[#B4454A]">{selectedCampus.name}</button></>}
-          {selectedDepartment && <><ChevronRight size={13} /><button type="button" onClick={() => backTo("program")} className="hover:text-[#B4454A]">{selectedDepartment.name}</button></>}
+          {selectedDepartment && <><ChevronRight size={13} />{isDepartmentAdmin ? <span className="font-semibold text-slate-700">{selectedDepartment.name}</span> : <button type="button" onClick={() => backTo("program")} className="hover:text-[#B4454A]">{selectedDepartment.name}</button>}</>}
           {selectedProgram && <><ChevronRight size={13} /><button type="button" onClick={() => backTo("subject")} className="hover:text-[#B4454A]">{selectedProgram.name}</button></>}
           {selectedSubject && <><ChevronRight size={13} /><span className="font-semibold text-slate-700">{selectedSubject.name}</span></>}
         </nav>
         <div className="flex flex-col justify-between gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-end">
           <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#B4454A]">Faculty collections</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{selectedSubject ? selectedSubject.name : selectedProgram ? selectedProgram.name : selectedDepartment ? selectedDepartment.name : !isSuperAdmin && selectedCampus ? "Choose a department" : selectedCampus ? selectedCampus.name : "Question Bank"}</h2><p className="mt-1 text-sm text-slate-500">Browse questions through the academic structure.</p></div>
         </div>
-        {(selection.departmentId || selection.programId || selection.subjectId || (isSuperAdmin && selection.campusId)) && <button type="button" onClick={goBack} className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-[#B4454A] px-4 py-2 text-sm font-semibold text-[#B4454A] transition hover:bg-[#B4454A] hover:text-white"><ArrowLeft size={15} /> Back</button>}
+        {(selection.programId || selection.subjectId || (selection.departmentId && !isDepartmentAdmin) || (isSuperAdmin && selection.campusId)) && <button type="button" onClick={goBack} className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-[#B4454A] px-4 py-2 text-sm font-semibold text-[#B4454A] transition hover:bg-[#B4454A] hover:text-white"><ArrowLeft size={15} /> Back</button>}
       </section>
 
       {selectedSubject && <div className="flex justify-end"><label className="text-xs font-semibold text-slate-600">Bloom level <select value={bloomLevel} onChange={(event) => setBloomLevel(event.target.value)} className="bq-field ml-2 py-2 text-sm"><option>All levels</option>{BLOOMS_LEVELS.map((level) => <option key={level.name}>{level.name}</option>)}</select></label></div>}

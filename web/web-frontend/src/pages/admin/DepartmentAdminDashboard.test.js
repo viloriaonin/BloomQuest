@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { PopupProvider } from "../../components/PopupProvider";
 import { DepartmentAdminDashboard } from "./admindashboard";
@@ -36,6 +36,22 @@ beforeEach(() => {
     }
     if (String(url).endsWith("/subjects")) {
       return { ok: true, json: async () => [{ id: 9, name: "Introduction to Computing", department_id: 2, program_id: 3, creator_id: 8 }] };
+    }
+    if (String(url).includes("/subjects?program_id=3")) {
+      return { ok: true, json: async () => [{ id: 9, name: "Introduction to Computing", department_id: 2, program_id: 3, creator_id: 8 }] };
+    }
+    if (String(url).includes("/questions?subject_id=9&program_id=3")) {
+      return {
+        ok: true,
+        json: async () => [{
+          id: 91,
+          question: "What is computational thinking?",
+          question_type: "MCQ",
+          bloom_level: "Understand",
+          creator_name: "Department Faculty",
+          created_at: "2026-10-01T00:00:00",
+        }],
+      };
     }
     if (String(url).endsWith("/department-academic-change-requests")) {
       return { ok: true, json: async () => [] };
@@ -77,6 +93,7 @@ beforeEach(() => {
           id: 8,
           full_name: "Department Faculty",
           email: "faculty@example.com",
+          faculty_number: "000008",
           role: "Faculty",
           department: "CICS",
           program_id: 3,
@@ -135,9 +152,28 @@ test("Department Admin uses the admin dashboard shell with only department tools
   expect(screen.queryByRole("button", { name: "Academic Requests" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "User Management" })).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Question Bank" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Question Bank" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Reports" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Recycle Bin" })).not.toBeInTheDocument();
+});
+
+test("Department Admin can browse their complete question bank through the academic hierarchy", async () => {
+  renderDashboard();
+
+  fireEvent.click(await screen.findByRole("button", { name: "Question Bank" }));
+  expect(await screen.findByRole("heading", { name: "Choose a program" })).toBeInTheDocument();
+  expect(screen.getAllByText("CICS").length).toBeGreaterThan(0);
+  expect(screen.queryByRole("heading", { name: "Choose a department" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
+  expect(screen.queryByText("Other Department")).not.toBeInTheDocument();
+
+  fireEvent.click(await screen.findByRole("button", { name: /Computer Science/ }));
+  expect(await screen.findByRole("button", { name: "Back" })).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("button", { name: /Introduction to Computing/ }));
+
+  expect(await screen.findByText("What is computational thinking?")).toBeInTheDocument();
+  expect(screen.getByText("Department Faculty")).toBeInTheDocument();
+  expect(within(screen.getByText("What is computational thinking?").closest("article")).getByText("Understand")).toBeInTheDocument();
 });
 
 test("Department Admin can open a faculty profile from Faculty Management actions", async () => {
@@ -150,6 +186,8 @@ test("Department Admin can open a faculty profile from Faculty Management action
   fireEvent.click(screen.getByRole("button", { name: /View profile/ }));
 
   expect(await screen.findByRole("heading", { name: "Department Faculty" })).toBeInTheDocument();
+  expect(screen.getByText("000008")).toBeInTheDocument();
+  expect(screen.getByText("Number")).toBeInTheDocument();
   expect(screen.getByText("Questions created")).toBeInTheDocument();
   expect(screen.getByText("Introduction to Computing")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Change program" })).toBeInTheDocument();

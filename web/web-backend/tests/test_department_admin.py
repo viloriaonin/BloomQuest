@@ -428,6 +428,18 @@ def test_department_admin_creates_subject_with_required_cis(db_session, monkeypa
                 },
             )
             assert missing_cis.status_code == 422
+            rejected_file = client.post(
+                "/api/subjects/with-cis",
+                data={
+                    "name": "Introduction to Computing",
+                    "code": "CIS101",
+                    "department_id": str(department.id),
+                    "program_id": str(program.id),
+                },
+                files={"cis_file": ("CIS101.txt", document_bytes.getvalue(), "text/plain")},
+            )
+            assert rejected_file.status_code == 400
+            assert db_session.query(models.Subject).filter_by(code="CIS101").first() is None
             response = client.post(
                 "/api/subjects/with-cis",
                 data={
@@ -447,6 +459,30 @@ def test_department_admin_creates_subject_with_required_cis(db_session, monkeypa
         assert cis.uploaded_by == admin.id
         assert "Introduction to Computing" in cis.extracted_text
         assert cis.file_content == document_bytes.getvalue()
+        other_department = models.Department(
+            name="Other Department",
+            campus_id=department.campus_id,
+        )
+        db_session.add(other_department)
+        db_session.flush()
+        other_subject = models.Subject(
+            name="Other Subject",
+            code="OTHER101",
+            department_id=other_department.id,
+        )
+        db_session.add(other_subject)
+        db_session.commit()
+        with TestClient(app) as client:
+            cis_details = client.get(f"/api/subjects/{subject.id}/cis")
+            cis_file = client.get(f"/api/subjects/{subject.id}/cis/file")
+            cross_department_cis = client.get(f"/api/subjects/{other_subject.id}/cis")
+        assert cis_details.status_code == 200, cis_details.text
+        assert cis_details.json()["filename"] == "CIS101.docx"
+        assert "Introduction to Computing" in cis_details.json()["extracted_text"]
+        assert cis_file.status_code == 200
+        assert cis_file.content == document_bytes.getvalue()
+        assert cis_file.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        assert cross_department_cis.status_code == 403, cross_department_cis.text
 
         replacement_document = Document()
         replacement_document.add_paragraph("Updated Course Information Sheet")
@@ -461,6 +497,82 @@ def test_department_admin_creates_subject_with_required_cis(db_session, monkeypa
         db_session.refresh(cis)
         assert cis.filename == "CIS101-updated.docx"
         assert "Updated Course Information Sheet" in cis.extracted_text
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous)
+
+
+def test_campus_admin_creates_faculty_for_programs_in_assigned_campus(db_session, monkeypatch):
+    campus = models.Campus(name="Campus Faculty Campus", code="CFC")
+    other_campus = models.Campus(name="Other Faculty Campus", code="OFC")
+    db_session.add_all([campus, other_campus])
+    db_session.flush()
+    department = models.Department(name="Computing", campus_id=campus.id)
+    other_department = models.Department(name="Other Computing", campus_id=other_campus.id)
+    db_session.add_all([department, other_department])
+    db_session.flush()
+    program = models.Program(name="Information Technology", department_id=department.id)
+    other_program = models.Program(name="Other Program", department_id=other_department.id)
+    admin = models.User(
+        email="campus-faculty-admin@example.edu",
+        password=hash_password("CampusAdminPassword1!"),
+        role="campus_admin",
+        campus_id=campus.id,
+        archived=False,
+    )
+    db_session.add_all([program, other_program, admin])
+    db_session.commit()
+
+    email_calls = []
+    monkeypatch.setattr("main.require_email_delivery_configured", lambda: None)
+    monkeypatch.setattr("main.send_approval_email", lambda *args: email_calls.append(args) or True)
+    monkeypatch.setattr("main.log_activity", lambda *args, **kwargs: None)
+    previous = with_test_dependencies(db_session, admin)
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/campus-admin/faculty-accounts",
+                json={
+                    "full_name": "Campus Faculty",
+                    "email": "campus.faculty@example.edu",
+                    "faculty_number": "000542",
+                    "program_id": program.id,
+                },
+            )
+            invalid_number = client.post(
+                "/api/campus-admin/faculty-accounts",
+                json={
+                    "full_name": "Invalid Faculty Number",
+                    "email": "invalid.faculty@example.edu",
+                    "faculty_number": "54A2",
+                    "program_id": program.id,
+                },
+            )
+            cross_campus = client.post(
+                "/api/campus-admin/faculty-accounts",
+                json={
+                    "full_name": "Out of Campus Faculty",
+                    "email": "outside.faculty@example.edu",
+                    "faculty_number": "000543",
+                    "program_id": other_program.id,
+                },
+            )
+        assert response.status_code == 201, response.text
+        assert response.json()["faculty_number"] == "000542"
+        assert response.json()["email_status"] == "sent"
+        assert invalid_number.status_code == 422
+        assert cross_campus.status_code == 403
+        created = db_session.query(models.User).filter_by(
+            email="campus.faculty@example.edu"
+        ).one()
+        assert created.role == "faculty"
+        assert created.campus_id == campus.id
+        assert created.department == department.name
+        assert created.program_id == program.id
+        assert created.faculty_number == "000542"
+        assert len(email_calls) == 1
+        assert email_calls[0][0] == created.email
+        assert email_calls[0][3] == department.name
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(previous)
@@ -822,16 +934,30 @@ def test_department_admin_manually_creates_faculty_account_and_emails_credential
     previous = with_test_dependencies(db_session, admin)
     try:
         with TestClient(app) as client:
+            invalid_number = client.post(
+                "/api/department-admin/faculty-accounts",
+                json={
+                    "full_name": "Invalid Number Faculty",
+                    "email": "invalid-number@example.edu",
+                    "faculty_number": "12A",
+                    "program_id": program.id,
+                },
+            )
+            assert invalid_number.status_code == 422
+
             response = client.post(
                 "/api/department-admin/faculty-accounts",
                 json={
                     "full_name": "New Faculty",
                     "email": "new-faculty@example.edu",
+                    "faculty_number": "000345",
                     "program_id": program.id,
                 },
             )
             assert response.status_code == 201, response.text
             assert response.json()["email"] == "new-faculty@example.edu"
+            assert response.json()["faculty_number"] == "000345"
+            assert response.json()["employee_id"] == "000345"
             assert response.json()["email_status"] == "sent"
             created = db_session.query(models.User).filter_by(
                 email="new-faculty@example.edu"
@@ -840,6 +966,11 @@ def test_department_admin_manually_creates_faculty_account_and_emails_credential
             assert created.archived is False
             assert created.program_id == program.id
             assert created.department == department.name
+            assert created.faculty_number == "000345"
+            listed_accounts = client.get("/api/department-admin/users")
+            assert listed_accounts.status_code == 200
+            assert listed_accounts.json()["users"][0]["faculty_number"] == "000345"
+            assert listed_accounts.json()["users"][0]["employee_id"] == "000345"
             assert verify_password("FacultyPassword1!", created.password)
             assert len(emailed) == 1
             assert emailed[0][:4] == (
@@ -909,6 +1040,141 @@ def test_department_admin_manually_creates_faculty_account_and_emails_credential
                 },
             )
             assert out_of_scope.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous)
+
+
+def test_campus_admin_creates_department_admin_dean_within_assigned_campus(db_session, monkeypatch):
+    campus = models.Campus(name="Dean Campus", code="DEAN-CAMPUS")
+    other_campus = models.Campus(name="Other Dean Campus", code="OTHER-DEAN")
+    db_session.add_all([campus, other_campus])
+    db_session.flush()
+    department = models.Department(name="Dean Department", campus_id=campus.id)
+    other_department = models.Department(name="Other Dean Department", campus_id=other_campus.id)
+    db_session.add_all([department, other_department])
+    db_session.flush()
+    admin = models.User(
+        email="dean-campus-admin@example.edu",
+        password=hash_password("CampusAdminPassword1!"),
+        role="campus_admin",
+        campus_id=campus.id,
+        archived=False,
+    )
+    db_session.add(admin)
+    db_session.commit()
+
+    email_calls = []
+    monkeypatch.setattr(main, "require_email_delivery_configured", lambda: None)
+    monkeypatch.setattr(main, "generate_temporary_password", lambda: "CampusDeanPassword1!")
+    monkeypatch.setattr(main, "send_approval_email", lambda *args: email_calls.append(args) or True)
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+    previous = with_test_dependencies(db_session, admin)
+    try:
+        with TestClient(app) as client:
+            created = client.post(
+                "/api/campus-admin/department-admins",
+                json={
+                    "full_name": "Campus Dean",
+                    "email": "campus.dean@example.edu",
+                    "department_id": department.id,
+                },
+            )
+            cross_campus = client.post(
+                "/api/campus-admin/department-admins",
+                json={
+                    "full_name": "Outside Dean",
+                    "email": "outside.dean@example.edu",
+                    "department_id": other_department.id,
+                },
+            )
+
+        assert created.status_code == 201, created.text
+        assert created.json()["role"] == "department_admin"
+        assert created.json()["department"] == department.name
+        assert created.json()["email_status"] == "sent"
+        assert cross_campus.status_code == 403
+        dean = db_session.query(models.User).filter_by(
+            email="campus.dean@example.edu"
+        ).one()
+        db_session.refresh(department)
+        assert dean.role == "department_admin"
+        assert dean.admin_department_id == department.id
+        assert dean.campus_id == campus.id
+        assert department.dean_id == dean.id
+        assert department.dean_name == dean.name
+        assert verify_password("CampusDeanPassword1!", dean.password)
+        assert dean.password_setup_token_hash
+        assert len(email_calls) == 1
+        assert email_calls[0][0] == dean.email
+        assert "set-password?token=" in email_calls[0][4]
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous)
+
+
+def test_campus_admin_can_reset_password_only_for_faculty_in_assigned_campus(db_session, monkeypatch):
+    campus = models.Campus(name="Reset Campus", code="RESET-CAMPUS")
+    other_campus = models.Campus(name="Other Reset Campus", code="OTHER-RESET")
+    db_session.add_all([campus, other_campus])
+    db_session.flush()
+    admin = models.User(
+        email="reset-campus-admin@example.edu",
+        password=hash_password("CampusAdminPassword1!"),
+        role="campus_admin",
+        campus_id=campus.id,
+        archived=False,
+    )
+    faculty = models.User(
+        email="reset-faculty@example.edu",
+        password=hash_password("OriginalFacultyPassword1!"),
+        role="faculty",
+        name="Reset Faculty",
+        department="Reset Department",
+        campus_id=campus.id,
+        archived=False,
+    )
+    foreign_faculty = models.User(
+        email="foreign-faculty@example.edu",
+        password=hash_password("OriginalFacultyPassword1!"),
+        role="faculty",
+        name="Foreign Faculty",
+        department="Foreign Department",
+        campus_id=other_campus.id,
+        archived=False,
+    )
+    db_session.add_all([admin, faculty, foreign_faculty])
+    db_session.commit()
+
+    sent_credentials = []
+    monkeypatch.setattr(main, "require_email_delivery_configured", lambda: None)
+    monkeypatch.setattr(
+        main,
+        "send_department_faculty_access_email",
+        lambda *args: sent_credentials.append(args) or True,
+    )
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+    previous = with_test_dependencies(db_session, admin)
+    try:
+        with TestClient(app) as client:
+            reset = client.post(
+                f"/api/campus-admin/users/{faculty.id}/credential-email",
+                json={"action": "reset_password"},
+            )
+            denied = client.post(
+                f"/api/campus-admin/users/{foreign_faculty.id}/credential-email",
+                json={"action": "reset_password"},
+            )
+
+        assert reset.status_code == 200, reset.text
+        assert reset.json()["email_status"] == "sent"
+        assert denied.status_code == 404
+        db_session.refresh(faculty)
+        assert verify_password(sent_credentials[0][1], faculty.password)
+        assert faculty.password_setup_token_hash
+        assert sent_credentials[0][0] == faculty.email
+        assert sent_credentials[0][3] == faculty.department
+        assert len(sent_credentials) == 1
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(previous)

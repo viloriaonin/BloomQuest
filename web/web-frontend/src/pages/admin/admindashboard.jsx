@@ -30,7 +30,7 @@ const TAB_META = {
   },
   "question-bank": {
     label: "Question Bank",
-    description: "Browse faculty-created questions by campus, department, program, and subject.",
+    description: "Browse faculty-created questions through your assigned academic structure.",
   },
   faculty: {
     label: "Faculty Management",
@@ -279,6 +279,9 @@ const AdminDashboard = () => {
       }
       if (activeTab === "settings") {
         return <AdminSettings theme={adminTheme} onThemeChange={setAdminTheme} departmentAdmin />;
+      }
+      if (activeTab === "question-bank") {
+        return <QuestionBankContent />;
       }
       return (
         <AcademicMgmtContent

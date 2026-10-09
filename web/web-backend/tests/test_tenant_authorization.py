@@ -481,6 +481,81 @@ def test_faculty_and_campus_admin_cannot_read_foreign_campus_questions(db_sessio
     assert upload_error.value.status_code == 403
 
 
+def test_department_admin_question_bank_is_limited_to_assigned_department(db_session):
+    campus = models.Campus(name="Question Bank Campus", code="QB-CAMPUS")
+    db_session.add(campus)
+    db_session.flush()
+    department = models.Department(name="Question Bank Department", campus_id=campus.id)
+    other_department = models.Department(name="Other Question Bank Department", campus_id=campus.id)
+    db_session.add_all([department, other_department])
+    db_session.flush()
+    program = models.Program(name="Question Bank Program", department_id=department.id)
+    other_program = models.Program(name="Other Question Bank Program", department_id=other_department.id)
+    db_session.add_all([program, other_program])
+    db_session.flush()
+    faculty = models.User(
+        email="question-bank-faculty@example.com",
+        password="hashed",
+        role="faculty",
+        campus_id=campus.id,
+        program_id=program.id,
+    )
+    other_faculty = models.User(
+        email="other-question-bank-faculty@example.com",
+        password="hashed",
+        role="faculty",
+        campus_id=campus.id,
+        program_id=other_program.id,
+    )
+    admin = models.User(
+        email="question-bank-admin@example.com",
+        password="hashed",
+        role="department_admin",
+        campus_id=campus.id,
+        admin_department_id=department.id,
+    )
+    db_session.add_all([faculty, other_faculty, admin])
+    db_session.flush()
+    subject = models.Subject(
+        name="Department Questions",
+        department_id=department.id,
+        program_id=program.id,
+    )
+    other_subject = models.Subject(
+        name="Other Department Questions",
+        department_id=other_department.id,
+        program_id=other_program.id,
+    )
+    db_session.add_all([subject, other_subject])
+    db_session.flush()
+    db_session.add_all([
+        models.GeneratedQuestion(
+            subject_id=subject.id,
+            user_id=faculty.id,
+            question="Visible to the assigned Department Admin",
+        ),
+        models.GeneratedQuestion(
+            subject_id=other_subject.id,
+            user_id=other_faculty.id,
+            question="Must remain outside the assigned department",
+        ),
+    ])
+    db_session.commit()
+
+    visible_questions = get_questions(db=db_session, current_user=admin)
+
+    assert [question["question"] for question in visible_questions] == [
+        "Visible to the assigned Department Admin"
+    ]
+    with pytest.raises(HTTPException) as error:
+        get_questions(
+            program_id=other_program.id,
+            db=db_session,
+            current_user=admin,
+        )
+    assert error.value.status_code == 404
+
+
 def test_account_request_must_match_selected_campus_department_and_program(db_session):
     lipa = models.Campus(name="Lipa Request", code="LIPA-REQ")
     alangilan = models.Campus(name="Alangilan Request", code="ALA-REQ")

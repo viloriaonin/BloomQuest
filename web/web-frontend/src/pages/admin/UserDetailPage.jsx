@@ -3,7 +3,10 @@ import {
   ArrowLeft,
   FileQuestion,
   History,
+  KeyRound,
+  LoaderCircle,
   ShieldCheck,
+  Send,
   UserRound,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -40,6 +43,10 @@ const UserDetailPage = () => {
   const [programs, setPrograms] = useState([]);
   const [selectedProgram, setSelectedProgram] = useState("");
   const [programBusy, setProgramBusy] = useState(false);
+  const [resetEmailPromptOpen, setResetEmailPromptOpen] = useState(false);
+  const [resetEmailBusy, setResetEmailBusy] = useState(false);
+  const [resetEmailError, setResetEmailError] = useState("");
+  const [resetEmailNotice, setResetEmailNotice] = useState("");
 
   const loadDetail = useCallback(async () => {
     setLoading(true);
@@ -153,6 +160,27 @@ const UserDetailPage = () => {
       navigate("/admin/users");
     } catch (err) {
       await showAlert(err.message, "User Management");
+    }
+  };
+
+  const sendPasswordResetEmail = async () => {
+    setResetEmailBusy(true);
+    setResetEmailError("");
+    setResetEmailNotice("");
+    try {
+      const response = await apiFetch(`/campus-admin/users/${userId}/credential-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset_password" }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Could not send the password reset email.");
+      setResetEmailPromptOpen(false);
+      setResetEmailNotice(data.message || `Email sent to ${detail.user.email}.`);
+    } catch (err) {
+      setResetEmailError(err.message || "Could not send the password reset email.");
+    } finally {
+      setResetEmailBusy(false);
     }
   };
 
@@ -272,7 +300,21 @@ const UserDetailPage = () => {
           <ShieldCheck size={18} className="text-[#B4454A]" />
           <h2 className="font-bold text-gray-900">Account controls</h2>
         </div>
+        {resetEmailNotice && <p role="status" className="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{resetEmailNotice}</p>}
         <div className="flex flex-wrap gap-2">
+          {user.role?.toLowerCase() === "faculty" && (
+            <button
+              type="button"
+              onClick={() => {
+                setResetEmailError("");
+                setResetEmailNotice("");
+                setResetEmailPromptOpen(true);
+              }}
+              className="bq-secondary-button"
+            >
+              <KeyRound size={15} className="mr-2 inline" />Reset password
+            </button>
+          )}
           <button
             type="button"
             onClick={handleArchiveRestore}
@@ -368,6 +410,25 @@ const UserDetailPage = () => {
           </form>
         )}
       </section>
+      {resetEmailPromptOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 p-4">
+          <section role="dialog" aria-modal="true" aria-labelledby="reset-password-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 id="reset-password-title" className="text-lg font-bold text-slate-900">Reset faculty password</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              A new temporary password and secure setup link will be emailed to <strong>{detail.user.email}</strong>.
+              The current password will be replaced and existing sessions signed out after the email is sent.
+            </p>
+            {resetEmailError && <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{resetEmailError}</p>}
+            <div className="mt-6 flex justify-end gap-2">
+              <button type="button" disabled={resetEmailBusy} onClick={() => { setResetEmailPromptOpen(false); setResetEmailError(""); }} className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">Cancel</button>
+              <button type="button" disabled={resetEmailBusy} onClick={sendPasswordResetEmail} className="inline-flex items-center gap-2 rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800 disabled:opacity-50">
+                {resetEmailBusy ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}
+                {resetEmailBusy ? "Sending email…" : "Send reset email"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       <section className="rounded-2xl border border-gray-200 bg-white p-5">
         <div className="mb-4 flex items-center justify-between gap-3">

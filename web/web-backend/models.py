@@ -12,6 +12,8 @@ class User(Base):
     archived = Column(Boolean, default=False, nullable=False)
     name = Column(String, nullable=True)         # <-- new
     department = Column(String, nullable=True)   # <-- new, only set for role == "faculty"
+    employee_id = Column(String(50), nullable=True)
+    faculty_number = Column(String(50), nullable=True)
     admin_department_id = Column(Integer, ForeignKey("departments.id"), nullable=True, index=True)
     campus_id = Column(Integer, ForeignKey("campuses.id"), nullable=True, index=True)
     program_id = Column(Integer, ForeignKey("programs.id"), nullable=True)
