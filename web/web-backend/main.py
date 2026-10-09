@@ -475,6 +475,10 @@ def admin_scoped_user_query(db: Session, admin: models.User):
     campus_id = visible_campus_id(admin)
     if campus_id is None:
         return query
+    campus_dean_ids = db.query(models.Department.dean_id).filter(
+        models.Department.campus_id == campus_id,
+        models.Department.dean_id.is_not(None),
+    )
     program_ids = db.query(models.Program.id).join(
         models.Department, models.Department.id == models.Program.department_id
     ).filter(models.Department.campus_id == campus_id)
@@ -483,12 +487,18 @@ def admin_scoped_user_query(db: Session, admin: models.User):
         models.User.campus_id == campus_id,
         models.User.program_id.in_(program_ids),
         func.lower(models.User.department).in_(department_names),
+        models.User.id.in_(campus_dean_ids),
     ))
 
 
 def assert_admin_can_access_user(db: Session, admin: models.User, target: models.User) -> None:
     campus_id = visible_campus_id(admin)
     if campus_id is None:
+        return
+    if db.query(models.Department.id).filter(
+        models.Department.campus_id == campus_id,
+        models.Department.dean_id == target.id,
+    ).first():
         return
     target_campus_id = user_campus_id(db, target)
     if target_campus_id == campus_id:
@@ -1976,11 +1986,15 @@ def list_pending_account_requests(db: Session = Depends(get_db), _admin: models.
 @app.get("/api/contact-admin/users")
 def list_admin_users(db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
     roles = ("faculty", "student", "department_dean")
+    dean_query = db.query(models.Department.dean_id).filter(
+        models.Department.dean_id.isnot(None)
+    )
+    campus_id = visible_campus_id(_admin)
+    if campus_id is not None:
+        dean_query = dean_query.filter(models.Department.campus_id == campus_id)
     dean_user_ids = {
         dean_id
-        for (dean_id,) in db.query(models.Department.dean_id).filter(
-            models.Department.dean_id.isnot(None)
-        ).all()
+        for (dean_id,) in dean_query.all()
     }
     scoped_users = admin_scoped_user_query(db, _admin).filter(or_(
         func.lower(models.User.role).in_(roles),
@@ -2271,10 +2285,15 @@ def get_admin_user_overview(user_id: int, db: Session = Depends(get_db), _admin:
     activities = db.query(models.ActivityLog).filter(models.ActivityLog.user_id == user_id).order_by(models.ActivityLog.created_at.desc()).all()
 
     program = db.query(models.Program).filter(models.Program.id == user.program_id).first() if user.program_id else None
-    is_department_dean = db.query(models.Department.id).filter(
+    overview_campus_id = visible_campus_id(_admin)
+    dean_department_query = db.query(models.Department.id).filter(
         models.Department.dean_id == user.id,
-        models.Department.campus_id == user_campus_id(db, user),
-    ).first() is not None
+    )
+    if overview_campus_id is not None:
+        dean_department_query = dean_department_query.filter(
+            models.Department.campus_id == overview_campus_id,
+        )
+    is_department_dean = dean_department_query.first() is not None
 
     return {
         "user": {
@@ -4528,6 +4547,7 @@ def get_academic_hierarchy(db: Session = Depends(get_db), admin: models.User = D
     department_ids = {department.id for department in departments}
     programs = db.query(models.Program).filter(models.Program.department_id.in_(department_ids)).order_by(models.Program.name.asc()).all() if department_ids else []
     program_ids = {program.id for program in programs}
+    dean_user_ids = {department.dean_id for department in departments if department.dean_id}
     faculty = db.query(models.User).filter(models.User.role.ilike("faculty"), models.User.archived == False).all()
     if role == "department_admin":
         department_names = {
@@ -4541,10 +4561,16 @@ def get_academic_hierarchy(db: Session = Depends(get_db), admin: models.User = D
                 (member.department or "").strip().lower() in department_names
                 and member.campus_id == department_names[(member.department or "").strip().lower()]
             )
+            or member.id in dean_user_ids
         ]
     elif campus_id is not None:
         department_names = {department.name.strip().lower() for department in departments}
-        faculty = [member for member in faculty if member.program_id in program_ids or (member.department or "").strip().lower() in department_names]
+        faculty = [
+            member for member in faculty
+            if member.program_id in program_ids
+            or (member.department or "").strip().lower() in department_names
+            or member.id in dean_user_ids
+        ]
     faculty_by_program = defaultdict(list)
     for member in faculty:
         if member.program_id:
@@ -4564,7 +4590,15 @@ def get_academic_hierarchy(db: Session = Depends(get_db), admin: models.User = D
         })
     departments_by_campus = defaultdict(list)
     for department in departments:
-        department_faculty = [member for member in faculty if member.department and member.department.strip().lower() == department.name.strip().lower() or member.program_id in {program["id"] for program in programs_by_department[department.id]}]
+        department_faculty = [
+            member for member in faculty
+            if (
+                member.department
+                and member.department.strip().lower() == department.name.strip().lower()
+            )
+            or member.program_id in {program["id"] for program in programs_by_department[department.id]}
+            or member.id == department.dean_id
+        ]
         dean = next((member for member in department_faculty if member.id == department.dean_id), None)
         if department.dean_id and not dean:
             dean = db.query(models.User).filter(

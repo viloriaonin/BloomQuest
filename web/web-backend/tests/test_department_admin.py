@@ -1121,6 +1121,62 @@ def test_campus_admin_creates_department_admin_dean_within_assigned_campus(db_se
         app.dependency_overrides.update(previous)
 
 
+def test_campus_admin_lists_active_dean_with_stale_campus_and_department_fields(db_session):
+    campus = models.Campus(name="Legacy Dean Campus", code="LEGACY-DEAN")
+    db_session.add(campus)
+    db_session.flush()
+    department = models.Department(
+        name="Current Department",
+        campus_id=campus.id,
+        dean_name="Willianthret",
+    )
+    admin = models.User(
+        email="legacy-dean-admin@example.edu",
+        password=hash_password("CampusAdminPassword1!"),
+        role="campus_admin",
+        campus_id=campus.id,
+        archived=False,
+    )
+    dean = models.User(
+        email="willianthret@example.edu",
+        password=hash_password("WillianthretPassword1!"),
+        role="faculty",
+        campus_id=None,
+        department="Legacy Department",
+        name="Willianthret",
+        archived=False,
+    )
+    db_session.add_all([department, admin, dean])
+    db_session.flush()
+    department.dean_id = dean.id
+    db_session.commit()
+
+    previous = with_test_dependencies(db_session, admin)
+    try:
+        with TestClient(app) as client:
+            active_users = client.get("/api/contact-admin/users")
+            hierarchy = client.get("/api/academic-hierarchy")
+            overview = client.get(f"/api/admin/users/{dean.id}/overview")
+
+        assert active_users.status_code == 200, active_users.text
+        listed_dean = next(
+            user for user in active_users.json()["active"]
+            if user["email"] == dean.email
+        )
+        assert listed_dean["is_department_dean"] is True
+
+        assert hierarchy.status_code == 200, hierarchy.text
+        department_data = hierarchy.json()["campuses"][0]["departments"][0]
+        assert department_data["dean"]["email"] == dean.email
+        assert any(member["email"] == dean.email for member in department_data["faculty"])
+
+        assert overview.status_code == 200, overview.text
+        assert overview.json()["user"]["is_department_dean"] is True
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous)
+
+
 def test_campus_admin_can_create_dean_in_demo_mode_without_email_delivery(db_session, monkeypatch):
     campus = models.Campus(name="Demo Dean Campus", code="DEMO-DEAN")
     db_session.add(campus)
