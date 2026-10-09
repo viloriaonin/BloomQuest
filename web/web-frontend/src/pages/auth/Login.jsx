@@ -406,22 +406,8 @@ const Login = () => {
               {loading ? <LoadingSpinner label="Signing in..." spinnerColor="border-white" /> : "Log In"}
             </button>
 
-            <div className="flex items-center gap-3 pt-1">
-              <hr className="flex-1" style={{ borderColor: ruleSoft }} />
-              <span className="bq-label">Or</span>
-              <hr className="flex-1" style={{ borderColor: ruleSoft }} />
-            </div>
-
             <p className="text-center text-sm" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>
-              Don't have an account?{" "}
-              <button
-                type="button"
-                onClick={() => navigate("/contact-admin")}
-                className="font-semibold hover:underline"
-                style={{ color: accent }}
-              >
-                Contact your administrator
-              </button>
+              Faculty accounts are created by your department administrator.
             </p>
 
             <p className="bq-legal-notice text-center text-xs leading-5" style={{ color: textMuted, fontFamily: 'Inter, sans-serif' }}>

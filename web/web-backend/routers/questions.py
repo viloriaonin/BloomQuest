@@ -847,7 +847,7 @@ def _saved_assessment_metadata(upload, tos_record):
 @router.post("/upload")
 async def upload_and_analyze_syllabus(
     module_file: UploadFile = File(...),
-    syllabus_file: UploadFile = File(...),
+    syllabus_file: UploadFile | None = File(None),
     subject_id: int | None = Form(None),
     user_id: int | None = Form(None),
     db: Session = Depends(get_db),
@@ -855,7 +855,7 @@ async def upload_and_analyze_syllabus(
 ):
     user_id = current_user.id
     upload_id = uuid.uuid4().hex
-    filename = (syllabus_file.filename or "").lower()
+    filename = ""
     request_started_at = time.perf_counter()
     usage_id = None
     usage_tracker = GeminiUsageTracker()
@@ -864,7 +864,6 @@ async def upload_and_analyze_syllabus(
     try:
         module_contents = await read_upload_bytes(module_file, "module_file")
         module_text = extract_text(module_contents, module_file.filename)
-        contents = await read_upload_bytes(syllabus_file, "syllabus_file")
 
         role = str(current_user.role).lower()
         if role == "faculty" and subject_id is None:
@@ -895,13 +894,33 @@ async def upload_and_analyze_syllabus(
                 raise HTTPException(status_code=404, detail="The selected subject is not available to this account.")
             assert_user_subject_campus_access(db, current_user, selected_subject)
 
+        if role == "faculty":
+            cis = db.query(models.SubjectCIS).filter(
+                models.SubjectCIS.subject_id == selected_subject.id
+            ).first()
+            if not cis:
+                raise HTTPException(status_code=409, detail="This subject does not have a Course Information Sheet. Contact your Department Admin before uploading a module.")
+            if syllabus_file and syllabus_file.filename:
+                raise HTTPException(status_code=400, detail="Faculty use the Course Information Sheet managed by their Department Admin. Upload only the module.")
+            filename = cis.filename.lower()
+            contents = cis.file_content
+            syllabus_text = cis.extracted_text
+        else:
+            if not syllabus_file:
+                raise HTTPException(status_code=422, detail="Upload a Course Information Sheet with the module.")
+            filename = (syllabus_file.filename or "").lower()
+            contents = await read_upload_bytes(syllabus_file, "syllabus_file")
+            syllabus_text = ""
+
+        if not syllabus_text:
+            syllabus_text = extract_text(contents, filename)
+
         if filename.endswith('.pdf'):
             usage_id = start_ai_usage(db, current_user, "syllabus_analysis")
             course_title, course_code, detected_topics = parse_syllabus_pdf(contents, usage_tracker)
         elif filename.endswith('.xlsx') or filename.endswith('.xls'):
             course_title, course_code, detected_topics = parse_syllabus_excel(contents)
         elif filename.endswith('.docx'):
-            syllabus_text = extract_text(contents, syllabus_file.filename)
             usage_id = start_ai_usage(db, current_user, "syllabus_analysis")
             course_title, course_code, detected_topics = parse_syllabus_text_with_ai(syllabus_text, usage_tracker)
         else:
@@ -975,9 +994,9 @@ async def upload_and_analyze_syllabus(
         user_id=user_id,
         subject_id=subject_row.id,
         module_filename=module_file.filename,
-        syllabus_filename=syllabus_file.filename,
+        syllabus_filename=filename,
         module_text=module_text,
-        syllabus_text="",
+        syllabus_text=syllabus_text,
     )
     db.add(upload_record)
     db.commit()
@@ -985,7 +1004,7 @@ async def upload_and_analyze_syllabus(
     upload_id = str(upload_record.id)
 
     FILE_CACHE[f"{upload_id}_metadata"] = {"subject": detected_subject, "topics": detected_topics, "module_text": module_text, "user_id": user_id}
-    record_activity(db, "Uploaded Learning Materials", f"Analyzed '{module_file.filename}' and '{syllabus_file.filename}'.", "upload", user_id=user_id)
+    record_activity(db, "Uploaded Learning Materials", f"Analyzed '{module_file.filename}' with CIS '{filename}'.", "upload", user_id=user_id)
 
     return {
         "upload_id": upload_id,

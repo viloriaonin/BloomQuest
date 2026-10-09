@@ -778,6 +778,7 @@ def test_faculty_subject_code_search_is_scoped_to_program_and_department():
     assert [(subject["code"], subject["name"]) for subject in results] == [("IT101", "Programming 1")]
     assert results[0]["program_name"] == "BSIT"
     assert results[0]["department_name"] == department.name
+    assert results[0]["has_cis"] is False
 
     def override_db():
         request_session = session_factory()
@@ -848,7 +849,7 @@ def test_faculty_upload_uses_only_the_selected_program_subject(db_session, monke
         return asyncio.run(upload_files(
             request=SimpleNamespace(client=SimpleNamespace(host="subject-upload-test")),
             module_file=UploadFile(filename="module.docx", file=BytesIO(b"module")),
-            syllabus_file=UploadFile(filename="syllabus.docx", file=BytesIO(b"syllabus")),
+            syllabus_file=None,
             subject_id=subject_id,
             user_id=None,
             db=db_session,
@@ -858,6 +859,18 @@ def test_faculty_upload_uses_only_the_selected_program_subject(db_session, monke
     with pytest.raises(HTTPException) as denied:
         upload_for_subject(other_subject.id)
     assert denied.value.status_code == 404
+
+    with pytest.raises(HTTPException) as missing_cis:
+        upload_for_subject(assigned_subject.id)
+    assert missing_cis.value.status_code == 409
+    db_session.add(models.SubjectCIS(
+        subject_id=assigned_subject.id,
+        uploaded_by=faculty.id,
+        filename="course-cis.docx",
+        file_content=b"cis",
+        extracted_text="Course Information Sheet text.",
+    ))
+    db_session.commit()
 
     monkeypatch.setattr(main, "detect_topics", lambda *_args, **_kwargs: {
         "course_title": "Unrelated Course",
@@ -879,6 +892,8 @@ def test_faculty_upload_uses_only_the_selected_program_subject(db_session, monke
     assert result["subject"]["code"] == "UP101"
     upload_record = db_session.query(models.UploadedFile).filter_by(id=result["upload_id"]).one()
     assert upload_record.subject_id == assigned_subject.id
+    assert upload_record.syllabus_filename == "course-cis.docx"
+    assert upload_record.syllabus_text == "Course Information Sheet text."
     questions_router.FILE_CACHE.pop(f"{result['upload_id']}_legacy_topics", None)
 
 
@@ -927,7 +942,7 @@ def test_active_question_upload_uses_selected_faculty_program_subject(db_session
     def upload(subject_id):
         return asyncio.run(upload_and_analyze_syllabus(
             module_file=UploadFile(filename="module.docx", file=BytesIO(b"module")),
-            syllabus_file=UploadFile(filename="syllabus.docx", file=BytesIO(b"syllabus")),
+            syllabus_file=None,
             subject_id=subject_id,
             user_id=None,
             db=db_session,
@@ -940,6 +955,18 @@ def test_active_question_upload_uses_selected_faculty_program_subject(db_session
     with pytest.raises(HTTPException) as foreign_subject:
         upload(other_subject.id)
     assert foreign_subject.value.status_code == 404
+
+    with pytest.raises(HTTPException) as missing_cis:
+        upload(assigned_subject.id)
+    assert missing_cis.value.status_code == 409
+    db_session.add(models.SubjectCIS(
+        subject_id=assigned_subject.id,
+        uploaded_by=faculty.id,
+        filename="course-cis.docx",
+        file_content=b"cis",
+        extracted_text="Course Information Sheet text.",
+    ))
+    db_session.commit()
 
     monkeypatch.setattr(questions_router, "extract_text", lambda *_args: "Unrelated biology learning material.")
     with pytest.raises(HTTPException) as mismatched_material:
@@ -954,6 +981,8 @@ def test_active_question_upload_uses_selected_faculty_program_subject(db_session
     assert result["subject"]["code"] == assigned_subject.code
     upload_record = db_session.query(models.UploadedFile).filter_by(id=int(result["upload_id"])).one()
     assert upload_record.subject_id == assigned_subject.id
+    assert upload_record.syllabus_filename == "course-cis.docx"
+    assert upload_record.syllabus_text == "Course Information Sheet text."
     questions_router.FILE_CACHE.pop(f"{result['upload_id']}_metadata", None)
 
 

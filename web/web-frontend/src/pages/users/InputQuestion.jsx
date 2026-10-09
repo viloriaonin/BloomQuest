@@ -368,6 +368,7 @@ const InputQuestion = () => {
   const facultySubjectMatches = subjects.filter((subject) => (
     subject.code && subject.code.toLowerCase().includes(subjectCodeQuery.trim().toLowerCase())
   )).slice(0, 8);
+  const selectedSubjectHasCis = !isFacultyUser || selectedUploadSubject?.has_cis === true;
 
   useEffect(() => {
     const calculatedTotalItems = selectedQuestionTypes.reduce(
@@ -564,6 +565,7 @@ const InputQuestion = () => {
   };
 
   const selectFacultySubject = (subject) => {
+    if (!subject.has_cis) return;
     setSelectedSubject(String(subject.id));
     setSubjectCodeQuery(subject.code);
     setSubjectSearchOpen(false);
@@ -795,17 +797,21 @@ const InputQuestion = () => {
   };
 
   const handleUpload = async () => {
-    if (!moduleFile || !syllabusFile) {
-      setError('Please upload both module and syllabus files.');
+    if (!moduleFile || (!isFacultyUser && !syllabusFile)) {
+      setError(isFacultyUser ? 'Please upload a module.' : 'Please upload both module and syllabus files.');
       return;
     }
     if (isFacultyUser && !subjects.some((subject) => String(subject.id) === String(selectedSubject))) {
       setError('Search and select a subject code from your program before uploading materials.');
       return;
     }
+    if (isFacultyUser && !selectedUploadSubject?.has_cis) {
+      setError('This subject has no Course Information Sheet. Contact your Department Admin before uploading a module.');
+      return;
+    }
     
     const moduleErr = validateFile(moduleFile, 'module');
-    const syllabusErr = validateFile(syllabusFile, 'syllabus');
+    const syllabusErr = !isFacultyUser && syllabusFile ? validateFile(syllabusFile, 'syllabus') : null;
     if (moduleErr || syllabusErr) {
       setError(moduleErr || syllabusErr);
       return;
@@ -831,7 +837,7 @@ const InputQuestion = () => {
     try {
       const formData = new FormData();
       formData.append('module_file', moduleFile);
-      formData.append('syllabus_file', syllabusFile);
+      if (!isFacultyUser) formData.append('syllabus_file', syllabusFile);
       if (isFacultyUser) formData.append('subject_id', String(selectedSubject));
       const userId = localStorage.getItem('user_id');
       if (userId) formData.append('user_id', userId);
@@ -1488,16 +1494,18 @@ const InputQuestion = () => {
                               type="button"
                               role="option"
                               aria-selected={String(subject.id) === String(selectedSubject)}
+                              disabled={!subject.has_cis}
                               onClick={() => selectFacultySubject(subject)}
-                              className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-sm text-slate-700 transition hover:bg-rose-50"
+                              className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-sm text-slate-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
                             >
                               <span className="font-semibold">{subject.code}</span>
-                              <span className="truncate text-slate-500">{safeRenderValue(subject.name)}</span>
+                              <span className="truncate text-right text-slate-500">{safeRenderValue(subject.name)} {!subject.has_cis && <span className="ml-1 font-semibold text-amber-700">· CIS required</span>}</span>
                             </button>
                           )) : <p className="px-3.5 py-3 text-sm text-slate-500">No matching subject codes in your program.</p>}
                         </div>
                       )}
                       {!subjects.length && <p className="mt-2 text-xs text-slate-500">No coded subjects are assigned to your program.</p>}
+                      {!!subjects.length && !subjects.some((subject) => subject.has_cis) && <p className="mt-2 text-xs text-amber-700">Your assigned subjects are waiting for a Course Information Sheet from the Department Admin.</p>}
                     </div>
                     <div aria-live="polite" className="min-h-[4.5rem] rounded-lg border border-slate-200 bg-white px-4 py-3">
                       {selectedUploadSubject ? (
@@ -1505,13 +1513,14 @@ const InputQuestion = () => {
                           <p className="text-[10px] font-bold uppercase tracking-wide text-rose-500">Selected subject</p>
                           <p className="mt-1 font-semibold text-slate-800">{safeRenderValue(selectedUploadSubject.name)}</p>
                           <p className="mt-1 text-xs text-slate-500">{selectedUploadSubject.code}{selectedUploadSubject.program_name ? ` · ${selectedUploadSubject.program_name}` : ''}{selectedUploadSubject.department_name ? ` · ${selectedUploadSubject.department_name}` : ''}</p>
+                          {isFacultyUser && <p className={`mt-1 text-xs font-medium ${selectedUploadSubject.has_cis ? 'text-emerald-700' : 'text-amber-700'}`}>{selectedUploadSubject.has_cis ? `CIS on file${selectedUploadSubject.cis_filename ? `: ${selectedUploadSubject.cis_filename}` : ''}` : 'CIS required before this subject can be used'}</p>}
                         </>
                       ) : <p className="text-sm text-slate-500">Select a subject code to view its subject and program.</p>}
                     </div>
                   </section>
                 )}
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className={`grid grid-cols-1 gap-3 ${isFacultyUser ? '' : 'sm:grid-cols-2'}`}>
                   <UploadSlot
                     policyKey="module"
                     file={moduleFile}
@@ -1520,20 +1529,27 @@ const InputQuestion = () => {
                     stepBadge="Module"
                     locked={uploading || !!uploadResult}
                   />
-                  <UploadSlot
-                    policyKey="syllabus"
-                    file={syllabusFile}
-                    onFileSelected={(f) => { setSyllabusFile(f); setError(''); }}
-                    onRemove={() => handleFileRemove('syllabus')}
-                    stepBadge="Syllabus"
-                    locked={uploading || !!uploadResult}
-                  />
+                  {isFacultyUser ? (
+                    <div className="flex min-h-36 flex-col justify-center rounded-xl border border-dashed border-emerald-200 bg-emerald-50/60 p-5">
+                      <p className="text-sm font-semibold text-emerald-900">Course Information Sheet provided by your Department Admin</p>
+                      <p className="mt-1 text-xs text-emerald-800">{selectedUploadSubject?.has_cis ? selectedUploadSubject.cis_filename || 'CIS is ready and will be used automatically.' : 'Select a subject with a CIS on file. If none is available, contact your Department Admin.'}</p>
+                    </div>
+                  ) : (
+                    <UploadSlot
+                      policyKey="syllabus"
+                      file={syllabusFile}
+                      onFileSelected={(f) => { setSyllabusFile(f); setError(''); }}
+                      onRemove={() => handleFileRemove('syllabus')}
+                      stepBadge="Syllabus"
+                      locked={uploading || !!uploadResult}
+                    />
+                  )}
                 </div>
 
                 <div className="mt-6 flex justify-end border-t pt-4" style={{ borderColor: border }}>
                   <button
                     onClick={handleUpload}
-                    disabled={uploading || !moduleFile || !syllabusFile || !!uploadResult || (isFacultyUser && !selectedSubject)}
+                    disabled={uploading || !moduleFile || (!isFacultyUser && !syllabusFile) || !!uploadResult || (isFacultyUser && (!selectedSubject || !selectedSubjectHasCis))}
                     className="rounded-lg px-5 py-2.5 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
                     style={{ backgroundColor: PRIMARY }}
                   >

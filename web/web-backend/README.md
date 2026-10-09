@@ -23,6 +23,10 @@ For Railway deployments, configure a transactional email API because outbound SM
 
 Verify the sender domain with Resend before deploying, then add both variables to the backend service and redeploy. The existing Gmail SMTP settings (`SMTP_SERVER`, `SMTP_PORT`, `SENDER_EMAIL`, and `SENDER_PASSWORD`) remain available for local development and Railway Pro deployments. Never commit API keys or SMTP passwords.
 
+## Department Subjects and Course Information Sheets
+
+Department Admins must provide a readable Course Information Sheet (PDF, DOCX, or XLSX; maximum 10 MB) and assign a subject code and program when creating a subject. Existing subjects can receive or replace their CIS from the subject edit form. Faculty select a subject with a CIS on file and upload only the module; BloomQuest uses the department-managed CIS during analysis. Subjects without a CIS remain unavailable for faculty module analysis until the Department Admin adds one.
+
 ### Capstone demo without email delivery
 
 For a temporary demonstration only, set `DEMO_EMAIL_VERIFICATION=true` in the backend service environment. Contact Admin OTPs will still be generated, stored, expire after 10 minutes, and be validated normally, but they will not be emailed. The generated OTP is written to the backend logs. Anyone with log access can see these temporary codes, so disable this setting after the demo by setting it to `false` or removing it, then redeploy.
@@ -65,9 +69,9 @@ npm start
 
 The frontend expects the backend at `http://localhost:8000` by default. Set `REACT_APP_API_BASE_URL` when using another backend URL.
 
-Department Admin accounts are created and assigned to one department by a Super Admin from **Admin Management**. Their shared admin dashboard shows only department-scoped Dashboard, Academic Management, Faculty Management, Academic Requests, and Settings tabs. In their assigned department they can update its name/code and dean, maintain programs and subjects, assign department faculty to programs and subjects, appoint program chairs from the program's faculty, and review department-level faculty/program/subject coverage. Settings allow a Department Admin to update their own display name and password, but not their department assignment or role.
+Department Admin accounts are created and assigned to one department by a Super Admin from **Admin Management**. Their shared admin dashboard shows only department-scoped Dashboard, Leadership Management, Faculty Management, Academic Management, Academic Requests, and Settings tabs. In their assigned department they maintain programs and subjects, assign department faculty to programs and subjects, and manage the department dean and program chairs. Department Admins can directly add faculty accounts for programs in their department; BloomQuest emails the temporary password and a one-time, 24-hour password-setup link. Faculty must enter the temporary password from the email when choosing a permanent password. Department details and dean account creation remain reserved for Campus Admins. Settings allow a Department Admin to update their own display name and password, but not their department assignment or role.
 
-Department Admins cannot create or deactivate faculty accounts or change user roles. They can submit a faculty account request for a department program; a Campus Admin or Super Admin must approve it through the existing account-request workflow. They can also submit academic change requests involving another department. Campus Admins can review requests within their campus, while Super Admins can review all requests. These requests record a status and reviewer response and do not apply cross-department changes automatically.
+The Faculty Management view shows only Active and Archived faculty accounts, and allows Department Admins to archive or restore accounts within their department. The program chair account flow is limited to creating a faculty account directly assigned as an unfilled program chair. Department Admins can also submit academic change requests involving another department. Campus Admins can review requests within their campus, while Super Admins can review all requests. Academic change requests record a status and reviewer response and do not apply cross-department changes automatically.
 
 ## Flutter Desktop App
 

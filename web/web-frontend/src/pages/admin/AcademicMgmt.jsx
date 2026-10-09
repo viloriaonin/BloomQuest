@@ -4,20 +4,40 @@ import {
   ArrowLeft,
   BookOpen,
   Building2,
+  Check,
   ChevronRight,
   GraduationCap,
   Layers3,
+  LoaderCircle,
+  Mail,
   MoreHorizontal,
   Plus,
+  RotateCcw,
+  Save,
   Users,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { API_URL } from "../../config/api";
+import DepartmentUserManagement from "./DepartmentUserManagement";
 
 const ACADEMIC_API = API_URL;
 
 const pluralize = (count, singular, plural = `${singular}s`) =>
   `${count} ${count === 1 ? singular : plural}`;
+
+const formatRequestDate = (value) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "—"
+    : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
+};
+
+const getProgramChairName = (program) =>
+  program.faculty?.find((member) => String(member.id) === String(program.chair_id))?.name ||
+  program.chair_name ||
+  program.chair?.name ||
+  "";
 
 const OverflowMenu = ({ onEdit, onArchive, onDelete, readOnly = false }) => {
   if (readOnly) return null;
@@ -91,12 +111,58 @@ const SummaryStat = ({ icon: Icon, label, value }) => (
   </div>
 );
 
+const ProgramChairAccountForm = ({ program, onCreateAccount }) => {
+  const [form, setForm] = React.useState({ full_name: "", email: "" });
+  const [state, setState] = React.useState({ saving: false, error: "" });
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setState({ saving: true, error: "" });
+    try {
+      await onCreateAccount(program.id, form);
+      setForm({ full_name: "", email: "" });
+      setState({ saving: false, error: "" });
+    } catch (error) {
+      setState({ saving: false, error: error.message || "Could not create the program chair account." });
+    }
+  };
+
+  return (
+    <section className="mb-5 rounded-2xl border p-4" style={{ background: "var(--admin-panel, #14161c)", borderColor: "var(--admin-border, #262a34)", color: "var(--admin-text, #ecedef)" }}>
+      <h3 className="text-sm font-semibold">Create program chair login</h3>
+      <p className="mt-1 text-xs text-slate-500">A faculty account will be assigned to this program, and its temporary password will be emailed.</p>
+      {program.chair_id ? (
+        <p className="mt-3 text-sm text-emerald-700">A program chair account is assigned to this program.</p>
+      ) : (
+        <form onSubmit={handleSubmit} className="mt-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-xs font-semibold text-slate-600">
+              Chair full name
+              <input required minLength={2} maxLength={100} value={form.full_name} onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))} className="bq-field mt-1 w-full px-3" placeholder="Enter full name" />
+            </label>
+            <label className="text-xs font-semibold text-slate-600">
+              Chair email
+              <input required type="email" maxLength={255} value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} className="bq-field mt-1 w-full px-3" placeholder="name@institution.edu" />
+            </label>
+          </div>
+          <div className="mt-3 flex justify-end">
+            <button type="submit" disabled={state.saving} className="rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-70" style={{ background: "var(--bq-accent-strong)" }}>
+              {state.saving ? "Creating account..." : "Create account and email credentials"}
+            </button>
+          </div>
+        </form>
+      )}
+      {state.error && <p role="alert" className="mt-3 text-sm text-red-700">{state.error}</p>}
+    </section>
+  );
+};
+
 const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreateAccount, readOnly = false, showDeanFacultyPicker = true }) => {
   const [form, setForm] = React.useState({
     dean_name: department?.dean_name || department?.dean?.name || "",
     dean_id: department?.dean_id || "",
   });
-  const [saveState, setSaveState] = React.useState({ saving: false, saved: false });
+  const [saveState, setSaveState] = React.useState({ status: "idle", message: "" });
   const [accountForm, setAccountForm] = React.useState({ full_name: "", email: "" });
   const [accountState, setAccountState] = React.useState({ saving: false, message: "", error: "" });
 
@@ -105,7 +171,7 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
       dean_name: department?.dean_name || department?.dean?.name || "",
       dean_id: department?.dean_id || "",
     });
-    setSaveState((prev) => ({ ...prev, saved: false }));
+    setSaveState({ status: "idle", message: "" });
     setAccountForm({ full_name: "", email: "" });
     setAccountState({ saving: false, message: "", error: "" });
   }, [department?.id, department?.dean_id, department?.dean_name, department?.dean?.name]);
@@ -114,15 +180,18 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
     event.preventDefault();
     if (readOnly || !onSave) return;
 
-    setSaveState({ saving: true, saved: false });
+    setSaveState({ status: "saving", message: "" });
     try {
       await onSave({
         dean_name: form.dean_name.trim(),
         dean_id: form.dean_id ? Number(form.dean_id) : null,
       });
-      setSaveState({ saving: false, saved: true });
-    } catch {
-      setSaveState({ saving: false, saved: false });
+      setSaveState({ status: "saved", message: "Dean assignment saved." });
+    } catch (error) {
+      setSaveState({
+        status: "error",
+        message: error.message || "Could not save the dean assignment.",
+      });
     }
   };
 
@@ -140,48 +209,45 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
   };
 
   return (
-    <div className="bq-panel mb-5 rounded-2xl border p-3 shadow-sm" style={{ background: "var(--admin-panel, #14161c)", borderColor: "var(--admin-border, #262a34)", color: "var(--admin-text, #ecedef)" }}>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--bq-accent)" }}>Leadership</p>
-          <h3 className="mt-1 text-lg font-semibold text-slate-900">Department leadership</h3>
+    <section className="bq-panel mb-5 overflow-hidden rounded-2xl border shadow-sm" style={{ background: "var(--admin-panel, #fff)", borderColor: "var(--admin-border, #e2e8f0)", color: "var(--admin-text, #0f172a)" }}>
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b px-5 py-4 sm:px-6" style={{ borderColor: "var(--bq-border)", background: "linear-gradient(115deg, var(--bq-accent-soft), transparent 70%)" }}>
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl" style={{ background: "var(--bq-accent-soft)", color: "var(--bq-accent)" }}>
+            <GraduationCap size={21} />
+          </span>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: "var(--bq-accent)" }}>Leadership</p>
+            <h3 className="mt-0.5 text-lg font-semibold text-slate-900">Department leadership</h3>
+            <p className="mt-0.5 text-sm text-slate-500">Assign the dean responsible for this department.</p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {saveState.saving && (
-            <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
-              Saving...
-            </span>
-          )}
-          {!saveState.saving && saveState.saved && (
-            <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-300">
-              Saved
-            </span>
-          )}
-          {readOnly && (
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-              View Only
-            </span>
-          )}
-        </div>
+        {readOnly && (
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600">
+            View only
+          </span>
+        )}
       </div>
 
-      <div className="grid gap-3">
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div className="mb-2 flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: "var(--bq-accent-soft)", color: "var(--bq-accent)" }}>
-              <Users size={14} />
+      <div className="p-5 sm:p-6">
+        <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-4 sm:p-5">
+          <div className="mb-3 flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--bq-accent-soft)", color: "var(--bq-accent)" }}>
+              <Users size={16} />
             </span>
             <div>
               <h4 className="text-sm font-semibold text-slate-800">Department Dean</h4>
-              <p className="text-[10px] text-slate-500">Assigned dean</p>
+              <p className="mt-0.5 text-xs text-slate-500">Enter a name or select a faculty member.</p>
             </div>
           </div>
           <input
             value={form.dean_name}
-            onChange={(event) => setForm((prev) => ({ ...prev, dean_name: event.target.value, dean_id: "" }))}
+            onChange={(event) => {
+              setForm((prev) => ({ ...prev, dean_name: event.target.value, dean_id: "" }));
+              setSaveState({ status: "idle", message: "" });
+            }}
             placeholder="Enter dean name"
             disabled={readOnly || department?.dean?.role === "department_dean"}
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-rose-400 focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
             style={{ borderColor: "var(--bq-border)" }}
           />
           {showDeanFacultyPicker && faculty.length > 0 && (
@@ -195,9 +261,10 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
                   dean_id: event.target.value,
                   dean_name: member?.name || prev.dean_name,
                 }));
+                setSaveState({ status: "idle", message: "" });
               }}
               disabled={readOnly}
-              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+              className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3.5 py-3 text-sm text-slate-700 outline-none transition hover:border-slate-300 focus:border-rose-400 focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed disabled:bg-slate-100"
             >
               <option value="">Set dean by name / no faculty account</option>
               {faculty.map((member) => (
@@ -206,26 +273,56 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
             </select>
           )}
           {department?.dean?.role === "department_dean" && (
-            <p className="mt-2 text-xs text-slate-600">Login account: {department.dean.email}</p>
+            <p className="mt-3 rounded-lg bg-white px-3 py-2 text-xs text-slate-600">Login account: {department.dean.email}</p>
           )}
         </div>
-      </div>
 
-      {!readOnly && onSave && department?.dean?.role !== "department_dean" && (
-        <form onSubmit={handleSubmit} className="mt-3 flex justify-end gap-2">
-          <button type="button" onClick={() => {
-            setForm({ dean_name: "", dean_id: "" });
-            setSaveState({ saving: false, saved: false });
-          }} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50">
-            Clear
-          </button>
-          <button type="submit" disabled={saveState.saving} className="rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-70" style={{ background: "var(--bq-accent-strong)", color: "#fff" }}>
-            {saveState.saving ? "Saving..." : "Save"}
-          </button>
-        </form>
-      )}
+        {!readOnly && onSave && department?.dean?.role !== "department_dean" && (
+          <form onSubmit={handleSubmit} className="mt-4 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-h-5 text-sm" aria-live="polite">
+              {saveState.status === "saving" && (
+                <span className="inline-flex items-center gap-2 text-slate-500">
+                  <LoaderCircle size={15} className="animate-spin" /> Saving dean assignment…
+                </span>
+              )}
+              {saveState.status === "saved" && (
+                <span role="status" className="inline-flex items-center gap-2 font-medium text-emerald-700">
+                  <Check size={15} /> {saveState.message}
+                </span>
+              )}
+              {saveState.status === "cleared" && (
+                <span role="status" className="text-slate-500">{saveState.message}</span>
+              )}
+              {saveState.status === "error" && (
+                <span role="alert" className="font-medium text-red-700">{saveState.message}</span>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setForm({ dean_name: "", dean_id: "" });
+                  setSaveState({ status: "cleared", message: "Draft cleared. Save to apply this change." });
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] focus:outline-none focus:ring-4 focus:ring-slate-100"
+              >
+                <RotateCcw size={15} />
+                Clear
+              </button>
+              <button
+                type="submit"
+                disabled={saveState.status === "saving"}
+                className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 active:scale-[0.98] focus:outline-none focus:ring-4 focus:ring-rose-200 disabled:cursor-not-allowed disabled:opacity-70"
+                style={{ background: "var(--bq-accent-strong)", color: "#fff" }}
+              >
+                {saveState.status === "saving" ? <LoaderCircle size={16} className="animate-spin" /> : saveState.status === "saved" ? <Check size={16} /> : <Save size={16} />}
+                {saveState.status === "saving" ? "Saving…" : saveState.status === "saved" ? "Saved" : "Save"}
+              </button>
+            </div>
+          </form>
+        )}
       {!readOnly && onCreateAccount && !department?.dean_id && (
-        <form onSubmit={handleCreateAccount} className="mt-4 border-t border-slate-200 pt-4">
+        <form onSubmit={handleCreateAccount} className="mt-5 border-t border-slate-200 pt-5">
           <h4 className="text-sm font-semibold text-slate-800">Create dean login</h4>
           <p className="mt-1 text-xs text-slate-500">A temporary password will be emailed to the dean’s address.</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -248,11 +345,12 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
         </form>
       )}
       {!readOnly && department?.dean_id && department?.dean?.role !== "department_dean" && (
-        <p className="mt-3 border-t border-slate-200 pt-3 text-xs text-amber-700">
+        <p className="mt-5 border-t border-slate-200 pt-4 text-xs text-amber-700">
           Clear and save the current dean assignment before creating a separate dean login.
         </p>
       )}
-    </div>
+      </div>
+    </section>
   );
 };
 
@@ -313,15 +411,13 @@ const AcademicCard = ({
 
 const DepartmentWorkflowPanels = ({
   department,
-  programs = [],
   faculty = [],
   isDepartmentAdmin,
   canReviewRequests,
   authHeaders,
   onError,
 }) => {
-  const [facultyForm, setFacultyForm] = React.useState({ full_name: "", email: "", program_id: "" });
-  const [changeForm, setChangeForm] = React.useState({ title: "", related_department: "", details: "" });
+  const [changeForm, setChangeForm] = React.useState({ title: "", details: "" });
   const [requestUpdates, setRequestUpdates] = React.useState({});
   const [requests, setRequests] = React.useState([]);
   const [notice, setNotice] = React.useState("");
@@ -339,24 +435,6 @@ const DepartmentWorkflowPanels = ({
     loadRequests().catch((error) => onError(error.message));
   }, [loadRequests, onError, department?.id]);
 
-  const submitFacultyRequest = async (event) => {
-    event.preventDefault();
-    setNotice("");
-    try {
-      const response = await fetch(`${ACADEMIC_API}/department-admin/faculty-requests`, {
-        method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ ...facultyForm, program_id: Number(facultyForm.program_id) }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.detail || "Could not submit the faculty request.");
-      setFacultyForm({ full_name: "", email: "", program_id: "" });
-      setNotice("Faculty account request submitted for Campus Admin review.");
-    } catch (error) {
-      onError(error.message);
-    }
-  };
-
   const submitChangeRequest = async (event) => {
     event.preventDefault();
     setNotice("");
@@ -368,7 +446,7 @@ const DepartmentWorkflowPanels = ({
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.detail || "Could not submit the change request.");
-      setChangeForm({ title: "", related_department: "", details: "" });
+      setChangeForm({ title: "", details: "" });
       setNotice("Academic change request submitted.");
       await loadRequests();
     } catch (error) {
@@ -415,26 +493,10 @@ const DepartmentWorkflowPanels = ({
     <div className="mt-5 grid gap-4">
       {notice && <p role="status" className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700">{notice}</p>}
       {isDepartmentAdmin && (
-        <form id="department-faculty-request-section" onSubmit={submitFacultyRequest} className="rounded-2xl border p-4" style={panelStyle}>
-          <h3 className="text-base font-semibold">Request a faculty account</h3>
-          <p className="mt-1 text-xs text-slate-500">Campus Admin approval is required before the faculty account is created.</p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <label className="text-sm font-medium">Full name<input required minLength="2" value={facultyForm.full_name} onChange={(event) => setFacultyForm((form) => ({ ...form, full_name: event.target.value }))} className={fieldClass} /></label>
-            <label className="text-sm font-medium">Email<input type="email" required value={facultyForm.email} onChange={(event) => setFacultyForm((form) => ({ ...form, email: event.target.value }))} className={fieldClass} /></label>
-            <label className="text-sm font-medium">Program<select required value={facultyForm.program_id} onChange={(event) => setFacultyForm((form) => ({ ...form, program_id: event.target.value }))} className={fieldClass}><option value="">Select program</option>{programs.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}</select></label>
-          </div>
-          <button type="submit" disabled={!programs.length} className="mt-3 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" style={{ background: "var(--bq-accent-strong)" }}>Submit faculty request</button>
-        </form>
-      )}
-
-      {isDepartmentAdmin && (
         <form id="department-requests-section" onSubmit={submitChangeRequest} className="rounded-2xl border p-4" style={panelStyle}>
           <h3 className="text-base font-semibold">Request an academic change</h3>
           <p className="mt-1 text-xs text-slate-500">Use this for academic data that needs coordination or approval outside this department.</p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <label className="text-sm font-medium">Request title<input required minLength="4" value={changeForm.title} onChange={(event) => setChangeForm((form) => ({ ...form, title: event.target.value }))} className={fieldClass} /></label>
-            <label className="text-sm font-medium">Related department (optional)<input value={changeForm.related_department} onChange={(event) => setChangeForm((form) => ({ ...form, related_department: event.target.value }))} className={fieldClass} /></label>
-          </div>
+          <label className="mt-3 block text-sm font-medium">Request title<input required minLength="4" value={changeForm.title} onChange={(event) => setChangeForm((form) => ({ ...form, title: event.target.value }))} className={fieldClass} /></label>
           <label className="mt-3 block text-sm font-medium">Details<textarea required minLength="10" rows="3" value={changeForm.details} onChange={(event) => setChangeForm((form) => ({ ...form, details: event.target.value }))} className={`${fieldClass} py-2`} /></label>
           <button type="submit" className="mt-3 rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ background: "var(--bq-accent-strong)" }}>Submit change request</button>
         </form>
@@ -480,13 +542,28 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
   const [subjects, setSubjects] = React.useState([]);
   const [programTab, setProgramTab] = React.useState("subjects");
   const [modal, setModal] = React.useState(null);
+  const [cisFile, setCisFile] = React.useState(null);
   const [form, setForm] = React.useState({ name: "", code: "", campus_id: "", department_id: "", program_id: "", dean_name: "", chair_name: "" });
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
+  const [notice, setNotice] = React.useState("");
+  const [facultyAccountView, setFacultyAccountView] = React.useState("active");
+  const [facultyAccounts, setFacultyAccounts] = React.useState({ active: [], archived: [] });
+  const [facultyAccountsLoading, setFacultyAccountsLoading] = React.useState(false);
+  const [facultyAccountsError, setFacultyAccountsError] = React.useState("");
+  const [facultyActionEmail, setFacultyActionEmail] = React.useState("");
+  const [selectedFacultyProfileId, setSelectedFacultyProfileId] = React.useState(null);
+  const [showFacultyForm, setShowFacultyForm] = React.useState(false);
+  const [facultyForms, setFacultyForms] = React.useState([{ full_name: "", email: "", program_id: "" }]);
+  const [creatingFaculty, setCreatingFaculty] = React.useState(false);
+  const [programChairDrafts, setProgramChairDrafts] = React.useState({});
+  const [savingProgramChairId, setSavingProgramChairId] = React.useState(null);
+  const [programChairSaveStates, setProgramChairSaveStates] = React.useState({});
   const currentRole = (localStorage.getItem("role") || "").toLowerCase();
   const adminTheme = localStorage.getItem("bloomquest-admin-theme") || "dark";
   const isSuperAdmin = currentRole === "super_admin";
   const isDepartmentAdmin = currentRole === "department_admin";
+  const departmentAdminSection = isDepartmentAdmin ? activeSection || "academic" : null;
   const authHeaders = React.useCallback(
     () => ({ Authorization: `Bearer ${localStorage.getItem("token") || ""}` }),
     [],
@@ -519,6 +596,34 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
     loadData();
   }, [loadData]);
 
+  const loadFacultyAccounts = React.useCallback(async () => {
+    if (!isDepartmentAdmin) return;
+    setFacultyAccountsLoading(true);
+    setFacultyAccountsError("");
+    try {
+      const response = await fetch(`${ACADEMIC_API}/department-admin/faculty-accounts`, {
+        headers: authHeaders(),
+        cache: "no-store",
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || "Could not load faculty accounts.");
+      setFacultyAccounts({
+        active: result.active || [],
+        archived: result.archived || [],
+      });
+    } catch (err) {
+      setFacultyAccountsError(err.message || "Could not load faculty accounts.");
+    } finally {
+      setFacultyAccountsLoading(false);
+    }
+  }, [authHeaders, isDepartmentAdmin]);
+
+  React.useEffect(() => {
+    if (isDepartmentAdmin && departmentAdminSection === "faculty") {
+      loadFacultyAccounts();
+    }
+  }, [departmentAdminSection, isDepartmentAdmin, loadFacultyAccounts]);
+
   React.useEffect(() => {
     if (!isDepartmentAdmin || loading || departmentId) return;
     const department = (hierarchy.campuses || [])
@@ -541,15 +646,10 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
   const selectedDepartment = selectedCampus?.departments?.find((department) => department.id === selectedDepartmentId) || null;
   const selectedProgram = selectedDepartment?.programs?.find((program) => program.id === selectedProgramId) || null;
   React.useEffect(() => {
-    const sectionId = activeSection === "faculty"
-      ? "department-faculty-section"
-      : activeSection === "requests"
-        ? "department-requests-section"
-        : null;
-    if (!sectionId || loading) return;
-    const section = document.getElementById(sectionId);
-    section?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-  }, [activeSection, loading, selectedDepartmentId]);
+    if (isDepartmentAdmin && programId && departmentAdminSection !== "academic" && selectedCampusId && selectedDepartmentId) {
+      navigate(`${basePath}/campus/${selectedCampusId}/department/${selectedDepartmentId}`, { replace: true });
+    }
+  }, [basePath, departmentAdminSection, isDepartmentAdmin, navigate, programId, selectedCampusId, selectedDepartmentId]);
 
   const departmentPrograms = selectedDepartment?.programs || [];
   const departmentFaculty = selectedDepartment?.faculty || [];
@@ -590,6 +690,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
       dean_name: item?.dean_name || item?.dean?.name || "",
       chair_name: item?.chair_name || item?.chair?.name || "",
     });
+    setCisFile(null);
     setModal({ type, item });
     setError("");
   };
@@ -599,6 +700,14 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
     if (isSuperAdmin || !modal) return;
     const { type, item } = modal;
     const endpointName = type.startsWith("department") ? "departments" : type === "program" ? "programs" : "subjects";
+    if (type === "subject" && isDepartmentAdmin && !item && !cisFile) {
+      setError("Upload the subject's Course Information Sheet before creating it.");
+      return;
+    }
+    if (type === "subject" && isDepartmentAdmin && (!form.code.trim() || !form.program_id)) {
+      setError("Enter a subject code and assign the subject to a program so faculty can use it.");
+      return;
+    }
     const payload = type === "department_details"
       ? { name: form.name, code: form.code }
       : type === "department"
@@ -608,14 +717,40 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
         : { name: form.name, code: form.code, department_id: Number(form.department_id), program_id: form.program_id ? Number(form.program_id) : null };
 
     try {
-      const suffix = type === "department_details" ? `/${item.id}/details` : `${item ? `/${item.id}` : ""}`;
-      const response = await fetch(`${ACADEMIC_API}/${endpointName}${suffix}`, {
-        method: item ? "PUT" : "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      let response;
+      if (type === "subject" && isDepartmentAdmin && !item) {
+        const body = new FormData();
+        body.append("name", form.name.trim());
+        body.append("code", form.code.trim());
+        body.append("department_id", String(selectedDepartment.id));
+        body.append("program_id", String(form.program_id));
+        body.append("cis_file", cisFile);
+        response = await fetch(`${ACADEMIC_API}/subjects/with-cis`, {
+          method: "POST",
+          headers: authHeaders(),
+          body,
+        });
+      } else {
+        const suffix = type === "department_details" ? `/${item.id}/details` : `${item ? `/${item.id}` : ""}`;
+        response = await fetch(`${ACADEMIC_API}/${endpointName}${suffix}`, {
+          method: item ? "PUT" : "POST",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.detail || `Could not save ${type.replace("_", " ")}.`);
+      if (type === "subject" && isDepartmentAdmin && item && cisFile) {
+        const body = new FormData();
+        body.append("cis_file", cisFile);
+        const cisResponse = await fetch(`${ACADEMIC_API}/subjects/${item.id}/cis`, {
+          method: "PUT",
+          headers: authHeaders(),
+          body,
+        });
+        const cisResult = await cisResponse.json().catch(() => ({}));
+        if (!cisResponse.ok) throw new Error(cisResult.detail || "Could not save the Course Information Sheet.");
+      }
       setModal(null);
       await loadData();
     } catch (saveError) {
@@ -677,19 +812,162 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
     }
   };
 
-  const assignProgramChair = async (facultyId) => {
-    if (!selectedProgram) return;
+  const assignProgramChair = async (program, chairName) => {
+    const normalizedName = chairName.trim();
+    const matchingFaculty = (program.faculty || []).find(
+      (member) => member.name?.trim().toLowerCase() === normalizedName.toLowerCase(),
+    );
+    setSavingProgramChairId(program.id);
+    setProgramChairSaveStates((states) => ({
+      ...states,
+      [program.id]: { status: "saving", message: "" },
+    }));
     try {
-      const response = await fetch(`${ACADEMIC_API}/programs/${selectedProgram.id}/chair`, {
+      const response = await fetch(`${ACADEMIC_API}/programs/${program.id}/chair`, {
         method: "PUT",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ faculty_id: facultyId ? Number(facultyId) : null }),
+        body: JSON.stringify(
+          matchingFaculty
+            ? { faculty_id: Number(matchingFaculty.id) }
+            : normalizedName
+              ? { name: normalizedName }
+              : { faculty_id: null },
+        ),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.detail || "Could not assign the program chair.");
       await loadData();
+      setError("");
+      setProgramChairSaveStates((states) => ({
+        ...states,
+        [program.id]: {
+          status: "saved",
+          message: normalizedName ? "Chair assignment saved." : "Chair assignment cleared.",
+        },
+      }));
     } catch (err) {
-      setError(err.message || "Could not assign the program chair.");
+      const message = err.message || "Could not assign the program chair.";
+      setError(message);
+      setProgramChairSaveStates((states) => ({
+        ...states,
+        [program.id]: { status: "error", message },
+      }));
+    } finally {
+      setSavingProgramChairId(null);
+    }
+  };
+
+  const createProgramChairAccount = async (programIdToUpdate, { full_name, email }) => {
+    if (!isDepartmentAdmin) return;
+    setNotice("");
+    try {
+      const response = await fetch(`${ACADEMIC_API}/programs/${programIdToUpdate}/chair-account`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ full_name, email }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || "Could not create the program chair account.");
+      await loadData();
+      setError("");
+      setNotice("Program chair account created. Login credentials are queued for email delivery.");
+    } catch (err) {
+      setError(err.message || "Could not create the program chair account.");
+      throw err;
+    }
+  };
+
+  const createFacultyAccount = async (event) => {
+    event.preventDefault();
+    if (!isDepartmentAdmin || !selectedDepartment?.id) return;
+
+    setCreatingFaculty(true);
+    setFacultyAccountsError("");
+    setNotice("");
+    const sentEmails = [];
+    const emailFailures = [];
+    const creationFailures = [];
+
+    for (const [index, facultyForm] of facultyForms.entries()) {
+      try {
+        const response = await fetch(`${ACADEMIC_API}/department-admin/faculty-accounts`, {
+          method: "POST",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({
+            full_name: facultyForm.full_name,
+            email: facultyForm.email,
+            program_id: Number(facultyForm.program_id),
+          }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          creationFailures.push({
+            ...facultyForm,
+            row: index,
+            error: result.detail || "Could not create this faculty account.",
+          });
+        } else if (result.email_status === "sent") {
+          sentEmails.push(result.email || facultyForm.email);
+        } else {
+          emailFailures.push(result.email || facultyForm.email);
+        }
+      } catch (err) {
+        creationFailures.push({
+          ...facultyForm,
+          row: index,
+          error: err.message || "Could not create this faculty account.",
+        });
+      }
+    }
+
+    setFacultyForms(creationFailures.length
+      ? creationFailures.map(({ row: _row, ...facultyForm }) => facultyForm)
+      : [{ full_name: "", email: "", program_id: "" }]);
+    setFacultyAccountView("active");
+
+    const summaries = [];
+    if (sentEmails.length) {
+      summaries.push(`Created ${sentEmails.length} ${sentEmails.length === 1 ? "faculty account" : "faculty accounts"} and sent the temporary password email to: ${sentEmails.join(", ")}.`);
+    }
+    if (emailFailures.length) {
+      summaries.push(`Account created, but email could not be sent to: ${emailFailures.join(", ")}. Contact your system administrator to resend the invitation.`);
+    }
+    if (creationFailures.length) {
+      summaries.push(`Could not create ${creationFailures.length === 1 ? "one account" : `${creationFailures.length} accounts`}. Correct the highlighted rows and try again.`);
+    }
+
+    setNotice(sentEmails.length ? summaries[0] : "");
+    const outcomeError = summaries.filter((_, index) => !(sentEmails.length && index === 0)).join(" ");
+    if (!creationFailures.length) setShowFacultyForm(false);
+    let refreshError = "";
+    try {
+      await Promise.all([loadFacultyAccounts(), loadData()]);
+    } catch (err) {
+      refreshError = err.message || "Faculty accounts were created, but the list could not be refreshed.";
+    } finally {
+      setFacultyAccountsError([outcomeError, refreshError].filter(Boolean).join(" "));
+      setCreatingFaculty(false);
+    }
+  };
+
+  const updateFacultyAccount = async (action, email) => {
+    const actionLabel = `${action} this faculty account`;
+    if (!window.confirm(`Are you sure you want to ${actionLabel} for ${email}?`)) return;
+    setFacultyActionEmail(email);
+    setFacultyAccountsError("");
+    try {
+      const response = await fetch(`${ACADEMIC_API}/department-admin/faculty-accounts/${action}`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || `Could not ${action} faculty account.`);
+      await Promise.all([loadFacultyAccounts(), loadData()]);
+    } catch (err) {
+      setFacultyAccountsError(err.message || `Could not ${action} faculty account.`);
+    } finally {
+      setFacultyActionEmail("");
     }
   };
 
@@ -725,6 +1003,14 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
       throw err;
     }
   };
+  if (selectedFacultyProfileId) {
+    return (
+      <DepartmentUserManagement
+        initialUserId={selectedFacultyProfileId}
+        onClose={() => setSelectedFacultyProfileId(null)}
+      />
+    );
+  }
   return (
     <div className="bq-academic-attached grid gap-6">
       {error && (
@@ -732,48 +1018,66 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
           {error}
         </div>
       )}
+      {notice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{notice}</div>}
 
       <section className="bq-academic-surface mx-auto w-full max-w-7xl rounded-2xl border p-4 shadow-sm sm:p-5" style={{ background: "var(--admin-panel, #14161c)", borderColor: "var(--admin-border, #262a34)", color: "var(--admin-text, #ecedef)" }}>
         <div className="mb-4 flex flex-col justify-between gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-center">
           <div>
-            <Breadcrumbs campus={selectedCampus} department={selectedDepartment} program={selectedProgram} basePath={basePath} />
+            {!isDepartmentAdmin && (
+              <Breadcrumbs
+                campus={selectedCampus}
+                department={selectedDepartment}
+                program={selectedProgram}
+                basePath={basePath}
+              />
+            )}
             <h2 className="text-xl font-semibold tracking-tight text-slate-900">
-              {programId ? selectedProgram?.name || "Program" : departmentId ? selectedDepartment?.name || "Department" : campusId ? selectedCampus?.name || "Campus" : "Academic Management"}
+              {departmentAdminSection === "faculty"
+                ? "Faculty Management"
+                : departmentAdminSection === "leadership"
+                  ? "Leadership Management"
+                  : programId ? selectedProgram?.name || "Program" : departmentId ? selectedDepartment?.name || "Department" : campusId ? selectedCampus?.name || "Campus" : "Academic Management"}
             </h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              {programId
-                ? "Review the program and its subjects."
-                : departmentId
-                  ? "Review department leadership and programs."
-                  : campusId
-                    ? "Review campus-level academic structure."
-                    : "Review the academic structure across campuses."}
+              {departmentAdminSection === "faculty"
+                ? "Review department faculty and manage program assignments."
+                : departmentAdminSection === "leadership"
+                  ? "Manage your department dean and program chair assignments."
+                  : programId
+                    ? "Review the program and its subjects."
+                    : departmentId
+                      ? isDepartmentAdmin
+                        ? "Manage programs and subjects for your department."
+                        : "Review department details, leadership, programs, and subjects."
+                      : campusId
+                        ? "Review campus-level academic structure."
+                        : "Review the academic structure across campuses."}
             </p>
           </div>
 
-          {!departmentId && !isSuperAdmin && !isDepartmentAdmin && visibleCampuses.length > 0 && (
+          {departmentAdminSection !== "faculty" && !departmentId && !isSuperAdmin && !isDepartmentAdmin && visibleCampuses.length > 0 && (
             <button type="button" onClick={() => openModal("department", null, selectedCampus || (visibleCampuses.length === 1 ? visibleCampuses[0] : null))} className="inline-flex items-center gap-2 self-start rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition" style={{ background: "var(--bq-accent-strong)" }}>
               <Plus size={16} /> Add Department
             </button>
           )}
-          {departmentId && !programId && isDepartmentAdmin && (
+          {isDepartmentAdmin && departmentAdminSection === "academic" && departmentId && !programId && (
             <button type="button" onClick={() => openModal("program", null, selectedDepartment)} className="inline-flex items-center gap-2 self-start rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition" style={{ background: "var(--bq-accent-strong)" }}>
               <Plus size={16} /> Add Program
             </button>
           )}
-          {departmentId && !programId && !isSuperAdmin && selectedDepartment && (
+          {!isDepartmentAdmin && departmentAdminSection !== "faculty" && departmentId && !programId && !isSuperAdmin && selectedDepartment && (
             <button type="button" onClick={() => openModal("department_details", selectedDepartment)} className="inline-flex items-center gap-2 self-start rounded-xl border px-4 py-2 text-sm font-semibold transition" style={{ borderColor: "var(--bq-border)", color: "var(--bq-accent)" }}>
               Edit Department Details
             </button>
           )}
-          {departmentId && !programId && isDepartmentAdmin && selectedDepartment && (
+          {isDepartmentAdmin && departmentAdminSection === "academic" && departmentId && !programId && selectedDepartment && (
             <button type="button" onClick={() => openModal("subject", null, { department_id: selectedDepartment.id })} className="inline-flex items-center gap-2 self-start rounded-xl border px-4 py-2 text-sm font-semibold transition" style={{ borderColor: "var(--bq-border)", color: "var(--bq-accent)" }}>
               <Plus size={16} /> Add Subject
             </button>
           )}
         </div>
 
-        {campusId && (
+        {campusId && (!isDepartmentAdmin || programId) && (
           <button type="button" className="mb-3 inline-flex items-center gap-1 text-xs font-semibold text-slate-500" style={{ color: "var(--bq-muted)" }} onClick={() => navigate(backRoute)}>
             <ArrowLeft size={14} /> Back
           </button>
@@ -783,7 +1087,8 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
           <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
             Loading academic structure...
           </div>
-        ) : !campusId && isSuperAdmin ? (
+        ) : (
+        !campusId && isSuperAdmin ? (
           <div>
             <div className="mb-4 flex items-end justify-between">
               <div>
@@ -874,45 +1179,321 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
 
             {departmentId && !programId && selectedDepartment && (
               <div className="space-y-5">
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <SummaryStat icon={Layers3} label="Programs" value={departmentPrograms.length} />
-                  <SummaryStat icon={BookOpen} label="Subjects" value={departmentSubjects.length} />
-                  <SummaryStat icon={Users} label="Faculty" value={departmentFaculty.length} />
-                  <SummaryStat
-                    icon={GraduationCap}
-                    label="Faculty assigned to programs"
-                    value={`${departmentFaculty.filter((member) => member.program_id).length}/${departmentFaculty.length}`}
-                  />
-                </div>
-                <DepartmentLeadershipSection department={selectedDepartment} faculty={departmentFaculty} onSave={saveDepartmentLeadership} onCreateAccount={createDepartmentDeanAccount} readOnly={isSuperAdmin} showDeanFacultyPicker={isDepartmentAdmin || isSuperAdmin} />
-                {(isDepartmentAdmin || isSuperAdmin) && (
-                  <section id="department-faculty-section" className="overflow-hidden rounded-xl border scroll-mt-24" style={{ borderColor: "var(--bq-border)" }}>
-                    <div className="flex items-center justify-between gap-3 border-b px-4 py-3" style={{ borderColor: "var(--bq-border)" }}>
-                      <div><h3 className="font-semibold">Department faculty</h3><p className="text-xs text-slate-500">Assign active faculty to programs in this department.</p></div>
-                      <span className="text-xs text-slate-500">{pluralize(departmentFaculty.length, "Faculty member")}</span>
-                    </div>
-                    {departmentFaculty.length ? <div className="overflow-x-auto">
-                      <table className="w-full min-w-[560px] text-left">
-                        <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Faculty</th><th className="px-4 py-3">Email</th><th className="px-4 py-3">Program</th></tr></thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {departmentFaculty.map((member) => (
-                            <tr key={member.id}>
-                              <td className="px-4 py-3 text-sm font-medium">{member.name}</td>
-                              <td className="px-4 py-3 text-sm text-slate-500">{member.email}</td>
-                              <td className="px-4 py-3">
-                                <select aria-label={`Program for ${member.name}`} value={member.program_id || ""} onChange={(event) => assignFacultyProgram(member.id, event.target.value)} className="bq-field w-full max-w-xs px-3 py-2 text-sm">
-                                  <option value="">Not assigned</option>
-                                  {departmentPrograms.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
-                                </select>
-                              </td>
-                            </tr>
+                {departmentAdminSection === "faculty" ? (
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <SummaryStat icon={Users} label="Department faculty" value={departmentFaculty.length} />
+                    <SummaryStat icon={GraduationCap} label="Program assignments" value={`${departmentFaculty.filter((member) => member.program_id).length}/${departmentFaculty.length}`} />
+                    <SummaryStat icon={GraduationCap} label="Program chairs assigned" value={`${departmentPrograms.filter((program) => program.chair_id).length}/${departmentPrograms.length}`} />
+                    <SummaryStat icon={BookOpen} label="Subjects with faculty" value={`${departmentSubjects.filter((subject) => subject.creator_id).length}/${departmentSubjects.length}`} />
+                  </div>
+                ) : !isDepartmentAdmin || departmentAdminSection === "academic" ? (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <SummaryStat icon={Layers3} label="Programs" value={departmentPrograms.length} />
+                    <SummaryStat icon={BookOpen} label="Subjects" value={departmentSubjects.length} />
+                    <SummaryStat icon={Users} label="Faculty" value={departmentFaculty.length} />
+                    <SummaryStat
+                      icon={GraduationCap}
+                      label="Faculty assigned to programs"
+                      value={`${departmentFaculty.filter((member) => member.program_id).length}/${departmentFaculty.length}`}
+                    />
+                  </div>
+                ) : null}
+                {isDepartmentAdmin && departmentAdminSection === "faculty" && (
+                  <section className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--bq-border)" }}>
+                    <div className="flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: "var(--bq-border)" }}>
+                      <div>
+                        <h3 className="font-semibold">Faculty accounts</h3>
+                        <p className="text-xs text-slate-500">Add faculty directly and manage active or archived accounts.</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex flex-wrap gap-1 rounded-lg border p-1" role="tablist" aria-label="Faculty account status">
+                          {[
+                            ["active", "Active"],
+                            ["archived", "Archived"],
+                          ].map(([view, label]) => (
+                            <button
+                              key={view}
+                              type="button"
+                              role="tab"
+                              aria-selected={facultyAccountView === view}
+                              onClick={() => setFacultyAccountView(view)}
+                              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${facultyAccountView === view ? "bg-[var(--bq-accent)] text-white" : "text-slate-600 hover:bg-slate-100"}`}
+                            >
+                              {label} ({facultyAccounts[view].length})
+                            </button>
                           ))}
-                        </tbody>
-                      </table>
-                    </div> : <p className="p-5 text-sm text-slate-500">No active faculty are currently associated with this department.</p>}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowFacultyForm((visible) => !visible);
+                            setFacultyAccountsError("");
+                          }}
+                          className="inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-95"
+                          style={{ background: "var(--bq-accent-strong)" }}
+                        >
+                          <Plus size={16} />
+                          Add faculty member
+                        </button>
+                      </div>
+                    </div>
+                    {showFacultyForm && (
+                      <form onSubmit={createFacultyAccount} className="border-b border-slate-200 bg-slate-50/70 p-4 sm:p-5">
+                        <div className="mb-3">
+                          <h4 className="font-semibold text-slate-800">Add faculty accounts</h4>
+                          <p className="mt-1 text-xs text-slate-500">Each faculty member will receive a temporary password and a secure link to set a permanent one.</p>
+                        </div>
+                        {creatingFaculty && (
+                          <p className="mb-4 flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800" role="status" aria-live="polite">
+                            <LoaderCircle size={16} className="animate-spin" aria-hidden="true" />
+                            Creating accounts and sending emails…
+                          </p>
+                        )}
+                        <div className="space-y-4">
+                          {facultyForms.map((facultyForm, index) => (
+                            <div key={index} className="rounded-xl border border-slate-200 bg-white p-3 sm:p-4">
+                              <div className="mb-3 flex items-center justify-between">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Faculty member {index + 1}</p>
+                                {facultyForms.length > 1 && (
+                                  <button
+                                    type="button"
+                                    aria-label={`Remove faculty member ${index + 1}`}
+                                    disabled={creatingFaculty}
+                                    onClick={() => setFacultyForms((current) => current.filter((_, rowIndex) => rowIndex !== index))}
+                                    className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                                  >
+                                    Remove
+                                  </button>
+                                )}
+                              </div>
+                              <div className="grid gap-3 sm:grid-cols-3">
+                                <label className="text-xs font-semibold text-slate-600">
+                                  Full name
+                                  <input required minLength={2} maxLength={100} value={facultyForm.full_name} onChange={(event) => setFacultyForms((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, full_name: event.target.value, error: "" } : row))} className="bq-field mt-1 w-full px-3 py-2.5 text-sm" placeholder="Enter full name" />
+                                </label>
+                                <label className="text-xs font-semibold text-slate-600">
+                                  Email
+                                  <input required type="email" maxLength={255} value={facultyForm.email} onChange={(event) => setFacultyForms((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, email: event.target.value, error: "" } : row))} className="bq-field mt-1 w-full px-3 py-2.5 text-sm" placeholder="name@institution.edu" />
+                                </label>
+                                <label className="text-xs font-semibold text-slate-600">
+                                  Program
+                                  <select required value={facultyForm.program_id} onChange={(event) => setFacultyForms((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, program_id: event.target.value, error: "" } : row))} className="bq-field mt-1 w-full px-3 py-2.5 text-sm">
+                                    <option value="">Select program</option>
+                                    {departmentPrograms.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
+                                  </select>
+                                </label>
+                              </div>
+                              {facultyForm.error && <p className="mt-3 text-sm font-medium text-red-700">{facultyForm.error}</p>}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                          <button type="button" disabled={creatingFaculty} onClick={() => setFacultyForms((current) => [...current, { full_name: "", email: "", program_id: "" }])} className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-800 hover:bg-rose-50 disabled:opacity-60">
+                            <Plus size={15} />
+                            Add another
+                          </button>
+                          <div className="flex flex-wrap justify-end gap-2">
+                          <button type="button" disabled={creatingFaculty} onClick={() => {
+                            setShowFacultyForm(false);
+                            setFacultyAccountsError("");
+                            setFacultyForms([{ full_name: "", email: "", program_id: "" }]);
+                          }} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+                            Cancel
+                          </button>
+                          <button type="submit" disabled={creatingFaculty || !departmentPrograms.length} className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" style={{ background: "var(--bq-accent-strong)" }}>
+                            {creatingFaculty ? <LoaderCircle size={15} className="animate-spin" /> : <Mail size={15} />}
+                            {creatingFaculty ? "Sending emails…" : `Add ${facultyForms.length} & send email${facultyForms.length === 1 ? "" : "s"}`}
+                          </button>
+                          </div>
+                        </div>
+                      </form>
+                    )}
+                    {facultyAccountsError && <p role="alert" className="border-b border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{facultyAccountsError}</p>}
+                    {facultyAccountsLoading ? (
+                      <p className="p-5 text-sm text-slate-500">Loading faculty accounts...</p>
+                    ) : facultyAccounts[facultyAccountView].length === 0 ? (
+                      <p className="p-5 text-sm text-slate-500">
+                        No {facultyAccountView} faculty accounts.
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[720px] text-left">
+                          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                            <tr>
+                              <th className="px-4 py-3">Name</th>
+                              <th className="px-4 py-3">Email</th>
+                              <th className="px-4 py-3">Department</th>
+                              <th className="px-4 py-3">Program</th>
+                              <th className="px-4 py-3">Account date</th>
+                              <th className="px-4 py-3">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {facultyAccounts[facultyAccountView].map((account) => (
+                              <tr key={account.id} className="hover:bg-slate-50">
+                                <td className="px-4 py-3 text-sm font-medium text-slate-800">{account.full_name || "—"}</td>
+                                <td className="px-4 py-3 text-sm text-slate-600">{account.email}</td>
+                                <td className="px-4 py-3 text-sm text-slate-600">{account.department || selectedDepartment.name}</td>
+                                <td className="px-4 py-3 text-sm text-slate-600">{account.program || "—"}</td>
+                                <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">{formatRequestDate(account.created_at)}</td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-2">
+                                  <button type="button" onClick={() => setSelectedFacultyProfileId(account.id)} className="rounded-lg border px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">View profile</button>
+                                  {facultyAccountView === "active" ? (
+                                    <button type="button" disabled={facultyActionEmail === account.email} onClick={() => updateFacultyAccount("archive", account.email)} className="rounded-lg border px-3 py-1.5 text-xs font-semibold text-slate-600 disabled:opacity-60">Archive</button>
+                                  ) : (
+                                    <button type="button" disabled={facultyActionEmail === account.email} onClick={() => updateFacultyAccount("restore", account.email)} className="rounded-lg border px-3 py-1.5 text-xs font-semibold text-slate-600 disabled:opacity-60">Restore</button>
+                                  )}
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </section>
                 )}
-                <section className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--bq-border)" }}>
+                {((!isDepartmentAdmin && departmentAdminSection !== "faculty") ||
+                  (isDepartmentAdmin && departmentAdminSection === "leadership")) && (
+                  <DepartmentLeadershipSection
+                    department={selectedDepartment}
+                    faculty={departmentFaculty}
+                    onSave={saveDepartmentLeadership}
+                    onCreateAccount={isDepartmentAdmin ? undefined : createDepartmentDeanAccount}
+                    readOnly={isSuperAdmin}
+                    showDeanFacultyPicker={isDepartmentAdmin || isSuperAdmin}
+                  />
+                )}
+                {isSuperAdmin && <section className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--bq-border)" }}>
+                  <div className="flex items-center justify-between gap-3 border-b px-4 py-3" style={{ borderColor: "var(--bq-border)" }}>
+                    <div><h3 className="font-semibold">Department faculty</h3><p className="text-xs text-slate-500">Assign active faculty to programs in this department.</p></div>
+                    <span className="text-xs text-slate-500">{pluralize(departmentFaculty.length, "Faculty member")}</span>
+                  </div>
+                  {departmentFaculty.length ? <div className="overflow-x-auto">
+                    <table className="w-full min-w-[560px] text-left">
+                      <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Faculty</th><th className="px-4 py-3">Email</th><th className="px-4 py-3">Program</th></tr></thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {departmentFaculty.map((member) => (
+                          <tr key={member.id}>
+                            <td className="px-4 py-3 text-sm font-medium">{member.name}</td>
+                            <td className="px-4 py-3 text-sm text-slate-500">{member.email}</td>
+                            <td className="px-4 py-3">
+                              <select aria-label={`Program for ${member.name}`} value={member.program_id || ""} onChange={(event) => assignFacultyProgram(member.id, event.target.value)} className="bq-field w-full max-w-xs px-3 py-2 text-sm">
+                                <option value="">Not assigned</option>
+                                {departmentPrograms.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
+                              </select>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div> : <p className="p-5 text-sm text-slate-500">No active faculty are currently associated with this department.</p>}
+                </section>}
+                {departmentAdminSection === "leadership" && (
+                  <>
+                    <section className="overflow-hidden rounded-2xl border bg-white shadow-sm" style={{ borderColor: "var(--bq-border)" }}>
+                      <div className="flex items-center gap-3 border-b px-5 py-4" style={{ borderColor: "var(--bq-border)" }}>
+                        <span className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--bq-accent-soft)", color: "var(--bq-accent)" }}>
+                          <Users size={16} />
+                        </span>
+                        <div>
+                          <h3 className="font-semibold text-slate-900">Program chairs</h3>
+                          <p className="mt-0.5 text-xs text-slate-500">Type a chair name or choose faculty assigned to each program.</p>
+                        </div>
+                      </div>
+                      {departmentPrograms.length ? (
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[520px] text-left">
+                            <thead className="bg-slate-50/90 text-[11px] uppercase tracking-[0.12em] text-slate-500"><tr><th className="px-5 py-3.5">Program</th><th className="px-5 py-3.5">Program chair</th></tr></thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {departmentPrograms.map((program) => (
+                                <tr key={program.id} className="transition-colors hover:bg-slate-50/70">
+                                  <td className="px-5 py-4 text-sm font-semibold text-slate-800">{program.name}</td>
+                                  <td className="px-5 py-3.5">
+                                    <div className="flex max-w-md items-center gap-2">
+                                      <input
+                                        type="text"
+                                        aria-label={`Program chair for ${program.name}`}
+                                        list={`program-chair-options-${program.id}`}
+                                        value={programChairDrafts[program.id] ?? getProgramChairName(program)}
+                                        onChange={(event) => {
+                                          setProgramChairDrafts((drafts) => ({
+                                            ...drafts,
+                                            [program.id]: event.target.value,
+                                          }));
+                                          setProgramChairSaveStates((states) => ({
+                                            ...states,
+                                            [program.id]: { status: "idle", message: "" },
+                                          }));
+                                        }}
+                                        placeholder="Type a chair name"
+                                        className="bq-field min-w-0 flex-1 px-3 py-2.5 text-sm transition focus:ring-4 focus:ring-rose-100"
+                                      />
+                                      <datalist id={`program-chair-options-${program.id}`}>
+                                        {(program.faculty || []).map((member) => (
+                                          <option key={member.id} value={member.name}>{member.email}</option>
+                                        ))}
+                                      </datalist>
+                                      <button
+                                        type="button"
+                                        disabled={savingProgramChairId === program.id}
+                                        aria-label={`Clear chair for ${program.name}`}
+                                        onClick={() => {
+                                          setProgramChairDrafts((drafts) => ({
+                                            ...drafts,
+                                            [program.id]: "",
+                                          }));
+                                          setProgramChairSaveStates((states) => ({
+                                            ...states,
+                                            [program.id]: {
+                                              status: "cleared",
+                                              message: "Draft cleared. Save to remove the current chair.",
+                                            },
+                                          }));
+                                        }}
+                                        className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] focus:outline-none focus:ring-4 focus:ring-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        <RotateCcw size={14} />
+                                        Clear
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={savingProgramChairId === program.id}
+                                        onClick={() => assignProgramChair(program, programChairDrafts[program.id] ?? getProgramChairName(program))}
+                                        className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3.5 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:brightness-95 active:scale-[0.98] focus:outline-none focus:ring-4 focus:ring-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
+                                        style={{ background: "var(--bq-accent-strong)" }}
+                                      >
+                                        {savingProgramChairId === program.id ? <LoaderCircle size={14} className="animate-spin" /> : programChairSaveStates[program.id]?.status === "saved" ? <Check size={14} /> : <Save size={14} />}
+                                        {savingProgramChairId === program.id ? "Saving…" : programChairSaveStates[program.id]?.status === "saved" ? "Saved" : "Save"}
+                                      </button>
+                                    </div>
+                                    {programChairSaveStates[program.id]?.status === "saved" && (
+                                      <p role="status" className="mt-1.5 text-xs font-medium text-emerald-700">
+                                        {programChairSaveStates[program.id].message}
+                                      </p>
+                                    )}
+                                    {programChairSaveStates[program.id]?.status === "cleared" && (
+                                      <p role="status" className="mt-1.5 text-xs text-slate-500">
+                                        {programChairSaveStates[program.id].message}
+                                      </p>
+                                    )}
+                                    {programChairSaveStates[program.id]?.status === "error" && (
+                                      <p role="alert" className="mt-1.5 text-xs font-medium text-red-700">
+                                        {programChairSaveStates[program.id].message}
+                                      </p>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : <p className="p-6 text-sm text-slate-500">Create a program before assigning a program chair.</p>}
+                    </section>
+                  </>
+                )}
+                {!isDepartmentAdmin && departmentAdminSection !== "faculty" && <section className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--bq-border)" }}>
                   <div className="border-b px-4 py-3" style={{ borderColor: "var(--bq-border)" }}>
                     <h3 className="font-semibold">Department-level subjects</h3>
                     <p className="text-xs text-slate-500">Associate these subjects with a program when appropriate.</p>
@@ -925,18 +1506,20 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                           <td className="px-4 py-3 text-sm font-medium">{subject.name}{subject.code ? <span className="ml-2 text-xs text-slate-500">{subject.code}</span> : null}</td>
                           <td className="px-4 py-3"><button type="button" onClick={() => openModal("subject", subject, { department_id: selectedDepartment.id })} className="text-sm font-semibold" style={{ color: "var(--bq-accent)" }}>Associate with program</button></td>
                           <td className="px-4 py-3">
-                            <select aria-label={`Faculty for ${subject.name}`} value={subject.creator_id || ""} onChange={(event) => assignSubjectFaculty(subject.id, event.target.value)} className="bq-field w-full min-w-40 px-3 py-2 text-sm">
-                              <option value="">Unassigned</option>
-                              {departmentFaculty.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
-                            </select>
+                            {isDepartmentAdmin
+                              ? <span className="text-sm text-slate-500">Assign in Faculty Management</span>
+                              : <select aria-label={`Faculty for ${subject.name}`} value={subject.creator_id || ""} onChange={(event) => assignSubjectFaculty(subject.id, event.target.value)} className="bq-field w-full min-w-40 px-3 py-2 text-sm">
+                                <option value="">Unassigned</option>
+                                {departmentFaculty.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+                              </select>}
                           </td>
                           <td className="px-4 py-3"><OverflowMenu onEdit={() => openModal("subject", subject, { department_id: selectedDepartment.id })} onArchive={() => remove("subjects", subject.id)} /></td>
                         </tr>
                       ))}</tbody>
                     </table>
                   </div> : <p className="p-5 text-sm text-slate-500">No department-level subjects.</p>}
-                </section>
-                {selectedDepartment.programs?.map((program) => (
+                </section>}
+                {(!isDepartmentAdmin || departmentAdminSection === "academic") && selectedDepartment.programs?.map((program) => (
                   <div key={program.id} role="button" tabIndex={0} onClick={() => chooseProgram(program)} onKeyDown={(event) => event.key === "Enter" && chooseProgram(program)} className="bq-panel flex cursor-pointer flex-col gap-4 rounded-xl border p-4 text-left shadow-sm transition hover:shadow-md sm:flex-row sm:items-center" style={{ borderColor: "var(--bq-border)" }}>
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--bq-accent-soft)", color: "var(--bq-accent)" }}>
                       <Layers3 size={20} />
@@ -961,15 +1544,6 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                     </div>
                   </div>
                 ))}
-                <DepartmentWorkflowPanels
-                  department={selectedDepartment}
-                  programs={departmentPrograms}
-                  faculty={departmentFaculty}
-                  isDepartmentAdmin={isDepartmentAdmin}
-                  canReviewRequests={!isDepartmentAdmin}
-                  authHeaders={authHeaders}
-                  onError={setError}
-                />
               </div>
             )}
 
@@ -983,16 +1557,19 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                 <div className="mb-5 rounded-xl border px-4 py-3" style={{ background: "var(--admin-panel, #14161c)", borderColor: "var(--admin-border, #262a34)" }}>
                   <p className="text-xs font-medium" style={{ color: "var(--admin-muted, #8b8f99)" }}>Program Chair</p>
                   <p className="mt-1 text-sm font-semibold" style={{ color: "var(--admin-text, #ecedef)" }}>{selectedProgram.chair_name || selectedProgram.chair?.name || "Not assigned"}</p>
-                  {isDepartmentAdmin && (
+                  {isDepartmentAdmin && departmentAdminSection === "faculty" && (
                     <label className="mt-3 block max-w-md text-xs font-medium" style={{ color: "var(--admin-muted, #8b8f99)" }}>
                       Assign program chair
-                      <select aria-label="Assign program chair" value={selectedProgram.chair_id || ""} onChange={(event) => assignProgramChair(event.target.value)} className="bq-field mt-1 w-full px-3 py-2 text-sm text-slate-800">
+                      <select aria-label="Assign program chair" value={selectedProgram.chair_id || ""} onChange={(event) => assignProgramChair(selectedProgram.id, event.target.value)} className="bq-field mt-1 w-full px-3 py-2 text-sm text-slate-800">
                         <option value="">No faculty chair assigned</option>
                         {(selectedProgram.faculty || []).map((member) => <option key={member.id} value={member.id}>{member.name} · {member.email}</option>)}
                       </select>
                     </label>
                   )}
                 </div>
+                {isDepartmentAdmin && departmentAdminSection === "faculty" && (
+                  <ProgramChairAccountForm program={selectedProgram} onCreateAccount={createProgramChairAccount} />
+                )}
 
                 <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200">
                   <div className="flex gap-5">
@@ -1032,20 +1609,19 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                                   {subject.code}
                                 </div>
                               )}
+                              <div className={`mt-1 text-xs font-medium ${subject.has_cis ? "text-emerald-700" : "text-amber-700"}`}>{subject.has_cis ? `CIS on file${subject.cis_filename ? ` · ${subject.cis_filename}` : ""}` : "CIS required before faculty can use this subject"}</div>
                             </td>
                             <td className="px-4 py-3">
                               <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Active</span>
                             </td>
-                            {(isDepartmentAdmin || isSuperAdmin) && (
-                              <td className="px-4 py-3">
-                                {isDepartmentAdmin ? (
-                                  <select aria-label={`Faculty for ${subject.name}`} value={subject.creator_id || ""} onChange={(event) => assignSubjectFaculty(subject.id, event.target.value)} className="bq-field w-full min-w-48 px-3 py-2 text-sm">
-                                    <option value="">Unassigned</option>
-                                    {departmentFaculty.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
-                                  </select>
-                                ) : (subject.faculty_name || "Unassigned")}
-                              </td>
-                            )}
+                            <td className="px-4 py-3">
+                              {isDepartmentAdmin && departmentAdminSection === "faculty" ? (
+                                <select aria-label={`Faculty for ${subject.name}`} value={subject.creator_id || ""} onChange={(event) => assignSubjectFaculty(subject.id, event.target.value)} className="bq-field w-full min-w-48 px-3 py-2 text-sm">
+                                  <option value="">Unassigned</option>
+                                  {departmentFaculty.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+                                </select>
+                              ) : subject.faculty_name || (isDepartmentAdmin ? "Assign in Faculty Management" : null)}
+                            </td>
                             <td className="px-4 py-3">
                               {!isSuperAdmin && <OverflowMenu onEdit={() => openModal("subject", subject, { id: selectedProgram.id, department_id: selectedDepartment.id })} onArchive={() => remove("subjects", subject.id)} />}
                             </td>
@@ -1091,8 +1667,20 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
               </div>
             )}
           </div>
-        )}
+        ))}
       </section>
+      {departmentId && selectedDepartment && !isDepartmentAdmin && (
+        <section className="bq-academic-surface mx-auto w-full max-w-7xl rounded-2xl border p-4 shadow-sm sm:p-5" style={{ background: "var(--admin-panel, #14161c)", borderColor: "var(--admin-border, #262a34)", color: "var(--admin-text, #ecedef)" }}>
+          <DepartmentWorkflowPanels
+            department={selectedDepartment}
+            faculty={departmentFaculty}
+            isDepartmentAdmin={isDepartmentAdmin}
+            canReviewRequests={!isDepartmentAdmin}
+            authHeaders={authHeaders}
+            onError={setError}
+          />
+        </section>
+      )}
       {modal && !isSuperAdmin && createPortal(
         <div className={`bq-admin-${adminTheme}`}>
           <div className="bq-modal-overlay fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto p-4">
@@ -1106,8 +1694,8 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
               <input required autoFocus value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} className="bq-field mt-1 w-full px-3" />
             </label>
             <label className="mb-4 block text-sm font-semibold text-slate-700">
-              Code <span className="font-normal text-slate-400">(optional)</span>
-              <input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))} className="bq-field mt-1 w-full px-3" />
+              Code {!isDepartmentAdmin && <span className="font-normal text-slate-400">(optional)</span>}
+              <input required={isDepartmentAdmin && modal.type === "subject"} value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))} className="bq-field mt-1 w-full px-3" />
             </label>
             {modal.type === "department" && (
               <>
@@ -1127,7 +1715,24 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                 {allDepartments.length > 1 && <label className="mb-4 block text-sm font-semibold text-slate-700">Department<select required value={form.department_id} onChange={(event) => setForm((current) => ({ ...current, department_id: event.target.value }))} className="bq-field mt-1 w-full px-3"><option value="">Select a department</option>{allDepartments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></label>}
               </>
             )}
-            {modal.type === "subject" && selectedDepartment && <label className="mb-4 block text-sm font-semibold text-slate-700">Program<select value={form.program_id} onChange={(event) => setForm((current) => ({ ...current, program_id: event.target.value, department_id: selectedDepartment.id }))} className="bq-field mt-1 w-full px-3"><option value="">Department-level (not linked to a program)</option>{departmentPrograms.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}</select></label>}
+            {modal.type === "subject" && selectedDepartment && <label className="mb-4 block text-sm font-semibold text-slate-700">Program<select required={isDepartmentAdmin} value={form.program_id} onChange={(event) => setForm((current) => ({ ...current, program_id: event.target.value, department_id: selectedDepartment.id }))} className="bq-field mt-1 w-full px-3"><option value="">{isDepartmentAdmin ? "Select a program" : "Department-level (not linked to a program)"}</option>{departmentPrograms.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}</select></label>}
+            {modal.type === "subject" && isDepartmentAdmin && (
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-slate-700">
+                  Course Information Sheet (CIS) {modal.item?.has_cis && <span className="font-normal text-emerald-700">· Current CIS on file</span>}
+                  <input
+                    type="file"
+                    accept=".pdf,.docx,.xlsx"
+                    required={!modal.item}
+                    onChange={(event) => setCisFile(event.target.files?.[0] || null)}
+                    className="bq-field mt-1 w-full px-3 py-2"
+                  />
+                </label>
+                <p className="mt-1 text-xs text-slate-500">{modal.item ? "Upload a replacement CIS if the existing document has changed." : "Required before this subject can be created or used by faculty. Accepted formats: PDF, DOCX, or XLSX (10 MB max)."}</p>
+                {cisFile && <p className="mt-1 text-xs font-medium text-emerald-700">Selected: {cisFile.name}</p>}
+                {modal.item && !modal.item.has_cis && <p className="mt-1 text-xs font-medium text-amber-700">No CIS is on file; faculty cannot use this subject until one is uploaded.</p>}
+              </div>
+            )}
             <div className="mt-6 flex justify-end gap-2">
               <button type="button" onClick={() => setModal(null)} className="bq-secondary-button">Cancel</button>
               <button type="submit" className="bq-primary-button">Save</button>

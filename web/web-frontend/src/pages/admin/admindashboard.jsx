@@ -26,7 +26,7 @@ const TAB_META = {
   },
   academic: {
     label: "Academic Management",
-    description: "Configure departments, courses, and academic assignments.",
+    description: "Manage the department’s programs and subjects.",
   },
   "question-bank": {
     label: "Question Bank",
@@ -34,15 +34,11 @@ const TAB_META = {
   },
   faculty: {
     label: "Faculty Management",
-    description: "Review department faculty and maintain program assignments.",
+    description: "Add faculty members and manage active or archived department accounts.",
   },
-  requests: {
-    label: "Academic Requests",
-    description: "Submit faculty account requests and coordinate academic changes.",
-  },
-  users: {
-    label: "User Management",
-    description: "Manage faculty and student accounts with approvals and status control.",
+  leadership: {
+    label: "Leadership Management",
+    description: "Manage your department dean and program chair assignments.",
   },
   reports: {
     label: "Reports",
@@ -63,7 +59,15 @@ const TAB_META = {
 };
 
 const DepartmentAdminOverview = ({ setActiveTab }) => {
-  const [summary, setSummary] = useState({ programs: 0, subjects: 0, faculty: 0, assignedFaculty: 0 });
+  const [summary, setSummary] = useState({
+    departmentName: "",
+    departmentCode: "",
+    deanName: "",
+    programs: [],
+    subjects: 0,
+    faculty: 0,
+    assignedFaculty: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -91,7 +95,10 @@ const DepartmentAdminOverview = ({ setActiveTab }) => {
         const faculty = department.faculty || [];
         if (!cancelled) {
           setSummary({
-            programs: (department.programs || []).length,
+            departmentName: department.name || "",
+            departmentCode: department.code || "",
+            deanName: department.dean_name || department.dean?.name || "",
+            programs: department.programs || [],
             subjects: subjectRecords.filter((subject) =>
               !subject.archived && (
                 subject.department_id === department.id ||
@@ -116,14 +123,24 @@ const DepartmentAdminOverview = ({ setActiveTab }) => {
     <div className="space-y-5">
       <section className="bq-admin-panel">
         <p className="bq-admin-eyebrow">DEPARTMENT OVERVIEW</p>
-        <h2 className="mt-2 text-xl font-semibold">Your department at a glance</h2>
-        <p className="bq-admin-muted mt-1">Review academic structure, faculty coverage, and pending coordination needs.</p>
+        <div className="mt-2 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(220px,0.65fr)] md:items-end">
+          <div>
+            <h2 className="text-xl font-semibold">{loading ? "Your department at a glance" : summary.departmentName || "Department details unavailable"}</h2>
+            <p className="bq-admin-muted mt-1">
+              {summary.departmentCode ? `Department code: ${summary.departmentCode}` : "Your department and the academic units you manage."}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200/70 px-4 py-3">
+            <p className="bq-admin-muted text-xs font-medium uppercase tracking-wide">Department Dean</p>
+            <p className="mt-1 font-semibold">{loading ? "Loading…" : summary.deanName || "Not assigned"}</p>
+          </div>
+        </div>
         {error && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}
       </section>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          ["Programs", summary.programs],
+          ["Programs", summary.programs.length],
           ["Subjects", summary.subjects],
           ["Faculty", summary.faculty],
           ["Faculty assigned to programs", `${summary.assignedFaculty}/${summary.faculty}`],
@@ -135,11 +152,35 @@ const DepartmentAdminOverview = ({ setActiveTab }) => {
         ))}
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-3">
+      <section className="bq-admin-panel">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 className="font-semibold">Programs you manage</h2>
+            <p className="bq-admin-muted mt-1 text-sm">Programs assigned to your department.</p>
+          </div>
+          <span className="bq-admin-mono">{loading ? "—" : `${summary.programs.length} ${summary.programs.length === 1 ? "PROGRAM" : "PROGRAMS"}`}</span>
+        </div>
+        {loading ? (
+          <p className="bq-admin-muted mt-4 text-sm">Loading department programs…</p>
+        ) : summary.programs.length ? (
+          <ul className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {summary.programs.map((program) => (
+              <li key={program.id} className="rounded-xl border border-slate-200/70 px-4 py-3">
+                <p className="font-medium">{program.name}</p>
+                {program.code && <p className="bq-admin-muted mt-1 text-xs">{program.code}</p>}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="bq-admin-muted mt-4 text-sm">No programs are currently assigned to this department.</p>
+        )}
+      </section>
+
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          ["Academic Management", "Update dean, department details, programs, and subjects.", "academic"],
-          ["Faculty Management", "Review department faculty and manage program assignments.", "faculty"],
-          ["Academic Requests", "Invite faculty for approval or coordinate cross-department changes.", "requests"],
+          ["Leadership Management", "Manage your department dean and program chair assignments.", "leadership"],
+          ["Faculty Management", "Add faculty members and manage active or archived accounts.", "faculty"],
+          ["Academic Management", "Manage the department’s programs and subjects.", "academic"],
         ].map(([title, description, tab]) => (
           <button
             type="button"
@@ -241,7 +282,7 @@ const AdminDashboard = () => {
       }
       return (
         <AcademicMgmtContent
-          activeSection={activeTab === "faculty" ? "faculty" : activeTab === "requests" ? "requests" : null}
+          activeSection={activeTab === "faculty" ? "faculty" : activeTab === "leadership" ? "leadership" : null}
         />
       );
     }

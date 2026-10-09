@@ -12,7 +12,7 @@ import TopBar from "./components/TopBar";
 
 const Login = React.lazy(() => import("./pages/auth/Login"));
 const ForgotPassword = React.lazy(() => import("./pages/auth/Forgotpass"));
-const ContactAdmin = React.lazy(() => import("./pages/auth/ContactAdmin"));
+const SetPassword = React.lazy(() => import("./pages/auth/SetPassword"));
 const LandingPage = React.lazy(() => import("./pages/LandingPage"));
 const Dashboard = React.lazy(() => import("./pages/users/Dashboard"));
 const InputQuestion = React.lazy(() => import("./pages/users/InputQuestion"));
@@ -211,7 +211,7 @@ function App() {
         <Route path="/home" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/contact-admin" element={<ContactAdmin />} />
+        <Route path="/set-password" element={<SetPassword />} />
         
         {/* ========================================= */}
         {/* USER ROUTES                               */}

@@ -183,6 +183,7 @@ def test_approval_email_uses_shared_helper_when_resend_is_configured(monkeypatch
         "TempPass1!",
         full_name="Avery Faculty",
         department="Informatics",
+        password_setup_url="http://localhost:3000/set-password?token=single-use-test-token",
     )
 
     assert len(sent_emails) == 1
@@ -191,6 +192,8 @@ def test_approval_email_uses_shared_helper_when_resend_is_configured(monkeypatch
     assert subject == "BloomQuest Account Approved & Created"
     assert "Avery Faculty" in html
     assert "TempPass1!" in html
+    assert 'href="http://localhost:3000/set-password?token=single-use-test-token"' in html
+    assert "expires in 24 hours and can be used once" in html
 
 
 def test_contact_admin_otp_sends_email_before_reporting_success(monkeypatch):

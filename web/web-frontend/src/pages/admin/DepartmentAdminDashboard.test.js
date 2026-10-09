@@ -10,11 +10,14 @@ const scopedHierarchy = {
     departments: [{
       id: 2,
       name: "CICS",
+      code: "CICS",
+      dean_name: "Dr. Department Dean",
       faculty: [{ id: 8, name: "Department Faculty", email: "faculty@example.com", program_id: 3 }],
       programs: [{
         id: 3,
         name: "Computer Science",
         code: "BSCS",
+        chair_id: 8,
         chair_name: "Faculty Chair",
         faculty: [{ id: 8, name: "Department Faculty", email: "faculty@example.com" }],
       }],
@@ -32,10 +35,51 @@ beforeEach(() => {
       return { ok: true, json: async () => scopedHierarchy };
     }
     if (String(url).endsWith("/subjects")) {
-      return { ok: true, json: async () => [{ id: 9, department_id: 2, program_id: 3 }] };
+      return { ok: true, json: async () => [{ id: 9, name: "Introduction to Computing", department_id: 2, program_id: 3, creator_id: 8 }] };
     }
     if (String(url).endsWith("/department-academic-change-requests")) {
       return { ok: true, json: async () => [] };
+    }
+    if (String(url).endsWith("/department-admin/faculty-accounts")) {
+      return {
+        ok: true,
+        json: async () => ({
+          pending: [],
+          active: [{
+            id: 8,
+            full_name: "Department Faculty",
+            email: "faculty@example.com",
+            department: "CICS",
+            program_id: 3,
+            program: "Computer Science",
+            status: "Active",
+            archived: false,
+            created_at: "2024-01-10T00:00:00",
+          }],
+          archived: [],
+        }),
+      };
+    }
+    if (String(url).endsWith("/department-admin/users/8")) {
+      return {
+        ok: true,
+        json: async () => ({
+          id: 8,
+          full_name: "Department Faculty",
+          email: "faculty@example.com",
+          role: "Faculty",
+          department: "CICS",
+          program_id: 3,
+          program: "Computer Science",
+          archived: false,
+          status: "Active",
+          created_at: "2024-01-10T00:00:00",
+          question_count: 4,
+          activity_count: 1,
+          subjects: [{ id: 9, name: "Introduction to Computing", code: "CS101" }],
+          activity: [{ id: 1, action: "Signed in", type: "login", status: "success", details: "", created_at: "2024-01-11T00:00:00" }],
+        }),
+      };
     }
     return { ok: true, json: async () => ({}) };
   });
@@ -61,12 +105,24 @@ const renderDashboard = () => render(
 test("Department Admin uses the admin dashboard shell with only department tools", async () => {
   renderDashboard();
 
-  expect(await screen.findByText("Your department at a glance")).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "CICS" })).toBeInTheDocument();
+  expect(screen.getByText("Department code: CICS")).toBeInTheDocument();
+  expect(screen.getByText("Dr. Department Dean")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Programs you manage" })).toBeInTheDocument();
+  expect(screen.getByText("Computer Science")).toBeInTheDocument();
+  expect(screen.getByText("BSCS")).toBeInTheDocument();
   expect(screen.getByText("DEPARTMENT WORKSPACE")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Dashboard" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Academic Management" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Faculty Management" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Academic Requests" })).toBeInTheDocument();
+  const facultyTab = screen.getByRole("button", { name: "Faculty Management" });
+  const leadershipTab = screen.getByRole("button", { name: "Leadership Management" });
+  const academicTab = screen.getByRole("button", { name: "Academic Management" });
+  expect(facultyTab).toBeInTheDocument();
+  expect(leadershipTab).toBeInTheDocument();
+  expect(academicTab).toBeInTheDocument();
+  const dashboardTab = screen.getByRole("button", { name: "Dashboard" });
+  expect(dashboardTab.compareDocumentPosition(leadershipTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(leadershipTab.compareDocumentPosition(facultyTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Academic Requests" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "User Management" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Question Bank" })).not.toBeInTheDocument();
@@ -74,38 +130,87 @@ test("Department Admin uses the admin dashboard shell with only department tools
   expect(screen.queryByRole("button", { name: "Recycle Bin" })).not.toBeInTheDocument();
 });
 
+test("Department Admin can open a faculty profile from Faculty Management actions", async () => {
+  renderDashboard();
+
+  fireEvent.click(await screen.findByRole("button", { name: "Faculty Management" }));
+  expect(await screen.findByRole("heading", { name: "Faculty accounts" })).toBeInTheDocument();
+  expect(await screen.findByText("faculty@example.com")).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: /Active/ })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /View profile/ }));
+
+  expect(await screen.findByRole("heading", { name: "Department Faculty" })).toBeInTheDocument();
+  expect(screen.getByText("Questions created")).toBeInTheDocument();
+  expect(screen.getByText("Introduction to Computing")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Change program" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Archive account" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Reset password" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Re-email faculty" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Back to Faculty Management/ }));
+  expect(await screen.findByRole("heading", { name: "Faculty accounts" })).toBeInTheDocument();
+});
+
+test("Department Admin can send password reset and faculty access emails from the profile page", async () => {
+  renderDashboard();
+
+  fireEvent.click(await screen.findByRole("button", { name: "Faculty Management" }));
+  fireEvent.click(await screen.findByRole("button", { name: /View profile/ }));
+  await screen.findByRole("heading", { name: "Department Faculty" });
+
+  fireEvent.click(screen.getByRole("button", { name: "Reset password" }));
+  expect(await screen.findByRole("dialog", { name: "Reset faculty password" })).toBeInTheDocument();
+  expect(global.fetch).not.toHaveBeenCalledWith(
+    expect.stringContaining("/department-admin/users/8/credential-email"),
+    expect.anything(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Send reset email" }));
+  expect(await screen.findByRole("status")).toHaveTextContent("Email sent to faculty@example.com");
+  expect(global.fetch).toHaveBeenCalledWith(
+    expect.stringContaining("/department-admin/users/8/credential-email"),
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ action: "reset_password" }),
+    }),
+  );
+
+});
+
 test("Department Admin can open academic and faculty workspace sections from navigation", async () => {
   renderDashboard();
   fireEvent.click(await screen.findByRole("button", { name: "Academic Management" }));
 
   expect(await screen.findByRole("button", { name: "Add Program" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Department Dean" })).not.toBeInTheDocument();
+  expect(screen.queryByText("Main Campus")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Department faculty" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Faculty Management" }));
-  await waitFor(() => expect(screen.getByRole("heading", { name: "Department faculty" })).toBeInTheDocument());
-  expect(screen.getByRole("combobox", { name: "Program for Department Faculty" })).toBeInTheDocument();
-});
+  expect(await screen.findByRole("heading", { name: "Faculty accounts" })).toBeInTheDocument();
+  const activeTab = screen.getByRole("tab", { name: /Active/ });
+  const archivedTab = screen.getByRole("tab", { name: /Archived/ });
+  expect(activeTab).toBeInTheDocument();
+  expect(archivedTab).toBeInTheDocument();
+  expect(screen.queryByRole("tab", { name: /Pending/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole("tab", { name: /User requests/ })).not.toBeInTheDocument();
+  expect(activeTab.compareDocumentPosition(archivedTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const facultyMetric = screen.getByText("Department faculty");
+  const accountsSection = screen.getByRole("heading", { name: "Faculty accounts" });
+  expect(facultyMetric.compareDocumentPosition(accountsSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Department faculty" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("combobox", { name: "Program chair for Computer Science" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Subject faculty assignments" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Create program chair login" })).not.toBeInTheDocument();
+  expect(screen.queryByText("Department Dean")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Add Program" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Add Subject" })).not.toBeInTheDocument();
 
-test("Academic Requests navigation scrolls to the academic-change request form", async () => {
-  let scrolledElement;
-  const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
-  HTMLElement.prototype.scrollIntoView = jest.fn(function scrollIntoView() {
-    scrolledElement = this;
-  });
-
-  try {
-    renderDashboard();
-    fireEvent.click(await screen.findByRole("button", { name: "Academic Requests" }));
-
-    await waitFor(() => {
-      expect(scrolledElement).toHaveAttribute("id", "department-requests-section");
-    });
-    expect(screen.getByRole("heading", { name: "Academic change requests" })).toBeInTheDocument();
-  } finally {
-    if (originalScrollIntoView) {
-      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
-    } else {
-      delete HTMLElement.prototype.scrollIntoView;
-    }
-  }
+  fireEvent.click(screen.getByRole("button", { name: "Leadership Management" }));
+  expect(await screen.findByRole("heading", { name: "Leadership Management", level: 1 })).toBeInTheDocument();
+  expect(screen.getByLabelText("Assign dean from department faculty")).toBeInTheDocument();
+  expect(screen.getByRole("combobox", { name: "Program chair for Computer Science" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Create dean login" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Faculty accounts" })).not.toBeInTheDocument();
 });
 
 test("Department Admin settings persist profile name through the profile API", async () => {

@@ -15,6 +15,8 @@ class User(Base):
     admin_department_id = Column(Integer, ForeignKey("departments.id"), nullable=True, index=True)
     campus_id = Column(Integer, ForeignKey("campuses.id"), nullable=True, index=True)
     program_id = Column(Integer, ForeignKey("programs.id"), nullable=True)
+    password_setup_token_hash = Column(String(64), nullable=True)
+    password_setup_token_expires_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
 class Department(Base):
@@ -92,6 +94,17 @@ class UploadedFile(Base):
     syllabus_text = Column(Text)
     created_at = Column(DateTime, server_default=func.now())
     subject = relationship("Subject")
+
+class SubjectCIS(Base):
+    __tablename__ = "subject_cis"
+    id = Column(Integer, primary_key=True, index=True)
+    subject_id = Column(Integer, ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    uploaded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    filename = Column(String(255), nullable=False)
+    media_type = Column(String(255), nullable=True)
+    file_content = Column(LargeBinary, nullable=False)
+    extracted_text = Column(Text, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
 
 class TableOfSpecification(Base):
     __tablename__ = "table_of_specification"

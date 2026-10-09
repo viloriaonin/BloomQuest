@@ -6,7 +6,7 @@ import ReportsBtn from "./Reports";
 import QuestionBankBtn from "./QuestionBank";
 import LogoutBtn from "./Logout";
 import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
-import { ClipboardList, FolderArchive, Settings, Sun, Moon, Sparkles, Users } from "lucide-react";
+import { FolderArchive, GraduationCap, Settings, Sun, Moon, Sparkles, Users } from "lucide-react";
 
 const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed, mobileOpen, onNavigate, departmentAdmin = false }) => {
   return (
@@ -38,9 +38,19 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed
 
       <nav onClick={onNavigate} className="flex-1 px-2.5 space-y-1 overflow-y-auto pb-4">
         <DashboardBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
-        <AcademicMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
         {departmentAdmin ? (
           <>
+            <button
+              type="button"
+              title={collapsed ? "Leadership Management" : undefined}
+              aria-label={collapsed ? "Leadership Management" : undefined}
+              onClick={() => setActiveTab("leadership")}
+              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150"
+              style={activeTab === "leadership" ? { background: "var(--bq-accent)", color: "#ffffff" } : { color: "var(--bq-muted)", background: "transparent" }}
+            >
+              <GraduationCap size={20} className={activeTab === "leadership" ? "text-white" : "text-[#C4485A]"} />
+              <span className="text-sm font-medium tracking-wide">Leadership Management</span>
+            </button>
             <button
               type="button"
               title={collapsed ? "Faculty Management" : undefined}
@@ -52,20 +62,11 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed
               <Users size={20} className={activeTab === "faculty" ? "text-white" : "text-[#C4485A]"} />
               <span className="text-sm font-medium tracking-wide">Faculty Management</span>
             </button>
-            <button
-              type="button"
-              title={collapsed ? "Academic Requests" : undefined}
-              aria-label={collapsed ? "Academic Requests" : undefined}
-              onClick={() => setActiveTab("requests")}
-              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150"
-              style={activeTab === "requests" ? { background: "var(--bq-accent)", color: "#ffffff" } : { color: "var(--bq-muted)", background: "transparent" }}
-            >
-              <ClipboardList size={20} className={activeTab === "requests" ? "text-white" : "text-[#C4485A]"} />
-              <span className="text-sm font-medium tracking-wide">Academic Requests</span>
-            </button>
+            <AcademicMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
           </>
         ) : (
           <>
+            <AcademicMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
             <QuestionBankBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
             <UserMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
             <ReportsBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
