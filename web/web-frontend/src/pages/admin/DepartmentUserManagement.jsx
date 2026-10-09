@@ -99,8 +99,8 @@ const DepartmentUserManagement = ({ initialUserId = null, onClose }) => {
   }, []);
 
   useEffect(() => {
-    if (!initialUserId) loadUsers();
-  }, [initialUserId, loadUsers]);
+    loadUsers();
+  }, [loadUsers]);
 
   useEffect(() => {
     if (selectedUserId) loadDetail(selectedUserId);

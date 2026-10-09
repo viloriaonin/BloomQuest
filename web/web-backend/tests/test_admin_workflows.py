@@ -26,6 +26,9 @@ class FakeQuery:
     def order_by(self, *args, **kwargs):
         return self
 
+    def limit(self, *args, **kwargs):
+        return self
+
     def first(self):
         if self.model is models.AccountRequest:
             return self.session.account_request
@@ -51,6 +54,8 @@ class FakeQuery:
     def all(self):
         if self.model is models.User:
             return list(self.session.user_results)
+        if self.model is models.Department and self.session.department:
+            return [self.session.department]
         return []
 
     def delete(self, *args, **kwargs):

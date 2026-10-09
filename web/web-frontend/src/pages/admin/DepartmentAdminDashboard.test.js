@@ -60,6 +60,16 @@ beforeEach(() => {
         }),
       };
     }
+    if (String(url).endsWith("/department-admin/users")) {
+      return {
+        ok: true,
+        json: async () => ({
+          department: { id: 2, name: "CICS" },
+          programs: [{ id: 3, name: "Computer Science" }],
+          users: [],
+        }),
+      };
+    }
     if (String(url).endsWith("/department-admin/users/8")) {
       return {
         ok: true,
@@ -147,6 +157,11 @@ test("Department Admin can open a faculty profile from Faculty Management action
   expect(screen.getByRole("button", { name: "Reset password" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Re-email faculty" })).not.toBeInTheDocument();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Change program" }));
+  expect(await screen.findByLabelText("Program")).toHaveValue("3");
+  expect(screen.getByRole("option", { name: "Computer Science" })).toBeInTheDocument();
+  expect(screen.getByText("Only programs in CICS are available.")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   fireEvent.click(screen.getByRole("button", { name: /Back to Faculty Management/ }));
   expect(await screen.findByRole("heading", { name: "Faculty accounts" })).toBeInTheDocument();
 });
