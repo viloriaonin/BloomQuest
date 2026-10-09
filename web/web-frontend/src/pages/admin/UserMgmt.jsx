@@ -32,6 +32,9 @@ export const UserMgmtContent = () => {
   const [showDeanForm, setShowDeanForm] = useState(false);
   const [deanForm, setDeanForm] = useState({ full_name: "", email: "", department_id: "" });
   const [creatingDean, setCreatingDean] = useState(false);
+  const [deanEmailRecovery, setDeanEmailRecovery] = useState(null);
+  const [resendingDeanEmail, setResendingDeanEmail] = useState(false);
+  const [deanEmailRecoveryError, setDeanEmailRecoveryError] = useState("");
   const [taxonomyError, setTaxonomyError] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [userView, setUserView] = useState("active");
@@ -164,6 +167,7 @@ export const UserMgmtContent = () => {
     setErrorUsers("");
     const created = [];
     const emailFailures = [];
+    const demoAccounts = [];
     const creationFailures = [];
 
     for (const [index, facultyForm] of facultyForms.entries()) {
@@ -190,6 +194,12 @@ export const UserMgmtContent = () => {
           });
         } else if (result.email_status === "sent") {
           created.push(result.email || facultyForm.email);
+        } else if (result.email_status === "demo") {
+          demoAccounts.push({
+            email: result.email || facultyForm.email,
+            temporaryPassword: result.demo_temporary_password,
+            setupUrl: result.demo_setup_url,
+          });
         } else {
           emailFailures.push(result.email || facultyForm.email);
         }
@@ -208,7 +218,7 @@ export const UserMgmtContent = () => {
       : [{ full_name: "", email: "", faculty_number: "", department_id: "", program_id: "", error: "" }]);
     setCreatingFaculty(false);
 
-    if (created.length || emailFailures.length) {
+    if (created.length || emailFailures.length || demoAccounts.length) {
       await fetchUsers();
       const messages = [];
       if (created.length) {
@@ -217,7 +227,15 @@ export const UserMgmtContent = () => {
       if (emailFailures.length) {
         messages.push(`Account created, but email could not be sent to: ${emailFailures.join(", ")}. Contact your system administrator to resend the invitation.`);
       }
-      await showAlert(messages.join("\n\n"), emailFailures.length ? "Account created with email issue" : "Faculty account created");
+      if (demoAccounts.length) {
+        messages.push(
+          `Demo mode: email was not sent. Share these one-time setup details securely:\n\n${demoAccounts.map((account) => `${account.email}\nTemporary password: ${account.temporaryPassword}\nSetup link: ${account.setupUrl}`).join("\n\n")}\n\nThe setup link expires in 24 hours. Turn off demo mode before using real accounts.`,
+        );
+      }
+      await showAlert(
+        messages.join("\n\n"),
+        emailFailures.length ? "Account created with email issue" : demoAccounts.length ? "Demo faculty accounts created" : "Faculty account created",
+      );
     }
 
     if (creationFailures.length) {
@@ -251,16 +269,48 @@ export const UserMgmtContent = () => {
       if (!response.ok) throw new Error(result.detail || "Could not create the dean account.");
       setShowDeanForm(false);
       setDeanForm({ full_name: "", email: "", department_id: "" });
+      const isDemo = result.email_status === "demo";
+      setDeanEmailRecovery(result.email_status === "failed" ? { id: result.id, email: result.email } : null);
+      setDeanEmailRecoveryError("");
       await showAlert(
-        result.email_status === "sent"
-          ? `Dean account created for ${result.department}. A secure password setup link was emailed to ${result.email}.`
-          : `Dean account created for ${result.department}, but the setup email could not be sent to ${result.email}. Contact your system administrator.`,
-        result.email_status === "sent" ? "Dean account created" : "Dean account created with email issue",
+        isDemo
+          ? `Dean account created for ${result.department} with Department Admin access.\n\nDemo mode did not send an email. Share these one-time setup details securely with ${result.email}:\nTemporary password: ${result.demo_temporary_password}\nSetup link: ${result.demo_setup_url}\n\nThe setup link expires in 24 hours. Turn off demo mode before using real accounts.`
+          : result.email_status === "sent"
+            ? `Dean account created for ${result.department}. A secure password setup link was emailed to ${result.email}.`
+            : `Dean account created for ${result.department}, but the setup email could not be sent to ${result.email}. Use the resend control on this page to try again.`,
+        isDemo ? "Demo dean account created" : result.email_status === "sent" ? "Dean account created" : "Dean account created with email issue",
       );
     } catch (error) {
       await showAlert(error.message || "Could not create the dean account.", "Could not create dean account");
     } finally {
       setCreatingDean(false);
+    }
+  };
+
+  const resendDeanSetupEmail = async () => {
+    if (!deanEmailRecovery || resendingDeanEmail) return;
+    setResendingDeanEmail(true);
+    setDeanEmailRecoveryError("");
+    try {
+      const response = await fetch(`${API_URL}/campus-admin/users/${deanEmailRecovery.id}/credential-email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+        },
+        body: JSON.stringify({ action: "reset_password" }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || "Could not resend the dean setup email.");
+      setDeanEmailRecovery(null);
+      await showAlert(
+        result.message || `A new password setup email was sent to ${deanEmailRecovery.email}.`,
+        "Dean setup email sent",
+      );
+    } catch (error) {
+      setDeanEmailRecoveryError(error.message || "Could not resend the dean setup email.");
+    } finally {
+      setResendingDeanEmail(false);
     }
   };
 
@@ -767,6 +817,18 @@ export const UserMgmtContent = () => {
               </button>
             </div>
           </form>
+        )}
+        {deanEmailRecovery && isCampusAdmin && (
+          <div className="mb-5 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-amber-950">Dean setup email was not delivered</h3>
+              <p className="mt-1 text-xs text-amber-800">Resend a secure setup link to {deanEmailRecovery.email}. The temporary password and link will be regenerated.</p>
+              {deanEmailRecoveryError && <p role="alert" className="mt-2 text-xs font-medium text-red-700">{deanEmailRecoveryError}</p>}
+            </div>
+            <button type="button" disabled={resendingDeanEmail} onClick={resendDeanSetupEmail} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md bg-amber-700 px-3.5 py-2 text-sm font-semibold text-white hover:bg-amber-800 disabled:opacity-50">
+              {resendingDeanEmail ? "Sending..." : "Resend setup email"}
+            </button>
+          </div>
         )}
         {showFacultyForm && isCampusAdmin && (
           <form onSubmit={createFacultyAccounts} className="mb-5 rounded-xl border border-gray-200 bg-gray-50 p-4">

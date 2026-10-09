@@ -233,7 +233,12 @@ const AdminDashboard = () => {
   };
 
   useEffect(() => {
-    if (isDepartmentAdmin) return;
+    if (isDepartmentAdmin) {
+      if (location.pathname.startsWith("/admin/questions")) {
+        setActiveTab("question-bank");
+      }
+      return;
+    }
     if (location.pathname.startsWith("/admin/academic")) {
       setActiveTab("academic");
     } else if (location.pathname.startsWith("/admin/questions")) {

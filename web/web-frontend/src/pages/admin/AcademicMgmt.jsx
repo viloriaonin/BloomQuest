@@ -1111,6 +1111,8 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
     setFacultyAccountsError("");
     setNotice("");
     const sentEmails = [];
+    const demoAccounts = [];
+    const missingDemoCredentials = [];
     const emailFailures = [];
     const creationFailures = [];
 
@@ -1135,6 +1137,16 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
           });
         } else if (result.email_status === "sent") {
           sentEmails.push(result.email || facultyForm.email);
+        } else if (result.email_status === "demo") {
+          if (result.demo_temporary_password && result.demo_setup_url) {
+            demoAccounts.push({
+              email: result.email || facultyForm.email,
+              temporaryPassword: result.demo_temporary_password,
+              setupUrl: result.demo_setup_url,
+            });
+          } else {
+            missingDemoCredentials.push(result.email || facultyForm.email);
+          }
         } else {
           emailFailures.push(result.email || facultyForm.email);
         }
@@ -1152,19 +1164,28 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
       : [{ full_name: "", email: "", faculty_number: "", program_id: "" }]);
     setFacultyAccountView("active");
 
-    const summaries = [];
+    const successSummaries = [];
+    const failureSummaries = [];
     if (sentEmails.length) {
-      summaries.push(`Created ${sentEmails.length} ${sentEmails.length === 1 ? "faculty account" : "faculty accounts"} and sent the temporary password email to: ${sentEmails.join(", ")}.`);
+      successSummaries.push(`Created ${sentEmails.length} ${sentEmails.length === 1 ? "faculty account" : "faculty accounts"} and sent the temporary password email to: ${sentEmails.join(", ")}.`);
+    }
+    if (demoAccounts.length) {
+      successSummaries.push(
+        `Demo mode: email was not sent. Share these one-time setup details securely:\n\n${demoAccounts.map((account) => `${account.email}\nTemporary password: ${account.temporaryPassword}\nSetup link: ${account.setupUrl}`).join("\n\n")}\n\nThe setup link expires in 24 hours. Turn off demo mode before using real accounts.`,
+      );
+    }
+    if (missingDemoCredentials.length) {
+      failureSummaries.push(`Account was created, but demo setup details were not returned for: ${missingDemoCredentials.join(", ")}. Contact your system administrator to resend the invitation.`);
     }
     if (emailFailures.length) {
-      summaries.push(`Account created, but email could not be sent to: ${emailFailures.join(", ")}. Contact your system administrator to resend the invitation.`);
+      failureSummaries.push(`Account created, but email could not be sent to: ${emailFailures.join(", ")}. Contact your system administrator to resend the invitation.`);
     }
     if (creationFailures.length) {
-      summaries.push(`Could not create ${creationFailures.length === 1 ? "one account" : `${creationFailures.length} accounts`}. Correct the highlighted rows and try again.`);
+      failureSummaries.push(`Could not create ${creationFailures.length === 1 ? "one account" : `${creationFailures.length} accounts`}. Correct the highlighted rows and try again.`);
     }
 
-    setNotice(sentEmails.length ? summaries[0] : "");
-    const outcomeError = summaries.filter((_, index) => !(sentEmails.length && index === 0)).join(" ");
+    setNotice(successSummaries.join("\n\n"));
+    const outcomeError = failureSummaries.join(" ");
     if (!creationFailures.length) setShowFacultyForm(false);
     let refreshError = "";
     try {
@@ -1230,7 +1251,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
           {error}
         </div>
       )}
-      {notice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{notice}</div>}
+      {notice &&       <div role="status" className="whitespace-pre-line rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{notice}</div>}
 
       <section className="bq-academic-surface mx-auto w-full max-w-7xl rounded-2xl border p-4 shadow-sm sm:p-5" style={{ background: "var(--admin-panel, #14161c)", borderColor: "var(--admin-border, #262a34)", color: "var(--admin-text, #ecedef)" }}>
         <div className="mb-4 flex flex-col justify-between gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-center">

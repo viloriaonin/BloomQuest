@@ -720,3 +720,42 @@ test("subject list displays each subject code beneath its name", async () => {
   expect(await screen.findByText("Introduction to Computing")).toBeInTheDocument();
   expect(screen.getByText("IT 101")).toBeInTheDocument();
 });
+
+test("Department Admin sees demo setup credentials without an email-failure message", async () => {
+  localStorage.setItem("role", "department_admin");
+  localStorage.setItem("department_id", "2");
+  const defaultFetch = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation((url, options) => {
+    if (String(url).endsWith("/department-admin/faculty-accounts") && options?.method === "POST") {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          id: 24,
+          email: "new-faculty@example.com",
+          email_status: "demo",
+          demo_temporary_password: "DemoPass123!",
+          demo_setup_url: "https://example.com/setup/demo-token",
+        }),
+      });
+    }
+    return defaultFetch(url, options);
+  });
+
+  renderAt("/admin/academic/campus/1/department/2", "faculty");
+  fireEvent.click(await screen.findByRole("button", { name: "Add faculty member" }));
+  fireEvent.change(await screen.getByLabelText("Full name"), { target: { value: "New Faculty" } });
+  fireEvent.change(screen.getByLabelText("Email"), { target: { value: "new-faculty@example.com" } });
+  fireEvent.change(screen.getByLabelText("Number for faculty member 1"), { target: { value: "000345" } });
+  fireEvent.change(screen.getByLabelText("Program for faculty member 1"), { target: { value: "3" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add 1 & send email", exact: true }));
+
+  await waitFor(() => {
+    const notice = screen.getByRole("status");
+    expect(notice).toHaveTextContent("Demo mode: email was not sent.");
+    expect(notice).toHaveTextContent("Temporary password: DemoPass123!");
+    expect(notice).toHaveTextContent("Setup link: https://example.com/setup/demo-token");
+  });
+  const notice = screen.getByRole("status");
+  expect(notice).toHaveTextContent("Demo mode: email was not sent.");
+  expect(screen.queryByText(/email could not be sent/i)).not.toBeInTheDocument();
+});

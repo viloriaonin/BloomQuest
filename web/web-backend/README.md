@@ -12,7 +12,7 @@ After saving an assessment in New Analysis, faculty can download the Table of Sp
 
 ## Department Dean Accounts
 
-A campus administrator can create a Department Dean account from Academic Management by opening the department's Leadership section. The account is assigned to that department and campus, and its generated initial password is sent to the dean's email using the configured Resend or SMTP delivery settings. This provisions the account only; a dean-specific dashboard and additional permissions are managed separately.
+A campus administrator can create a Department Dean account from Academic Management by opening the department's Leadership section, or from User Management with the **Add dean** action. The User Management flow creates a Department Admin login assigned to that department and campus. With normal email delivery enabled, a setup link is sent to the dean; in demo account mode, the password and setup link are returned only to the creating Campus Admin. This provisions the account only; dean-specific permissions are unchanged.
 
 ## OTP Email Delivery
 
@@ -29,7 +29,7 @@ Department Admins must provide a readable Course Information Sheet (PDF, DOCX, o
 
 ### Capstone demo without email delivery
 
-For a temporary demonstration only, set `DEMO_EMAIL_VERIFICATION=true` in the backend service environment. Contact Admin OTPs will still be generated, stored, expire after 10 minutes, and be validated normally, but they will not be emailed. The generated OTP is written to the backend logs. Anyone with log access can see these temporary codes, so disable this setting after the demo by setting it to `false` or removing it, then redeploy.
+For temporary demonstrations only, set `DEMO_ACCOUNT_CREDENTIALS=true` in the backend service environment. Campus Admin manual faculty and dean account creation, and Department Admin manual faculty creation, skip email delivery and return the one-time temporary password and 24-hour setup link only to the authenticated administrator who created the account. Do not share demo credentials publicly; anyone with access to the admin session or setup details can use them. Public Contact Admin OTP verification always requires real email delivery and never exposes verification codes, even when demo account credentials are enabled. Disable demo mode after the demonstration by setting the variable to `false` or removing it, then redeploy. Normal account creation requires configured email delivery.
 
 ## Windows
 

@@ -29,6 +29,9 @@ const UserToolsPage = ({ section }) => {
   const [status, setStatus] = useState("Checking service...");
   const [notifications, setNotifications] = useState([]);
   const [downloads, setDownloads] = useState([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityError, setActivityError] = useState("");
+  const [activityRetry, setActivityRetry] = useState(0);
   const [downloadTab, setDownloadTab] = useState("tests");
   const [downloadError, setDownloadError] = useState("");
   const [selectedDownloadIds, setSelectedDownloadIds] = useState([]);
@@ -37,27 +40,50 @@ const UserToolsPage = ({ section }) => {
   const activityQuery = userId ? `user_id=${encodeURIComponent(userId)}` : `email=${encodeURIComponent(email || "")}`;
 
   useEffect(() => {
-    if (section === "recycle") {
-      fetch(`${API_URL}/recycle-bin?user_id=${encodeURIComponent(userId || "")}`).then((response) => response.ok ? response.json() : Promise.reject(new Error("Failed to load recycle bin"))).then((data) => setArchivedItems([
-        ...(Array.isArray(data.subjects) ? data.subjects : []).map((item) => ({ ...item, itemType: "subject" })),
-        ...(Array.isArray(data.questions) ? data.questions : []).map((item) => ({ ...item, itemType: "question" })),
-        ...(Array.isArray(data.downloads) ? data.downloads : []).map((item) => ({ ...item, itemType: "download" })),
-      ])).catch(() => setArchivedItems([]));
-      return;
-    }
-    if (section === "notifications") {
-      fetch(`${API_URL}/history?${activityQuery}`)
-        .then((response) => response.ok ? response.json() : Promise.reject(new Error("Failed to load notifications")))
-        .then((data) => setNotifications(Array.isArray(data) ? data : []))
-        .catch(() => setNotifications([]));
-      return;
-    }
-    if (section === "favorites") {
-      fetch(`${API_URL}/history?${activityQuery}`)
-        .then((response) => response.ok ? response.json() : Promise.reject(new Error("Failed to load downloads")))
-        .then((data) => setDownloads(Array.isArray(data) ? data.filter((item) => String(item.type).toLowerCase() === "download") : []))
-        .catch(() => setDownloads([]));
-      return;
+    const trackedSection = ["recycle", "notifications", "favorites"].includes(section);
+    if (trackedSection) {
+      let cancelled = false;
+      const endpoint = section === "recycle"
+        ? `${API_URL}/recycle-bin?user_id=${encodeURIComponent(userId || "")}`
+        : `${API_URL}/history?${activityQuery}`;
+      const sectionName = section === "recycle" ? "recycle bin" : section === "favorites" ? "downloads" : "notifications";
+
+      setActivityLoading(true);
+      setActivityError("");
+      const loadActivity = async () => {
+        try {
+          const response = await fetch(endpoint);
+          if (!response.ok) throw new Error(`Failed to load ${sectionName}.`);
+          const data = await response.json();
+          if (cancelled) return;
+
+          if (section === "recycle") {
+            if (!data || typeof data !== "object" || Array.isArray(data)
+              || !["subjects", "questions", "downloads"].every((key) => Array.isArray(data[key]))) {
+              throw new Error("Recycle Bin returned an unexpected response.");
+            }
+            setArchivedItems([
+              ...data.subjects.map((item) => ({ ...item, itemType: "subject" })),
+              ...data.questions.map((item) => ({ ...item, itemType: "question" })),
+              ...data.downloads.map((item) => ({ ...item, itemType: "download" })),
+            ]);
+          } else if (section === "notifications") {
+            if (!Array.isArray(data)) throw new Error("Notifications returned an unexpected response.");
+            setNotifications(data);
+          } else {
+            if (!Array.isArray(data)) throw new Error("Downloads returned an unexpected response.");
+            setDownloads(data.filter((item) => String(item.type).toLowerCase() === "download"));
+          }
+        } catch (error) {
+          if (!cancelled) setActivityError(error.message || `Failed to load ${sectionName}.`);
+        } finally {
+          if (!cancelled) setActivityLoading(false);
+        }
+      };
+      loadActivity();
+      return () => {
+        cancelled = true;
+      };
     }
     if (section !== "subjects" && section !== "review") return;
     Promise.all([
@@ -70,7 +96,7 @@ const UserToolsPage = ({ section }) => {
       setSubjects([]);
       setQuestions([]);
     });
-  }, [activityQuery, section, userId]);
+  }, [activityQuery, activityRetry, section, userId]);
 
   const restoreSubject = async (subject) => {
     const response = await fetch(`${API_URL}/recycle-bin/subjects/${subject.id}/restore?user_id=${encodeURIComponent(userId || "")}`, { method: "POST" });
@@ -175,7 +201,27 @@ const UserToolsPage = ({ section }) => {
     }, {});
   }, [archivedItems]);
 
+  const activityRequestState = (label) => activityLoading
+    ? <div className="bq-panel p-6 text-sm" role="status">Loading {label}...</div>
+    : activityError
+      ? (
+        <div className="bq-panel space-y-3 p-6 text-sm" role="alert">
+          <p>{activityError}</p>
+          <button
+            type="button"
+            className="rounded-lg border px-3 py-2 text-sm font-semibold transition-colors"
+            style={{ background: "var(--user-raised)", color: "var(--user-text)", borderColor: "var(--user-border)" }}
+            onClick={() => setActivityRetry((retry) => retry + 1)}
+          >
+            Try again
+          </button>
+        </div>
+      )
+      : null;
+
   if (section === "favorites") {
+    const requestState = activityRequestState("downloads");
+    if (requestState) return requestState;
     return <DownloadsView downloads={downloads} downloadTab={downloadTab} setDownloadTab={setDownloadTab} groupedDownloads={groupedDownloads} selectedDownloadIds={selectedDownloadIds} setSelectedDownloadIds={setSelectedDownloadIds} deleteSelectedDownloads={deleteSelectedDownloads} retrieveDownload={retrieveDownload} downloadError={downloadError} navigate={navigate} />;
   }
 
@@ -227,9 +273,11 @@ const UserToolsPage = ({ section }) => {
           </>
         ) : section === "subjects" ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">{subjects.filter((subject) => `${subject.name} ${subject.code || ""}`.toLowerCase().includes(query.toLowerCase())).map((subject) => <div key={subject.id} className="bq-panel p-5"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#B4454A]/10 text-[#B4454A]"><BookOpen size={18} /></div><h2 className="mt-4 font-semibold text-slate-900">{subject.name}</h2><p className="mt-1 text-sm text-slate-500">{subject.code || "No course code"}</p><button type="button" onClick={() => navigate("/question-bank")} className="mt-4 text-sm font-semibold text-[#B4454A]">Open question bank <ArrowRight className="ml-1 inline" size={14} /></button></div>)}</div>
-        ) : section === "notifications" ? <NotificationView notifications={notifications} />
+        ) : section === "notifications" ? (
+          activityRequestState("notifications") || <NotificationView notifications={notifications} />
+        )
           : section === "status" ? <StatusView status={status} />
-          : section === "recycle" ? (
+          : section === "recycle" ? (activityRequestState("recycle bin") || (
             archivedItems.length ? (
               <div className="space-y-6">
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
@@ -252,7 +300,7 @@ const UserToolsPage = ({ section }) => {
                 {Object.entries(archivedGroups).map(([subjectName, group]) => <section key={subjectName}><div className="mb-3 flex items-center gap-2"><BookOpen size={17} className="text-[#B4454A]" /><h2 className="text-sm font-bold uppercase tracking-[0.14em] text-slate-700">{subjectName}</h2></div><div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">{group.subject && <RecycleCard item={group.subject} onRestore={restoreSubject} checked={selectedArchivedIds.includes(archivedKey(group.subject))} onCheckedChange={(checked) => setSelectedArchivedIds((current) => checked ? [...current, archivedKey(group.subject)] : current.filter((id) => id !== archivedKey(group.subject)))} />}{group.questions.map((item) => <RecycleCard key={item.id} item={item} onRestore={restoreQuestion} checked={selectedArchivedIds.includes(archivedKey(item))} onCheckedChange={(checked) => setSelectedArchivedIds((current) => checked ? [...current, archivedKey(item)] : current.filter((id) => id !== archivedKey(item)))} />)}</div></section>)}
               </div>
             ) : <EmptyState title="Recycle Bin is empty" detail="Deleted items will appear here for recovery." action="Open Question Bank" onClick={() => navigate("/question-bank")} />
-          )
+          ))
           : <div className="grid gap-4 md:grid-cols-3">{(cards[section] || cards.assessments).map(([title, detail, path, action]) => <div key={title} className="bq-panel p-5"><h2 className="font-semibold text-slate-900">{title}</h2><p className="mt-2 min-h-12 text-sm leading-6 text-slate-500">{detail}</p><button type="button" onClick={() => navigate(path)} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[#B4454A]">{action} <ArrowRight size={14} /></button></div>)}</div>}
       </div>
     </div>

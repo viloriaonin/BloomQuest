@@ -980,6 +980,7 @@ void LegacyQuestionBankContent;
 
 const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
   const navigate = useNavigate();
+  const { subjectId: routeSubjectId } = useParams();
   const currentRole = (localStorage.getItem("role") || "").toLowerCase();
   const isSuperAdmin = currentRole === "super_admin";
   const isDepartmentAdmin = currentRole === "department_admin";
@@ -1008,7 +1009,31 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
         setHierarchy(hierarchyData);
         setAllSubjects(allSubjectsData);
         setSubjects(allSubjectsData);
-        if (isDepartmentAdmin) {
+        const requestedSubject = routeSubjectId
+          ? allSubjectsData.find((subject) => Number(subject.id) === Number(routeSubjectId))
+          : null;
+        const requestedProgramId = Number(requestedSubject?.program_id);
+        const requestedProgram = requestedSubject
+          ? hierarchyData.campuses
+            .flatMap((campus) => campus.departments.flatMap((department) => department.programs.map((program) => ({ campus, department, program }))))
+            .find(({ program }) => Number(program.id) === requestedProgramId)
+          : null;
+        const requestedProgramIsAssigned = !isDepartmentAdmin
+          || Number(requestedProgram?.department.id) === Number(localStorage.getItem("department_id"));
+        if (routeSubjectId && (!requestedSubject || !requestedProgram || !requestedProgramIsAssigned)) {
+          setError("The requested subject could not be found in your available academic structure.");
+        } else if (routeSubjectId) {
+          setError("");
+        }
+
+        if (requestedSubject && requestedProgram && requestedProgramIsAssigned) {
+          setSelection({
+            campusId: requestedProgram.campus.id,
+            departmentId: requestedProgram.department.id,
+            programId: requestedProgram.program.id,
+            subjectId: requestedSubject.id,
+          });
+        } else if (isDepartmentAdmin) {
           const assignedDepartmentId = Number(localStorage.getItem("department_id"));
           const assignedDepartment = hierarchyData.campuses
             .flatMap((campus) => campus.departments.map((department) => ({ campus, department })))
@@ -1036,7 +1061,7 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
       }
     };
     loadAcademicData();
-  }, [isDepartmentAdmin, isSuperAdmin]);
+  }, [isDepartmentAdmin, isSuperAdmin, routeSubjectId]);
 
   useEffect(() => {
     const loadProgramSubjects = async () => {

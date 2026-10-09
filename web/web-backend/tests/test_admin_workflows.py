@@ -234,19 +234,20 @@ def test_contact_admin_otp_sends_email_before_reporting_success(monkeypatch):
     assert main.contact_admin_otp_store["avery@example.com"]["otp"] == sent_emails[0][1]
 
 
-def test_contact_admin_otp_demo_mode_logs_code_without_sending_email(monkeypatch, caplog):
+def test_contact_admin_otp_never_discloses_code_even_when_account_demo_mode_is_enabled(monkeypatch, caplog):
     db = FakeSession()
+    sent_codes = []
     monkeypatch.setattr(main, "DEMO_EMAIL_VERIFICATION", True)
     monkeypatch.setattr(main, "validate_account_request_scope", lambda *args: None)
     monkeypatch.setattr(
         main,
         "require_email_delivery_configured",
-        lambda: pytest.fail("Demo mode should not require email configuration"),
+        lambda: None,
     )
     monkeypatch.setattr(
         main,
         "send_contact_admin_otp_email",
-        lambda *args: pytest.fail("Demo mode must not send email"),
+        lambda email, code: sent_codes.append((email, code)) or True,
     )
 
     result = main.request_contact_admin_otp(
@@ -264,19 +265,26 @@ def test_contact_admin_otp_demo_mode_logs_code_without_sending_email(monkeypatch
     code = main.contact_admin_otp_store["demo@example.com"]["otp"]
     expires_at = main.contact_admin_otp_store["demo@example.com"]["expires_at"]
     assert result["status"] == "otp-sent"
-    assert result["demo_otp"] == code
-    assert "backend logs" in result["message"]
+    assert "demo_otp" not in result
     assert code not in result["message"]
     assert code.isdigit() and len(code) == 6
     assert expires_at > main.utc_now()
-    assert f"[DEMO] Contact-admin verification code for demo@example.com: {code}" in caplog.text
+    assert sent_codes == [("demo@example.com", code)]
+    assert code not in caplog.text
 
 
 def test_declined_account_request_can_request_new_otp(monkeypatch):
     declined_request = SimpleNamespace(status="declined", email="retry@example.com")
     db = FakeSession(account_request=declined_request)
+    sent_codes = []
     monkeypatch.setattr(main, "DEMO_EMAIL_VERIFICATION", True)
     monkeypatch.setattr(main, "validate_account_request_scope", lambda *args: None)
+    monkeypatch.setattr(main, "require_email_delivery_configured", lambda: None)
+    monkeypatch.setattr(
+        main,
+        "send_contact_admin_otp_email",
+        lambda email, code: sent_codes.append((email, code)) or True,
+    )
 
     result = main.request_contact_admin_otp(
         main.ContactAdminOtpRequest(
@@ -291,7 +299,7 @@ def test_declined_account_request_can_request_new_otp(monkeypatch):
     )
 
     assert result["status"] == "otp-sent"
-    assert main.contact_admin_otp_store["retry@example.com"]["otp"] == result["demo_otp"]
+    assert main.contact_admin_otp_store["retry@example.com"]["otp"] == sent_codes[0][1]
 
 
 @pytest.mark.parametrize("request_status", ["pending", "approved"])

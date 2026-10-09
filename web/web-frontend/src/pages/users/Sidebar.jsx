@@ -38,6 +38,7 @@ const Sidebar = ({ collapsed, mobileOpen, onToggleCollapsed, onNavigate }) => {
         { label: "New Analysis", path: "/input", icon: icons.input },
         { label: "Question Bank", path: "/question-bank", icon: icons.bank },
         { label: "Downloads", path: "/favorites", icon: icons.favorites },
+        { label: "Recycle Bin", path: "/recycle-bin", icon: icons.recycle },
         { label: "History", path: "/history", icon: icons.history },
         { label: "Settings", path: "/settings", icon: icons.settings },
       ];

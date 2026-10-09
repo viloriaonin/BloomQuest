@@ -18,7 +18,9 @@ beforeEach(() => {
         json: async () => ({
           email: "dean@example.edu",
           department: "Computing",
-          email_status: "sent",
+          email_status: "demo",
+          demo_temporary_password: "DemoDeanPassword1!",
+          demo_setup_url: "https://demo.example.edu/set-password?token=demo-token",
         }),
       };
     }
@@ -151,7 +153,10 @@ test("Campus Admin can create a Department Admin dean account for a department",
   fireEvent.change(screen.getByLabelText("Department"), { target: { value: "7" } });
   fireEvent.click(screen.getByRole("button", { name: "Create dean account" }));
 
-  expect(await screen.findByRole("heading", { name: "Dean account created" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Demo dean account created" })).toBeInTheDocument();
+  expect(screen.getByText(/Demo mode did not send an email/)).toBeInTheDocument();
+  expect(screen.getByText(/Temporary password: DemoDeanPassword1!/)).toBeInTheDocument();
+  expect(screen.getByText(/https:\/\/demo\.example\.edu\/set-password\?token=demo-token/)).toBeInTheDocument();
   const request = global.fetch.mock.calls.find(
     ([url, options]) => String(url).endsWith("/campus-admin/department-admins") && options?.method === "POST",
   );
@@ -160,4 +165,42 @@ test("Campus Admin can create a Department Admin dean account for a department",
     email: "dean@example.edu",
     department_id: 7,
   });
+});
+
+test("Campus Admin receives faculty setup credentials in demo mode", async () => {
+  const defaultFetch = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options) => {
+    if (String(url).endsWith("/campus-admin/faculty-accounts")) {
+      return {
+        ok: true,
+        json: async () => ({
+          email: "demo.faculty@example.edu",
+          email_status: "demo",
+          demo_temporary_password: "DemoFacultyPassword1!",
+          demo_setup_url: "https://demo.example.edu/set-password?token=faculty-demo-token",
+        }),
+      };
+    }
+    return defaultFetch(url, options);
+  });
+
+  render(
+    <MemoryRouter>
+      <PopupProvider>
+        <UserMgmtContent />
+      </PopupProvider>
+    </MemoryRouter>,
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: "Add faculty member" }));
+  fireEvent.change(screen.getByLabelText("Number for faculty member 1"), { target: { value: "000721" } });
+  fireEvent.change(screen.getByLabelText("Full name for faculty member 1"), { target: { value: "Demo Faculty" } });
+  fireEvent.change(screen.getByLabelText("Email for faculty member 1"), { target: { value: "demo.faculty@example.edu" } });
+  fireEvent.change(screen.getByLabelText("Department for faculty member 1"), { target: { value: "7" } });
+  fireEvent.change(screen.getByLabelText("Program for faculty member 1"), { target: { value: "12" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create faculty accounts" }));
+
+  expect(await screen.findByRole("heading", { name: "Demo faculty accounts created" })).toBeInTheDocument();
+  expect(screen.getByText(/Temporary password: DemoFacultyPassword1!/)).toBeInTheDocument();
+  expect(screen.getByText(/https:\/\/demo\.example\.edu\/set-password\?token=faculty-demo-token/)).toBeInTheDocument();
 });

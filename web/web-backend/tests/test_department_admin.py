@@ -1113,6 +1113,166 @@ def test_campus_admin_creates_department_admin_dean_within_assigned_campus(db_se
         app.dependency_overrides.update(previous)
 
 
+def test_campus_admin_can_create_dean_in_demo_mode_without_email_delivery(db_session, monkeypatch):
+    campus = models.Campus(name="Demo Dean Campus", code="DEMO-DEAN")
+    db_session.add(campus)
+    db_session.flush()
+    department = models.Department(name="Demo Dean Department", campus_id=campus.id)
+    admin = models.User(
+        email="demo-dean-admin@example.edu",
+        password=hash_password("CampusAdminPassword1!"),
+        role="campus_admin",
+        campus_id=campus.id,
+        archived=False,
+    )
+    db_session.add_all([department, admin])
+    db_session.commit()
+
+    monkeypatch.setattr(main, "DEMO_EMAIL_VERIFICATION", True)
+    monkeypatch.setattr(
+        main,
+        "require_email_delivery_configured",
+        lambda: pytest.fail("Email configuration must not be required in demo mode."),
+    )
+    monkeypatch.setattr(main, "generate_temporary_password", lambda: "DemoDeanPassword1!")
+    monkeypatch.setattr(
+        main,
+        "send_approval_email",
+        lambda *args: pytest.fail("Demo mode must not attempt to send email."),
+    )
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+    previous = with_test_dependencies(db_session, admin)
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/campus-admin/department-admins",
+                json={
+                    "full_name": "Demo Dean",
+                    "email": "demo.dean@example.edu",
+                    "department_id": department.id,
+                },
+            )
+
+            assert response.status_code == 201, response.text
+            result = response.json()
+            assert result["email_status"] == "demo"
+            assert result["demo_temporary_password"] == "DemoDeanPassword1!"
+            setup_url = result["demo_setup_url"]
+            setup_token = parse_qs(urlparse(setup_url).query)["token"][0]
+            assert setup_url.endswith(f"/set-password?token={setup_token}")
+
+            setup = client.post(
+                "/api/set-initial-password",
+                json={
+                    "token": setup_token,
+                    "temporary_password": result["demo_temporary_password"],
+                    "new_password": "DemoDeanPermanent1!",
+                },
+            )
+
+        assert setup.status_code == 200, setup.text
+        dean = db_session.query(models.User).filter_by(
+            email="demo.dean@example.edu"
+        ).one()
+        assert verify_password("DemoDeanPermanent1!", dean.password)
+        assert dean.password_setup_token_hash is None
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous)
+
+
+def test_campus_admin_can_resend_setup_for_dean_only_within_campus(db_session, monkeypatch):
+    campus = models.Campus(name="Dean Resend Campus", code="DEAN-RESEND")
+    other_campus = models.Campus(name="Other Dean Resend Campus", code="OTHER-DEAN-RESEND")
+    db_session.add_all([campus, other_campus])
+    db_session.flush()
+    department = models.Department(name="Dean Resend Department", campus_id=campus.id)
+    failed_department = models.Department(name="Failed Dean Department", campus_id=campus.id)
+    other_department = models.Department(name="Foreign Dean Department", campus_id=other_campus.id)
+    db_session.add_all([department, failed_department, other_department])
+    db_session.flush()
+    admin = models.User(
+        email="dean-resend-admin@example.edu",
+        password=hash_password("CampusAdminPassword1!"),
+        role="campus_admin",
+        campus_id=campus.id,
+        archived=False,
+    )
+    dean = models.User(
+        email="dean-resend@example.edu",
+        password=hash_password("OldDeanPassword1!"),
+        role="department_admin",
+        campus_id=campus.id,
+        admin_department_id=department.id,
+        department=department.name,
+        name="Dean Resend",
+        archived=False,
+    )
+    foreign_dean = models.User(
+        email="foreign-dean@example.edu",
+        password=hash_password("OldDeanPassword1!"),
+        role="department_admin",
+        campus_id=other_campus.id,
+        admin_department_id=other_department.id,
+        department=other_department.name,
+        name="Foreign Dean",
+        archived=False,
+    )
+    failed_dean = models.User(
+        email="failed-dean@example.edu",
+        password=hash_password("OldDeanPassword1!"),
+        role="department_admin",
+        campus_id=campus.id,
+        admin_department_id=failed_department.id,
+        department=failed_department.name,
+        name="Failed Dean",
+        archived=False,
+    )
+    db_session.add_all([admin, dean, foreign_dean, failed_dean])
+    db_session.flush()
+    department.dean_id = dean.id
+    failed_department.dean_id = failed_dean.id
+    other_department.dean_id = foreign_dean.id
+    db_session.commit()
+
+    sent_credentials = []
+    monkeypatch.setattr(main, "require_email_delivery_configured", lambda: None)
+    monkeypatch.setattr(main, "send_department_faculty_access_email", lambda *args: sent_credentials.append(args) or True)
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+    previous = with_test_dependencies(db_session, admin)
+    try:
+        with TestClient(app) as client:
+            sent = client.post(
+                f"/api/campus-admin/users/{dean.id}/credential-email",
+                json={"action": "reset_password"},
+            )
+            denied = client.post(
+                f"/api/campus-admin/users/{foreign_dean.id}/credential-email",
+                json={"action": "reset_password"},
+            )
+
+            previous_password = failed_dean.password
+            previous_token = failed_dean.password_setup_token_hash
+            monkeypatch.setattr(main, "send_department_faculty_access_email", lambda *args: False)
+            failed = client.post(
+                f"/api/campus-admin/users/{failed_dean.id}/credential-email",
+                json={"action": "reset_password"},
+            )
+
+        assert sent.status_code == 200, sent.text
+        assert sent.json()["email_status"] == "sent"
+        assert sent_credentials[-1][0] == dean.email
+        assert sent_credentials[-1][3] == department.name
+        assert denied.status_code == 404
+        assert failed.status_code == 503
+        db_session.refresh(failed_dean)
+        assert failed_dean.password == previous_password
+        assert failed_dean.password_setup_token_hash == previous_token
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous)
+
+
 def test_campus_admin_can_reset_password_only_for_faculty_in_assigned_campus(db_session, monkeypatch):
     campus = models.Campus(name="Reset Campus", code="RESET-CAMPUS")
     other_campus = models.Campus(name="Other Reset Campus", code="OTHER-RESET")

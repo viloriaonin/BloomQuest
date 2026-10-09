@@ -1180,7 +1180,10 @@ SENDER_EMAIL = os.getenv("SENDER_EMAIL", "")
 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "")
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
 EMAIL_FROM = os.getenv("EMAIL_FROM", "").strip()
-DEMO_EMAIL_VERIFICATION = os.getenv("DEMO_EMAIL_VERIFICATION", "").strip().lower() == "true"
+DEMO_EMAIL_VERIFICATION = os.getenv(
+    "DEMO_ACCOUNT_CREDENTIALS",
+    os.getenv("DEMO_EMAIL_VERIFICATION", ""),
+).strip().lower() == "true"
 
 
 def require_email_delivery_configured() -> None:
@@ -2665,12 +2668,13 @@ def send_faculty_credentials(
         {models.UserSession.revoked_at: utc_now()},
         synchronize_session=False,
     )
-    action_label = "password reset email" if action == "reset_password" else "faculty access email"
+    account_label = "dean" if str(user.role).lower() == "department_admin" else "faculty"
+    action_label = "password reset email" if action == "reset_password" else f"{account_label} access email"
     db.commit()
     db.refresh(user)
     log_activity(
         db,
-        "Faculty Password Reset Email Sent" if action == "reset_password" else "Faculty Access Email Resent",
+        f"{account_label.title()} Password Reset Email Sent" if action == "reset_password" else f"{account_label.title()} Access Email Resent",
         f"{str(admin.role).replace('_', ' ').title()} {admin.id} sent a {action_label} to {user.email}.",
         "security",
         actor_id=admin.id,
@@ -2704,16 +2708,22 @@ def reissue_campus_admin_faculty_credentials(
     if str(admin.role).lower() != "campus_admin":
         raise HTTPException(status_code=403, detail="Campus Admin access is required.")
     user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user or str(user.role).lower() != "faculty":
-        raise HTTPException(status_code=404, detail="Faculty account not found.")
+    if not user:
+        raise HTTPException(status_code=404, detail="Account not found.")
+    department_name = user.department or "your department"
+    if str(user.role).lower() == "department_admin":
+        dean_department = db.query(models.Department).filter(
+            models.Department.id == user.admin_department_id,
+            models.Department.campus_id == admin.campus_id,
+            models.Department.dean_id == user.id,
+        ).first()
+        if not dean_department:
+            raise HTTPException(status_code=404, detail="Dean account not found.")
+        department_name = dean_department.name
+    elif str(user.role).lower() != "faculty":
+        raise HTTPException(status_code=404, detail="Account not found.")
     assert_admin_can_access_user(db, admin, user)
-    return send_faculty_credentials(
-        db,
-        admin,
-        user,
-        (user.department or "").strip() or "your department",
-        payload.action,
-    )
+    return send_faculty_credentials(db, admin, user, department_name, payload.action)
 
 
 @app.get("/api/department-admin/users")
@@ -2957,7 +2967,8 @@ def create_faculty_account_for_program(
     department: models.Department,
     program: models.Program,
 ):
-    require_email_delivery_configured()
+    if not DEMO_EMAIL_VERIFICATION:
+        require_email_delivery_configured()
 
     normalized_email = normalize_email(payload.email)
     if db.query(models.User.id).filter(func.lower(models.User.email) == normalized_email).first():
@@ -2994,12 +3005,16 @@ def create_faculty_account_for_program(
         actor_id=admin.id,
         target_user_id=user.id,
     )
-    email_sent = send_approval_email(
+    password_setup_url = (
+        f"{os.getenv('FRONTEND_URL', 'http://localhost:3000').rstrip('/')}"
+        f"/set-password?token={setup_token}"
+    )
+    email_sent = False if DEMO_EMAIL_VERIFICATION else send_approval_email(
         normalized_email,
         temporary_password,
         user.name,
         department.name,
-        f"{os.getenv('FRONTEND_URL', 'http://localhost:3000').rstrip('/')}/set-password?token={setup_token}",
+        password_setup_url,
     )
     result = {
         "id": user.id,
@@ -3010,10 +3025,11 @@ def create_faculty_account_for_program(
         "role": user.role,
         "program_id": program.id,
         "department": department.name,
-        "email_status": "sent" if email_sent else "failed",
+        "email_status": "demo" if DEMO_EMAIL_VERIFICATION else "sent" if email_sent else "failed",
     }
     if DEMO_EMAIL_VERIFICATION:
         result["demo_temporary_password"] = temporary_password
+        result["demo_setup_url"] = password_setup_url
     return result
 
 
@@ -3081,7 +3097,8 @@ def create_campus_department_admin_for_dean(
         func.lower(models.User.email) == normalized_email
     ).first():
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
-    require_email_delivery_configured()
+    if not DEMO_EMAIL_VERIFICATION:
+        require_email_delivery_configured()
 
     temporary_password = generate_temporary_password()
     while validate_password_strength(temporary_password):
@@ -3114,14 +3131,18 @@ def create_campus_department_admin_for_dean(
         actor_id=admin.id,
         target_user_id=user.id,
     )
-    email_sent = send_approval_email(
+    password_setup_url = (
+        f"{os.getenv('FRONTEND_URL', 'http://localhost:3000').rstrip('/')}"
+        f"/set-password?token={setup_token}"
+    )
+    email_sent = False if DEMO_EMAIL_VERIFICATION else send_approval_email(
         normalized_email,
         temporary_password,
         user.name,
         department.name,
-        f"{os.getenv('FRONTEND_URL', 'http://localhost:3000').rstrip('/')}/set-password?token={setup_token}",
+        password_setup_url,
     )
-    return {
+    result = {
         "id": user.id,
         "name": user.name,
         "email": user.email,
@@ -3130,8 +3151,12 @@ def create_campus_department_admin_for_dean(
         "department": department.name,
         "campus_id": campus.id,
         "campus": campus.name,
-        "email_status": "sent" if email_sent else "failed",
+        "email_status": "demo" if DEMO_EMAIL_VERIFICATION else "sent" if email_sent else "failed",
     }
+    if DEMO_EMAIL_VERIFICATION:
+        result["demo_temporary_password"] = temporary_password
+        result["demo_setup_url"] = password_setup_url
+    return result
 
 
 @app.post("/api/set-initial-password")
@@ -3679,8 +3704,7 @@ def request_contact_admin_otp(payload: ContactAdminOtpRequest, background_tasks:
             detail="An account request already exists for this email address.",
         )
 
-    if not DEMO_EMAIL_VERIFICATION:
-        require_email_delivery_configured()
+    require_email_delivery_configured()
     code = f"{random.randint(0, 999999):06d}"
     contact_admin_pending_requests[normalized_email] = {
         "full_name": payload.full_name,
@@ -3693,10 +3717,7 @@ def request_contact_admin_otp(payload: ContactAdminOtpRequest, background_tasks:
         "otp": code,
         "expires_at": utc_now() + timedelta(minutes=10),
     }
-    logger.info("[OTP] Generated contact-admin verification code for %s", normalized_email)
-    if DEMO_EMAIL_VERIFICATION:
-        logger.warning("[DEMO] Contact-admin verification code for %s: %s", normalized_email, code)
-    elif not send_contact_admin_otp_email(normalized_email, code):
+    if not send_contact_admin_otp_email(normalized_email, code):
         contact_admin_otp_store.pop(normalized_email, None)
         contact_admin_pending_requests.pop(normalized_email, None)
         raise HTTPException(
@@ -3705,15 +3726,9 @@ def request_contact_admin_otp(payload: ContactAdminOtpRequest, background_tasks:
         )
 
     response = {
-        "message": (
-            "Demo verification code generated. Retrieve it from the backend logs."
-            if DEMO_EMAIL_VERIFICATION
-            else "OTP sent successfully. Please verify the code to continue."
-        ),
+        "message": "OTP sent successfully. Please verify the code to continue.",
         "status": "otp-sent",
     }
-    if DEMO_EMAIL_VERIFICATION:
-        response["demo_otp"] = code
     return response
 
 

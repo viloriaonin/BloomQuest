@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QuestionBankContent } from "./QuestionBank";
 
 const hierarchy = {
@@ -16,9 +16,12 @@ const hierarchy = {
   }],
 };
 
-const renderQuestionBank = () => render(
-  <MemoryRouter>
-    <QuestionBankContent />
+const renderQuestionBank = (path = "/admin/questions") => render(
+  <MemoryRouter initialEntries={[path]}>
+    <Routes>
+      <Route path="/admin/questions" element={<QuestionBankContent />} />
+      <Route path="/admin/questions/:subjectId" element={<QuestionBankContent />} />
+    </Routes>
   </MemoryRouter>,
 );
 
@@ -32,6 +35,7 @@ beforeEach(() => {
     }
     return { ok: true, json: async () => [] };
   });
+
 });
 
 afterEach(() => {
@@ -47,6 +51,46 @@ test("campus admin opens directly to their campus departments", async () => {
   expect(screen.getByRole("button", { name: /Engineering/ })).toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Choose a campus" })).not.toBeInTheDocument();
   expect(screen.queryByText("North Campus")).not.toBeInTheDocument();
+});
+
+test("opens the requested subject from an admin question-bank deep link", async () => {
+  localStorage.setItem("role", "campus_admin");
+  const linkedHierarchy = {
+    campuses: [{
+      id: 4,
+      name: "North Campus",
+      code: "NC",
+      departments: [{
+        id: 9,
+        name: "Engineering",
+        code: "ENG",
+        programs: [{ id: 30, name: "Computer Science", code: "CS", faculty: [] }],
+      }],
+    }],
+  };
+  global.fetch.mockImplementation(async (url) => {
+    if (String(url).endsWith("/academic-hierarchy")) {
+      return { ok: true, json: async () => linkedHierarchy };
+    }
+    if (String(url).includes("/subjects")) {
+      return {
+        ok: true,
+        json: async () => [{
+          id: 11,
+          name: "Algorithms",
+          code: "CS201",
+          program_id: 30,
+          department_id: 9,
+          question_count: 1,
+        }],
+      };
+    }
+    return { ok: true, json: async () => [] };
+  });
+
+  renderQuestionBank("/admin/questions/11");
+
+  expect(await screen.findByRole("heading", { name: "Algorithms" })).toBeInTheDocument();
 });
 
 test("central super admin retains campus selection", async () => {

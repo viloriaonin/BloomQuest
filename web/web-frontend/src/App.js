@@ -268,6 +268,7 @@ function App() {
         {[
           ["/assessments", "assessments"],
           ["/favorites", "favorites"],
+          ["/recycle-bin", "recycle"],
           ["/subjects", "subjects"],
           ["/notifications", "notifications"],
           ["/imports", "imports"],
@@ -286,7 +287,6 @@ function App() {
             }
           />
         ))}
-        <Route path="/recycle-bin" element={<Navigate to="/dashboard" replace />} />
 
         {/* ========================================= */}
         {/* ADMIN ROUTES                              */}

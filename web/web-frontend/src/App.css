@@ -1139,6 +1139,7 @@
   --user-border: #262a34;
   --user-text: #ecedef;
   --user-muted: #8b8f99;
+  color-scheme: dark;
   background: var(--user-bg) !important;
   color: var(--user-text);
 }
@@ -1171,6 +1172,40 @@
 .bq-user-dark .bq-user-topbar .text-sm { color: var(--user-text) !important; }
 .bq-user-dark .bq-user-topbar p,
 .bq-user-dark .bq-user-topbar button { color: var(--user-muted) !important; }
+
+.bq-user-light {
+  --user-bg: #f8fafc;
+  --user-sidebar: #ffffff;
+  --user-panel: #ffffff;
+  --user-raised: #f1f5f9;
+  --user-border: #e2e8f0;
+  --user-text: #172033;
+  --user-muted: #64748b;
+  color-scheme: light;
+  background: var(--user-bg) !important;
+  color: var(--user-text);
+}
+.bq-user-light .bq-user-main,
+.bq-user-light .bq-user-content {
+  background: var(--user-bg) !important;
+  color: var(--user-text);
+}
+.bq-user-light .bq-user-sidebar {
+  background: var(--user-sidebar) !important;
+  border-color: var(--user-border) !important;
+}
+.bq-user-light .bq-user-topbar {
+  background: rgba(255, 255, 255, 0.96) !important;
+  border-color: var(--user-border) !important;
+}
+.bq-user-light .bq-user-topbar h1,
+.bq-user-light .bq-user-topbar .text-sm {
+  color: var(--user-text) !important;
+}
+.bq-user-light .bq-user-topbar p,
+.bq-user-light .bq-user-topbar button {
+  color: var(--user-muted) !important;
+}
 .bq-user-dark .bq-user-topbar > div:last-child > div:last-child { background: var(--user-raised) !important; border-color: #c4485a !important; }
 .bq-user-dark .bq-user-content .bg-white,
 .bq-user-dark .bq-user-content .bg-slate-50 { background: var(--user-panel) !important; }
