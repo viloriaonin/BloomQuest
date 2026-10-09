@@ -6,13 +6,13 @@ The backend runs on Windows and Linux. It requires a reachable PostgreSQL databa
 
 Configure the Railway backend service root directory as `web/web-backend`. Railway uses the `railway.json` in that directory to build with Nixpacks, start Uvicorn on Railway's assigned `$PORT`, and health-check the existing `/` route. Set `DATABASE_URL` in the service variables to a reachable PostgreSQL database before deployment.
 
-The frontend is a separate service/build from `web/web-frontend`; set `REACT_APP_API_BASE_URL` to the deployed backend URL when building it.
+The frontend is a separate service/build from `web/web-frontend`; set `REACT_APP_API_BASE_URL` to the deployed backend URL when building it. Set the backend's `FRONTEND_URL` to the deployed frontend origin so password-setup links point to the live application rather than `localhost`.
 
 After saving an assessment in New Analysis, faculty can download the Table of Specifications as Excel or PDF, and the test as DOCX or PDF. The PDF TOS export is served by `GET /api/questions/export/tos/pdf` and uses the saved assessment record.
 
 ## Department Dean Accounts
 
-A campus administrator can create a Department Dean account from Academic Management by opening the department's Leadership section, or from User Management with the **Add dean** action. The User Management flow creates a Department Admin login assigned to that department and campus. With normal email delivery enabled, a setup link is sent to the dean; in demo account mode, the password and setup link are returned only to the creating Campus Admin. This provisions the account only; dean-specific permissions are unchanged.
+A campus administrator can create a Department Dean account from Academic Management by opening the department's Leadership section, or from User Management with the **Add dean** action. Both flows create a Department Admin login assigned to that department and campus, so the dean is recognized as a department-scoped administrator in login, academic access, and user management. With normal email delivery enabled, a setup link is sent to the dean; in demo account mode, a random temporary password and one-time setup link are shown to the creating Campus Admin. While the setup link is valid, the Campus Admin can also reveal or blur that temporary password from the dean's user detail page. The password is held in backend memory only, expires with the 24-hour setup window, and is discarded once the dean sets a permanent password or the backend restarts. Share demo credentials securely; the dean should use the link to choose a private password. This provisions the account only; dean-specific permissions are unchanged.
 
 ## OTP Email Delivery
 
@@ -29,7 +29,7 @@ Department Admins must provide a readable Course Information Sheet (PDF, DOCX, o
 
 ### Capstone demo without email delivery
 
-For temporary demonstrations only, set `DEMO_ACCOUNT_CREDENTIALS=true` in the backend service environment. Campus Admin manual faculty and dean account creation, and Department Admin manual faculty creation, skip email delivery and return the one-time temporary password and 24-hour setup link only to the authenticated administrator who created the account. Do not share demo credentials publicly; anyone with access to the admin session or setup details can use them. Public Contact Admin OTP verification always requires real email delivery and never exposes verification codes, even when demo account credentials are enabled. Disable demo mode after the demonstration by setting the variable to `false` or removing it, then redeploy. Normal account creation requires configured email delivery.
+For temporary demonstrations only, set `DEMO_ACCOUNT_CREDENTIALS=true` in the backend service environment. Campus Admin manual faculty and dean account creation, and Department Admin manual faculty creation, skip email delivery and return a cryptographically random one-time temporary password and 24-hour setup link only to the authenticated administrator who created the account. The password is not derived from the user's email. Do not share demo credentials publicly; anyone with access to the admin session or setup details can use them. Public Contact Admin OTP verification always requires real email delivery and never exposes verification codes, even when demo account credentials are enabled. Disable demo mode after the demonstration by setting the variable to `false` or removing it, then redeploy. Normal account creation requires configured email delivery.
 
 ## Windows
 

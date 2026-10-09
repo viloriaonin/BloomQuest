@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { usePopup } from "../../components/PopupProvider";
 import LoadingSpinner from "../../components/LoadingSpinner";
-import { Activity, FileText, Filter, History, Plus, X, Users } from "lucide-react";
+import { Activity, Eye, EyeOff, FileText, Filter, History, Plus, X, Users } from "lucide-react";
 import { API_URL } from "../../config/api";
 
 
@@ -32,6 +32,8 @@ export const UserMgmtContent = () => {
   const [showDeanForm, setShowDeanForm] = useState(false);
   const [deanForm, setDeanForm] = useState({ full_name: "", email: "", department_id: "" });
   const [creatingDean, setCreatingDean] = useState(false);
+  const [createdDeanCredentials, setCreatedDeanCredentials] = useState(null);
+  const [showDeanTemporaryPassword, setShowDeanTemporaryPassword] = useState(false);
   const [deanEmailRecovery, setDeanEmailRecovery] = useState(null);
   const [resendingDeanEmail, setResendingDeanEmail] = useState(false);
   const [deanEmailRecoveryError, setDeanEmailRecoveryError] = useState("");
@@ -88,7 +90,8 @@ export const UserMgmtContent = () => {
       const isManagedUser = (user) => {
         if (!user || typeof user.role !== "string") return true;
         const role = user.role.toLowerCase();
-        return role === "faculty" || role === "student" || role === "department_dean";
+        return role === "faculty" || role === "student" || role === "department_dean"
+          || (role === "department_admin" && user.is_department_dean === true);
       };
       const uniqueUsers = (users) => Array.from(
         new Map(
@@ -267,18 +270,27 @@ export const UserMgmtContent = () => {
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.detail || "Could not create the dean account.");
+      await fetchUsers();
       setShowDeanForm(false);
       setDeanForm({ full_name: "", email: "", department_id: "" });
       const isDemo = result.email_status === "demo";
+      if (isDemo) {
+        setCreatedDeanCredentials({
+          email: result.email,
+          department: result.department,
+          temporaryPassword: result.demo_temporary_password,
+          setupUrl: result.demo_setup_url,
+        });
+        setShowDeanTemporaryPassword(false);
+        return;
+      }
       setDeanEmailRecovery(result.email_status === "failed" ? { id: result.id, email: result.email } : null);
       setDeanEmailRecoveryError("");
       await showAlert(
-        isDemo
-          ? `Dean account created for ${result.department} with Department Admin access.\n\nDemo mode did not send an email. Share these one-time setup details securely with ${result.email}:\nTemporary password: ${result.demo_temporary_password}\nSetup link: ${result.demo_setup_url}\n\nThe setup link expires in 24 hours. Turn off demo mode before using real accounts.`
-          : result.email_status === "sent"
-            ? `Dean account created for ${result.department}. A secure password setup link was emailed to ${result.email}.`
-            : `Dean account created for ${result.department}, but the setup email could not be sent to ${result.email}. Use the resend control on this page to try again.`,
-        isDemo ? "Demo dean account created" : result.email_status === "sent" ? "Dean account created" : "Dean account created with email issue",
+        result.email_status === "sent"
+          ? `Dean account created for ${result.department}. A secure password setup link was emailed to ${result.email}.`
+          : `Dean account created for ${result.department}, but the setup email could not be sent to ${result.email}. Use the resend control on this page to try again.`,
+        result.email_status === "sent" ? "Dean account created" : "Dean account created with email issue",
       );
     } catch (error) {
       await showAlert(error.message || "Could not create the dean account.", "Could not create dean account");
@@ -580,6 +592,76 @@ export const UserMgmtContent = () => {
 
   return (
     <div className="bq-admin-user-management bq-attached-user-ui relative space-y-4 page-transition">
+      {createdDeanCredentials && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 p-4" role="presentation">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dean-demo-credentials-title"
+            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest text-red-700">Demo account created</p>
+                <h2 id="dean-demo-credentials-title" className="mt-1 text-xl font-bold text-gray-900">Dean sign-in details</h2>
+              </div>
+              <button
+                type="button"
+                aria-label="Close dean credentials"
+                onClick={() => {
+                  setCreatedDeanCredentials(null);
+                  setShowDeanTemporaryPassword(false);
+                }}
+                className="rounded-full p-2 text-gray-500 hover:bg-gray-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p className="mt-3 text-sm text-gray-600">
+              Email was not sent. Share these details privately with {createdDeanCredentials.email}; the setup link expires in 24 hours.
+            </p>
+            <div className="mt-4 space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm text-gray-700"><span className="font-semibold">Department:</span> {createdDeanCredentials.department}</p>
+              <div>
+                <p className="text-sm font-semibold text-gray-700">Temporary password</p>
+                <div className="mt-1 flex items-center gap-2">
+                  <code
+                    data-testid="dean-temporary-password"
+                    className={`min-w-0 flex-1 break-all rounded-lg bg-white px-3 py-2 text-sm text-gray-900 ${showDeanTemporaryPassword ? "" : "blur-sm select-none"}`}
+                  >
+                    {createdDeanCredentials.temporaryPassword}
+                  </code>
+                  <button
+                    type="button"
+                    aria-label={showDeanTemporaryPassword ? "Blur dean temporary password" : "Show dean temporary password"}
+                    onClick={() => setShowDeanTemporaryPassword((visible) => !visible)}
+                    className="rounded-lg border border-gray-300 bg-white p-2 text-gray-600 hover:bg-gray-50"
+                  >
+                    {showDeanTemporaryPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+              <p className="text-sm">
+                <span className="font-semibold text-gray-700">Password setup:</span>{" "}
+                <a className="break-all text-red-700 underline" href={createdDeanCredentials.setupUrl}>{createdDeanCredentials.setupUrl}</a>
+              </p>
+            </div>
+            <p className="mt-3 text-xs text-gray-500">This temporary password is shown once and is not saved for later viewing. The dean should use the setup link to choose a private password.</p>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setCreatedDeanCredentials(null);
+                  setShowDeanTemporaryPassword(false);
+                }}
+                className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800"
+              >
+                Done
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="flex items-center justify-between gap-4 bg-[#F0645A] px-5 py-4 text-white">
           <div>
@@ -790,7 +872,7 @@ export const UserMgmtContent = () => {
           <form onSubmit={createDeanAccount} className="mb-5 rounded-xl border border-gray-200 bg-gray-50 p-4">
             <div className="mb-3">
               <h3 className="text-sm font-semibold text-gray-900">Add a department dean</h3>
-              <p className="mt-1 text-xs text-gray-500">The dean will receive Department Admin access for the selected department and an email link to set a password.</p>
+              <p className="mt-1 text-xs text-gray-500">The dean will receive Department Admin access. In demo mode, the temporary password and setup link will appear after creation.</p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <label className="text-xs font-semibold text-gray-600">
@@ -947,7 +1029,7 @@ export const UserMgmtContent = () => {
               const displayStatus = user.status || (user.is_active === false ? "Inactive" : "Active");
               return (
                 <tr key={user.id || user.email} className="transition hover:bg-gray-50">
-                  <td className="px-3 py-3"><div className="flex min-w-0 items-center gap-2.5"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-700 text-xs font-bold text-white">{displayInitials}</div><div className="min-w-0"><p className="break-words font-semibold text-gray-900">{displayName}</p><p className="break-all text-xs text-gray-500">{user.email}</p>{user.role === "department_dean" && <span className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Department Dean</span>}</div></div></td>
+                  <td className="px-3 py-3"><div className="flex min-w-0 items-center gap-2.5"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-700 text-xs font-bold text-white">{displayInitials}</div><div className="min-w-0"><p className="break-words font-semibold text-gray-900">{displayName}</p><p className="break-all text-xs text-gray-500">{user.email}</p>{(user.role === "department_dean" || user.is_department_dean) && <span className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Department Dean</span>}</div></div></td>
                   <td className="break-words px-3 py-3 text-gray-700">{user.department || "N/A"}</td>
                   <td className="break-words px-3 py-3 text-gray-700">{user.program || "N/A"}</td>
                   <td className="whitespace-nowrap px-3 py-3 text-xs text-gray-500">{formatJoinedDate(user.joined || user.created_at)}</td>

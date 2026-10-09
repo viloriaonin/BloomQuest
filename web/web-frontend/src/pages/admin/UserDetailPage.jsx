@@ -3,6 +3,8 @@ import {
   ArrowLeft,
   FileQuestion,
   History,
+  Eye,
+  EyeOff,
   KeyRound,
   LoaderCircle,
   ShieldCheck,
@@ -47,6 +49,12 @@ const UserDetailPage = () => {
   const [resetEmailBusy, setResetEmailBusy] = useState(false);
   const [resetEmailError, setResetEmailError] = useState("");
   const [resetEmailNotice, setResetEmailNotice] = useState("");
+  const [demoDeanPassword, setDemoDeanPassword] = useState("");
+  const [demoDeanSetupUrl, setDemoDeanSetupUrl] = useState("");
+  const [demoDeanPasswordNotice, setDemoDeanPasswordNotice] = useState("");
+  const [showDemoDeanPassword, setShowDemoDeanPassword] = useState(false);
+  const [loadingDemoDeanPassword, setLoadingDemoDeanPassword] = useState(false);
+  const [demoDeanPasswordError, setDemoDeanPasswordError] = useState("");
 
   const loadDetail = useCallback(async () => {
     setLoading(true);
@@ -184,6 +192,34 @@ const UserDetailPage = () => {
     }
   };
 
+  const toggleDemoDeanPassword = async () => {
+    if (showDemoDeanPassword) {
+      setShowDemoDeanPassword(false);
+      return;
+    }
+    if (demoDeanPassword) {
+      setShowDemoDeanPassword(true);
+      return;
+    }
+    setLoadingDemoDeanPassword(true);
+    setDemoDeanPasswordError("");
+    try {
+      const response = await apiFetch(`/campus-admin/users/${userId}/demo-password`, { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Could not load the temporary dean password.");
+      setDemoDeanPassword(data.temporary_password);
+      setDemoDeanSetupUrl(data.setup_url || "");
+      setDemoDeanPasswordNotice(data.regenerated
+        ? "A new temporary password was issued because the previous demo password was no longer available. Use the new setup link below."
+        : "");
+      setShowDemoDeanPassword(true);
+    } catch (err) {
+      setDemoDeanPasswordError(err.message || "Could not load the temporary dean password.");
+    } finally {
+      setLoadingDemoDeanPassword(false);
+    }
+  };
+
   if (loading)
     return (
       <div className="flex justify-center py-16">
@@ -203,6 +239,14 @@ const UserDetailPage = () => {
   const { user, subjects = [], activities = [] } = detail;
   const questionCount = detail.question_count ?? detail.questions?.length ?? 0;
   const statusLabel = user.archived ? "Archived" : "Active";
+  const userRole = user.role?.toLowerCase();
+  const canResetPassword = userRole === "faculty"
+    || (user.is_department_dean === true && ["department_admin", "department_dean"].includes(userRole));
+  const canViewDemoDeanPassword = String(localStorage.getItem("role") || "").toLowerCase() === "campus_admin"
+    && user.is_department_dean === true
+    && user.demo_password_available === true
+    && !user.archived;
+  const passwordResetAccountType = userRole === "faculty" ? "faculty" : "dean";
 
   return (
     <div className="space-y-5 page-transition">
@@ -302,7 +346,18 @@ const UserDetailPage = () => {
         </div>
         {resetEmailNotice && <p role="status" className="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{resetEmailNotice}</p>}
         <div className="flex flex-wrap gap-2">
-          {user.role?.toLowerCase() === "faculty" && (
+          {canViewDemoDeanPassword && (
+            <button
+              type="button"
+              onClick={toggleDemoDeanPassword}
+              disabled={loadingDemoDeanPassword}
+              className="bq-secondary-button disabled:opacity-50"
+            >
+              {loadingDemoDeanPassword ? <LoaderCircle size={15} className="mr-2 inline animate-spin" /> : showDemoDeanPassword ? <EyeOff size={15} className="mr-2 inline" /> : <Eye size={15} className="mr-2 inline" />}
+              {loadingDemoDeanPassword ? "Loading password…" : showDemoDeanPassword ? "Blur demo password" : "Show demo password"}
+            </button>
+          )}
+          {canResetPassword && (
             <button
               type="button"
               onClick={() => {
@@ -369,6 +424,16 @@ const UserDetailPage = () => {
             Delete account
           </button>
         </div>
+        {canViewDemoDeanPassword && demoDeanPassword && (
+          <div className="mt-3 max-w-lg rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">Temporary demo password</p>
+            <code className={`mt-1 block break-all text-sm text-gray-900 ${showDemoDeanPassword ? "" : "select-none blur-sm"}`}>{demoDeanPassword}</code>
+            <p className="mt-1 text-xs text-amber-800">Available only until the dean sets a permanent password or the 24-hour setup window expires.</p>
+            {demoDeanPasswordNotice && <p role="status" className="mt-2 text-xs font-medium text-amber-900">{demoDeanPasswordNotice}</p>}
+            {demoDeanSetupUrl && <p className="mt-2 text-xs"><a className="break-all text-red-700 underline" href={demoDeanSetupUrl}>{demoDeanSetupUrl}</a></p>}
+          </div>
+        )}
+        {demoDeanPasswordError && <p role="alert" className="mt-3 text-sm text-red-700">{demoDeanPasswordError}</p>}
         {departmentManageOpen && (
           <form onSubmit={handleUpdateDepartment} className="mt-5 border-t border-gray-100 pt-5">
             <h3 className="text-sm font-bold text-gray-900">Manage department</h3>
@@ -413,7 +478,7 @@ const UserDetailPage = () => {
       {resetEmailPromptOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 p-4">
           <section role="dialog" aria-modal="true" aria-labelledby="reset-password-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-            <h3 id="reset-password-title" className="text-lg font-bold text-slate-900">Reset faculty password</h3>
+            <h3 id="reset-password-title" className="text-lg font-bold text-slate-900">Reset {passwordResetAccountType} password</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600">
               A new temporary password and secure setup link will be emailed to <strong>{detail.user.email}</strong>.
               The current password will be replaced and existing sessions signed out after the email is sent.

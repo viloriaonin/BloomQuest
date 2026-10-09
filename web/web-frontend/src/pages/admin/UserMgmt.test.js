@@ -153,10 +153,16 @@ test("Campus Admin can create a Department Admin dean account for a department",
   fireEvent.change(screen.getByLabelText("Department"), { target: { value: "7" } });
   fireEvent.click(screen.getByRole("button", { name: "Create dean account" }));
 
-  expect(await screen.findByRole("heading", { name: "Demo dean account created" })).toBeInTheDocument();
-  expect(screen.getByText(/Demo mode did not send an email/)).toBeInTheDocument();
-  expect(screen.getByText(/Temporary password: DemoDeanPassword1!/)).toBeInTheDocument();
-  expect(screen.getByText(/https:\/\/demo\.example\.edu\/set-password\?token=demo-token/)).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Dean sign-in details" })).toBeInTheDocument();
+  expect(screen.getByText(/Email was not sent/)).toBeInTheDocument();
+  const password = screen.getByTestId("dean-temporary-password");
+  expect(password).toHaveTextContent("DemoDeanPassword1!");
+  expect(password).toHaveClass("blur-sm");
+  fireEvent.click(screen.getByRole("button", { name: "Show dean temporary password" }));
+  expect(password).not.toHaveClass("blur-sm");
+  fireEvent.click(screen.getByRole("button", { name: "Blur dean temporary password" }));
+  expect(password).toHaveClass("blur-sm");
+  expect(screen.getByRole("link", { name: "https://demo.example.edu/set-password?token=demo-token" })).toBeInTheDocument();
   const request = global.fetch.mock.calls.find(
     ([url, options]) => String(url).endsWith("/campus-admin/department-admins") && options?.method === "POST",
   );
@@ -165,6 +171,63 @@ test("Campus Admin can create a Department Admin dean account for a department",
     email: "dean@example.edu",
     department_id: 7,
   });
+});
+
+test("newly created dean appears in the active user list", async () => {
+  let deanCreated = false;
+  const defaultFetch = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options) => {
+    if (String(url).endsWith("/campus-admin/department-admins") && options?.method === "POST") {
+      deanCreated = true;
+      return {
+        ok: true,
+        json: async () => ({
+          id: 3,
+          name: "Dean Example",
+          email: "dean@example.edu",
+          role: "department_admin",
+          department: "Computing",
+          email_status: "sent",
+        }),
+      };
+    }
+    if (String(url).endsWith("/contact-admin/users")) {
+      return {
+        ok: true,
+        json: async () => deanCreated
+          ? [{
+            id: 3,
+            full_name: "Dean Example",
+            email: "dean@example.edu",
+            role: "department_admin",
+            is_department_dean: true,
+            department: "Computing",
+            status: "Active",
+            archived: false,
+          }]
+          : [],
+      };
+    }
+    return defaultFetch(url, options);
+  });
+
+  render(
+    <MemoryRouter>
+      <PopupProvider>
+        <UserMgmtContent />
+      </PopupProvider>
+    </MemoryRouter>,
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: "Add dean" }));
+  fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Dean Example" } });
+  fireEvent.change(screen.getByLabelText("Email"), { target: { value: "dean@example.edu" } });
+  fireEvent.change(screen.getByLabelText("Department"), { target: { value: "7" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create dean account" }));
+
+  expect(await screen.findByText("Dean Example")).toBeInTheDocument();
+  expect(screen.getByText("Department Dean")).toBeInTheDocument();
+  expect(screen.getByText("Active", { selector: "span" })).toBeInTheDocument();
 });
 
 test("Campus Admin receives faculty setup credentials in demo mode", async () => {

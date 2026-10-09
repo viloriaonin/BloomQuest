@@ -1080,6 +1080,7 @@ def test_campus_admin_creates_department_admin_dean_within_assigned_campus(db_se
                     "department_id": department.id,
                 },
             )
+            active_users = client.get("/api/contact-admin/users")
             cross_campus = client.post(
                 "/api/campus-admin/department-admins",
                 json={
@@ -1093,6 +1094,13 @@ def test_campus_admin_creates_department_admin_dean_within_assigned_campus(db_se
         assert created.json()["role"] == "department_admin"
         assert created.json()["department"] == department.name
         assert created.json()["email_status"] == "sent"
+        assert active_users.status_code == 200, active_users.text
+        listed_dean = next(
+            user for user in active_users.json()["active"]
+            if user["email"] == "campus.dean@example.edu"
+        )
+        assert listed_dean["role"] == "department_admin"
+        assert listed_dean["is_department_dean"] is True
         assert cross_campus.status_code == 403
         dean = db_session.query(models.User).filter_by(
             email="campus.dean@example.edu"
@@ -1160,22 +1168,40 @@ def test_campus_admin_can_create_dean_in_demo_mode_without_email_delivery(db_ses
             setup_url = result["demo_setup_url"]
             setup_token = parse_qs(urlparse(setup_url).query)["token"][0]
             assert setup_url.endswith(f"/set-password?token={setup_token}")
+            dean = db_session.query(models.User).filter_by(
+                email="demo.dean@example.edu"
+            ).one()
+            main.forget_demo_dean_password(dean.id)
+            monkeypatch.setattr(
+                main,
+                "generate_temporary_password",
+                lambda: "ReissuedDeanPassword1!",
+            )
+            revealed = client.post(
+                f"/api/campus-admin/users/{dean.id}/demo-password"
+            )
+            assert revealed.status_code == 200, revealed.text
+            reissued = revealed.json()
+            assert reissued["temporary_password"] == "ReissuedDeanPassword1!"
+            assert reissued["regenerated"] is True
+            setup_token = parse_qs(urlparse(reissued["setup_url"]).query)["token"][0]
 
             setup = client.post(
                 "/api/set-initial-password",
                 json={
                     "token": setup_token,
-                    "temporary_password": result["demo_temporary_password"],
+                    "temporary_password": reissued["temporary_password"],
                     "new_password": "DemoDeanPermanent1!",
                 },
             )
 
         assert setup.status_code == 200, setup.text
-        dean = db_session.query(models.User).filter_by(
-            email="demo.dean@example.edu"
-        ).one()
         assert verify_password("DemoDeanPermanent1!", dean.password)
         assert dean.password_setup_token_hash is None
+        unavailable = client.post(
+            f"/api/campus-admin/users/{dean.id}/demo-password"
+        )
+        assert unavailable.status_code == 404
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(previous)
@@ -1273,10 +1299,13 @@ def test_campus_admin_can_resend_setup_for_dean_only_within_campus(db_session, m
         app.dependency_overrides.update(previous)
 
 
-def test_campus_admin_can_reset_password_only_for_faculty_in_assigned_campus(db_session, monkeypatch):
+def test_campus_admin_can_reset_password_for_faculty_and_assigned_dean(db_session, monkeypatch):
     campus = models.Campus(name="Reset Campus", code="RESET-CAMPUS")
     other_campus = models.Campus(name="Other Reset Campus", code="OTHER-RESET")
     db_session.add_all([campus, other_campus])
+    db_session.flush()
+    dean_department = models.Department(name="Reset Dean Department", campus_id=campus.id)
+    db_session.add(dean_department)
     db_session.flush()
     admin = models.User(
         email="reset-campus-admin@example.edu",
@@ -1303,7 +1332,18 @@ def test_campus_admin_can_reset_password_only_for_faculty_in_assigned_campus(db_
         campus_id=other_campus.id,
         archived=False,
     )
-    db_session.add_all([admin, faculty, foreign_faculty])
+    dean = models.User(
+        email="reset-dean@example.edu",
+        password=main.hash_password("OriginalDeanPassword1!"),
+        role="department_dean",
+        name="Reset Dean",
+        department=dean_department.name,
+        campus_id=campus.id,
+        archived=False,
+    )
+    db_session.add_all([admin, faculty, foreign_faculty, dean])
+    db_session.flush()
+    dean_department.dean_id = dean.id
     db_session.commit()
 
     sent_credentials = []
@@ -1321,20 +1361,34 @@ def test_campus_admin_can_reset_password_only_for_faculty_in_assigned_campus(db_
                 f"/api/campus-admin/users/{faculty.id}/credential-email",
                 json={"action": "reset_password"},
             )
+            dean_reset = client.post(
+                f"/api/campus-admin/users/{dean.id}/credential-email",
+                json={"action": "reset_password"},
+            )
+            dean_overview = client.get(f"/api/admin/users/{dean.id}/overview")
             denied = client.post(
                 f"/api/campus-admin/users/{foreign_faculty.id}/credential-email",
                 json={"action": "reset_password"},
             )
 
         assert reset.status_code == 200, reset.text
+        assert dean_reset.status_code == 200, dean_reset.text
         assert reset.json()["email_status"] == "sent"
+        assert dean_reset.json()["email_status"] == "sent"
+        assert dean_overview.status_code == 200, dean_overview.text
+        assert dean_overview.json()["user"]["is_department_dean"] is True
         assert denied.status_code == 404
         db_session.refresh(faculty)
+        db_session.refresh(dean)
         assert verify_password(sent_credentials[0][1], faculty.password)
+        assert verify_password(sent_credentials[1][1], dean.password)
         assert faculty.password_setup_token_hash
+        assert dean.password_setup_token_hash
         assert sent_credentials[0][0] == faculty.email
         assert sent_credentials[0][3] == faculty.department
-        assert len(sent_credentials) == 1
+        assert sent_credentials[1][0] == dean.email
+        assert sent_credentials[1][3] == dean_department.name
+        assert len(sent_credentials) == 2
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(previous)

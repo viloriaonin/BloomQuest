@@ -692,19 +692,57 @@ test("department list shows its dean and Add Department saves the Dean field", a
 });
 
 test("campus admin can create a dean login from the department leadership section", async () => {
+  let deanCreated = false;
+  const defaultFetch = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options) => {
+    if (String(url).endsWith("/departments/2/dean-account") && options?.method === "POST") {
+      deanCreated = true;
+      return {
+        ok: true,
+        json: async () => ({
+          id: 24,
+          email: "alex.dean@example.edu",
+          role: "department_admin",
+          email_status: "demo",
+          demo_temporary_password: "SecureRandom1!",
+          demo_setup_url: "https://demo.example.edu/set-password?token=demo-token",
+        }),
+      };
+    }
+    if (String(url).endsWith("/academic-hierarchy") && deanCreated) {
+      return {
+        ok: true,
+        json: async () => ({
+          campuses: hierarchy.campuses.map((campus) => ({
+            ...campus,
+            departments: campus.departments.map((department) => ({
+              ...department,
+              dean_id: 24,
+              dean_name: "Dr. Alex Dean",
+              dean: { id: 24, name: "Dr. Alex Dean", role: "department_admin" },
+            })),
+          })),
+        }),
+      };
+    }
+    return defaultFetch(url, options);
+  });
   renderAt("/admin/academic/campus/1");
   await screen.findByRole("heading", { name: "CICS" });
   fireEvent.click(screen.getByRole("button", { name: "View Department" }));
 
   fireEvent.change(await screen.findByLabelText("Dean full name"), { target: { value: "Dr. Alex Dean" } });
   fireEvent.change(screen.getByLabelText("Dean email"), { target: { value: "alex.dean@example.edu" } });
-  fireEvent.click(screen.getByRole("button", { name: "Create account and email credentials" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create dean account" }));
 
   await waitFor(() => {
     const request = global.fetch.mock.calls.find(([url, options]) => String(url).endsWith("/departments/2/dean-account") && options?.method === "POST");
     expect(JSON.parse(request[1].body)).toEqual({ full_name: "Dr. Alex Dean", email: "alex.dean@example.edu" });
   });
-  expect(await screen.findByRole("status")).toHaveTextContent("credentials are queued for email delivery");
+  expect(await screen.findByRole("status")).toHaveTextContent("Account created without email");
+  expect(screen.getByRole("status")).toHaveTextContent("Temporary password: SecureRandom1!");
+  expect(screen.getByRole("link", { name: "https://demo.example.edu/set-password?token=demo-token" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Create dean login" })).not.toBeInTheDocument();
 });
 
 test("Campus Admin can view program chairs but cannot add programs", async () => {

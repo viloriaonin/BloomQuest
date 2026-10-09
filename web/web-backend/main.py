@@ -1184,6 +1184,42 @@ DEMO_EMAIL_VERIFICATION = os.getenv(
     "DEMO_ACCOUNT_CREDENTIALS",
     os.getenv("DEMO_EMAIL_VERIFICATION", ""),
 ).strip().lower() == "true"
+DEMO_DEAN_PASSWORDS: dict[int, tuple[str, datetime]] = {}
+
+
+def remember_demo_dean_password(user: models.User, password: str) -> None:
+    if DEMO_EMAIL_VERIFICATION:
+        DEMO_DEAN_PASSWORDS[user.id] = (password, utc_now() + timedelta(hours=24))
+
+
+def forget_demo_dean_password(user_id: int) -> None:
+    DEMO_DEAN_PASSWORDS.pop(user_id, None)
+
+
+def has_pending_password_setup(user: models.User) -> bool:
+    is_pending = bool(
+        user.password_setup_token_hash
+        and user.password_setup_token_expires_at
+        and user.password_setup_token_expires_at > utc_now()
+        and not user.archived
+    )
+    if not is_pending:
+        forget_demo_dean_password(user.id)
+    return is_pending
+
+
+def has_demo_dean_password(user: models.User) -> bool:
+    record = DEMO_DEAN_PASSWORDS.get(user.id)
+    is_available = bool(
+        DEMO_EMAIL_VERIFICATION
+        and record
+        and record[1] > utc_now()
+        and verify_password(record[0], user.password)
+        and has_pending_password_setup(user)
+    )
+    if not is_available:
+        forget_demo_dean_password(user.id)
+    return is_available
 
 
 def require_email_delivery_configured() -> None:
@@ -1754,6 +1790,7 @@ def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found.")
 
     user.password = hash_password(data.new_password)
+    forget_demo_dean_password(user.id)
     db.commit()
     otp_store.pop(data.email, None)
     log_activity(db, "Password Reset Completed", f"Password reset completed for {data.email}.", "security")
@@ -1828,6 +1865,7 @@ def update_user_password_with_otp(data: CompleteChangePasswordRequest, db: Sessi
 
     user.password = hash_password(data.new_password)
     db.commit()
+    forget_demo_dean_password(user.id)
     change_password_otp_store.pop(normalized_email, None)
     log_activity(db, "Password Change Completed", f"Password changed successfully for {normalized_email}.", "security", user_id=user.id)
 
@@ -1938,7 +1976,19 @@ def list_pending_account_requests(db: Session = Depends(get_db), _admin: models.
 @app.get("/api/contact-admin/users")
 def list_admin_users(db: Session = Depends(get_db), _admin: models.User = Depends(require_admin)):
     roles = ("faculty", "student", "department_dean")
-    scoped_users = admin_scoped_user_query(db, _admin).filter(func.lower(models.User.role).in_(roles))
+    dean_user_ids = {
+        dean_id
+        for (dean_id,) in db.query(models.Department.dean_id).filter(
+            models.Department.dean_id.isnot(None)
+        ).all()
+    }
+    scoped_users = admin_scoped_user_query(db, _admin).filter(or_(
+        func.lower(models.User.role).in_(roles),
+        and_(
+            func.lower(models.User.role) == "department_admin",
+            models.User.id.in_(dean_user_ids),
+        ),
+    ))
     active_users = scoped_users.filter(models.User.archived.is_(False)).order_by(models.User.id.desc()).all()
     archived_users = scoped_users.filter(models.User.archived.is_(True)).order_by(models.User.id.desc()).all()
     programs_by_id = {program.id: program.name for program in db.query(models.Program).all()}
@@ -1962,6 +2012,7 @@ def list_admin_users(db: Session = Depends(get_db), _admin: models.User = Depend
         "campus_id": user.campus_id or user_campus_id(db, user),
         "email": user.email,
         "role": user.role,
+        "is_department_dean": user.id in dean_user_ids,
         "status": "Active" if not user.archived else "Archived",
         "created_at": user.created_at.isoformat() if user.created_at else None,
         "joined": user.created_at.isoformat() if user.created_at else None,
@@ -2220,6 +2271,10 @@ def get_admin_user_overview(user_id: int, db: Session = Depends(get_db), _admin:
     activities = db.query(models.ActivityLog).filter(models.ActivityLog.user_id == user_id).order_by(models.ActivityLog.created_at.desc()).all()
 
     program = db.query(models.Program).filter(models.Program.id == user.program_id).first() if user.program_id else None
+    is_department_dean = db.query(models.Department.id).filter(
+        models.Department.dean_id == user.id,
+        models.Department.campus_id == user_campus_id(db, user),
+    ).first() is not None
 
     return {
         "user": {
@@ -2227,6 +2282,12 @@ def get_admin_user_overview(user_id: int, db: Session = Depends(get_db), _admin:
             "name": user.name or user.email.split("@", 1)[0],
             "email": user.email,
             "role": user.role,
+            "is_department_dean": is_department_dean,
+            "demo_password_available": (
+                is_department_dean
+                and DEMO_EMAIL_VERIFICATION
+                and has_pending_password_setup(user)
+            ),
             "department": user.department or "Unassigned",
             "program": program.name if program else "Unassigned",
             "program_id": user.program_id,
@@ -2259,6 +2320,70 @@ def get_admin_user_overview(user_id: int, db: Session = Depends(get_db), _admin:
             "media_type": activity.media_type,
             "created_at": activity.created_at.isoformat() if activity.created_at else None,
         } for activity in activities],
+    }
+
+
+@app.post("/api/campus-admin/users/{user_id}/demo-password")
+def reveal_or_reissue_demo_dean_password(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_campus_admin),
+):
+    if not DEMO_EMAIL_VERIFICATION:
+        raise HTTPException(status_code=404, detail="Demo dean password is unavailable.")
+    if str(admin.role).lower() != "campus_admin":
+        raise HTTPException(status_code=403, detail="Campus Admin access is required.")
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user or str(user.role).lower() not in {"department_admin", "department_dean"}:
+        raise HTTPException(status_code=404, detail="Dean account not found.")
+    assert_admin_can_access_user(db, admin, user)
+    department = db.query(models.Department).filter(
+        models.Department.dean_id == user.id
+    ).first()
+    if not department:
+        raise HTTPException(status_code=404, detail="Dean account not found.")
+    assert_campus_access(admin, department.campus_id)
+
+    if has_demo_dean_password(user):
+        return {"temporary_password": DEMO_DEAN_PASSWORDS[user.id][0]}
+    if not has_pending_password_setup(user):
+        forget_demo_dean_password(user.id)
+        raise HTTPException(status_code=404, detail="Temporary dean password is no longer available.")
+
+    temporary_password = generate_temporary_password()
+    while validate_password_strength(temporary_password):
+        temporary_password = generate_temporary_password()
+    setup_token = secrets.token_urlsafe(32)
+    user.password = hash_password(temporary_password)
+    user.password_setup_token_hash = hashlib.sha256(
+        setup_token.encode("utf-8")
+    ).hexdigest()
+    user.password_setup_token_expires_at = utc_now() + timedelta(hours=24)
+    db.query(models.UserSession).filter(
+        models.UserSession.user_id == user.id,
+        models.UserSession.revoked_at.is_(None),
+    ).update(
+        {models.UserSession.revoked_at: utc_now()},
+        synchronize_session=False,
+    )
+    db.commit()
+    remember_demo_dean_password(user, temporary_password)
+    log_activity(
+        db,
+        "Demo Dean Password Reissued",
+        f"Campus Admin {admin.id} reissued temporary demo credentials for dean {user.id}.",
+        "security",
+        actor_id=admin.id,
+        target_user_id=user.id,
+    )
+    setup_url = (
+        f"{os.getenv('FRONTEND_URL', 'http://localhost:3000').rstrip('/')}"
+        f"/set-password?token={setup_token}"
+    )
+    return {
+        "temporary_password": temporary_password,
+        "setup_url": setup_url,
+        "regenerated": True,
     }
 
 
@@ -2381,6 +2506,7 @@ def update_user_password(payload: UpdatePasswordRequest, db: Session = Depends(g
     if str(user.role).lower() in {"admin", "campus_admin", "super_admin"} and str(_admin.role).lower() != "super_admin":
         raise HTTPException(status_code=403, detail="Only a Super Admin can change an administrator password.")
     user.password = hash_password(payload.new_password)
+    forget_demo_dean_password(user.id)
     db.commit()
     db.query(models.UserSession).filter(models.UserSession.user_id == user.id, models.UserSession.revoked_at.is_(None)).update({"revoked_at": utc_now()}, synchronize_session=False)
     return {"message": "Password updated successfully."}
@@ -2668,7 +2794,8 @@ def send_faculty_credentials(
         {models.UserSession.revoked_at: utc_now()},
         synchronize_session=False,
     )
-    account_label = "dean" if str(user.role).lower() == "department_admin" else "faculty"
+    forget_demo_dean_password(user.id)
+    account_label = "dean" if str(user.role).lower() in {"department_admin", "department_dean"} else "faculty"
     action_label = "password reset email" if action == "reset_password" else f"{account_label} access email"
     db.commit()
     db.refresh(user)
@@ -2711,16 +2838,19 @@ def reissue_campus_admin_faculty_credentials(
     if not user:
         raise HTTPException(status_code=404, detail="Account not found.")
     department_name = user.department or "your department"
-    if str(user.role).lower() == "department_admin":
-        dean_department = db.query(models.Department).filter(
-            models.Department.id == user.admin_department_id,
+    user_role = str(user.role).lower()
+    if user_role in {"department_admin", "department_dean"}:
+        dean_query = db.query(models.Department).filter(
             models.Department.campus_id == admin.campus_id,
             models.Department.dean_id == user.id,
-        ).first()
+        )
+        if user_role == "department_admin":
+            dean_query = dean_query.filter(models.Department.id == user.admin_department_id)
+        dean_department = dean_query.first()
         if not dean_department:
             raise HTTPException(status_code=404, detail="Dean account not found.")
         department_name = dean_department.name
-    elif str(user.role).lower() != "faculty":
+    elif user_role != "faculty":
         raise HTTPException(status_code=404, detail="Account not found.")
     assert_admin_can_access_user(db, admin, user)
     return send_faculty_credentials(db, admin, user, department_name, payload.action)
@@ -3122,6 +3252,7 @@ def create_campus_department_admin_for_dean(
     department.dean_name = user.name
     db.commit()
     db.refresh(user)
+    remember_demo_dean_password(user, temporary_password)
 
     log_activity(
         db,
@@ -3177,6 +3308,7 @@ def set_initial_password(data: InitialPasswordSetupRequest, db: Session = Depend
     user.password = hash_password(data.new_password)
     user.password_setup_token_hash = None
     user.password_setup_token_expires_at = None
+    forget_demo_dean_password(user.id)
     db.commit()
     log_activity(
         db,
@@ -5610,11 +5742,6 @@ def create_department_dean_account(
     if not department:
         raise HTTPException(status_code=404, detail="Department not found.")
     assert_campus_access(admin, department.campus_id)
-    if not RESEND_API_KEY and (not SENDER_EMAIL or not SENDER_PASSWORD):
-        raise HTTPException(
-            status_code=503,
-            detail="Email delivery is not configured. Configure Resend or SMTP before creating a dean account.",
-        )
     if department.dean_id:
         raise HTTPException(
             status_code=409,
@@ -5631,19 +5758,25 @@ def create_department_dean_account(
     normalized_email = normalize_email(payload.email)
     if db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first():
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
+    if not DEMO_EMAIL_VERIFICATION:
+        require_email_delivery_configured()
 
     temporary_password = generate_temporary_password()
     while validate_password_strength(temporary_password):
         temporary_password = generate_temporary_password()
 
+    setup_token = secrets.token_urlsafe(32)
     user = models.User(
         email=normalized_email,
         password=hash_password(temporary_password),
-        role="department_dean",
+        role="department_admin",
         archived=False,
         campus_id=campus.id,
+        admin_department_id=department.id,
         name=payload.full_name,
         department=department.name,
+        password_setup_token_hash=hashlib.sha256(setup_token.encode("utf-8")).hexdigest(),
+        password_setup_token_expires_at=utc_now() + timedelta(hours=24),
     )
     db.add(user)
     db.flush()
@@ -5651,6 +5784,7 @@ def create_department_dean_account(
     department.dean_name = user.name
     db.commit()
     db.refresh(user)
+    remember_demo_dean_password(user, temporary_password)
     log_activity(
         db,
         "Department Dean Account Created",
@@ -5659,15 +5793,21 @@ def create_department_dean_account(
         user_id=admin.id,
         target_user_id=user.id,
     )
-    background_tasks.add_task(
-        send_department_dean_credentials_email,
-        normalized_email,
-        user.name,
-        temporary_password,
-        department.name,
-        campus.name,
+    password_setup_url = (
+        f"{os.getenv('FRONTEND_URL', 'http://localhost:3000').rstrip('/')}"
+        f"/set-password?token={setup_token}"
     )
-    return {
+    if not DEMO_EMAIL_VERIFICATION:
+        background_tasks.add_task(
+            send_approval_email,
+            normalized_email,
+            temporary_password,
+            user.name,
+            department.name,
+            password_setup_url,
+        )
+
+    result = {
         "id": user.id,
         "name": user.name,
         "email": user.email,
@@ -5676,8 +5816,12 @@ def create_department_dean_account(
         "department": department.name,
         "campus_id": campus.id,
         "campus": campus.name,
-        "email_status": "queued",
+        "email_status": "demo" if DEMO_EMAIL_VERIFICATION else "queued",
     }
+    if DEMO_EMAIL_VERIFICATION:
+        result["demo_temporary_password"] = temporary_password
+        result["demo_setup_url"] = password_setup_url
+    return result
 
 @app.put("/api/departments/{department_id}/chair")
 def assign_department_chair(department_id: int, payload: LeadershipAssignmentRequest, db: Session = Depends(get_db), admin: models.User = Depends(require_academic_admin)):

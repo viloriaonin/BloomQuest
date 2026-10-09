@@ -290,8 +290,11 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
     });
     setSaveState({ status: "idle", message: "" });
     setAccountForm({ full_name: "", email: "" });
-    setAccountState({ saving: false, message: "", error: "" });
   }, [department?.id, department?.dean_id, department?.dean_name, department?.dean?.name]);
+
+  React.useEffect(() => {
+    setAccountState({ saving: false, message: "", error: "" });
+  }, [department?.id]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -317,9 +320,17 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
     if (readOnly || !onCreateAccount) return;
     setAccountState({ saving: true, message: "", error: "" });
     try {
-      await onCreateAccount(accountForm);
+      const result = await onCreateAccount(accountForm);
       setAccountForm({ full_name: "", email: "" });
-      setAccountState({ saving: false, message: "Account created. Login credentials are queued for email delivery.", error: "" });
+      setAccountState({
+        saving: false,
+        message: result?.email_status === "demo"
+          ? "Account created without email. Share these temporary setup details securely with the dean."
+          : "Account created. Login credentials are queued for email delivery.",
+        error: "",
+        demoTemporaryPassword: result?.demo_temporary_password || "",
+        demoSetupUrl: result?.demo_setup_url || "",
+      });
     } catch (error) {
       setAccountState({ saving: false, message: "", error: error.message || "Could not create the dean account." });
     }
@@ -441,7 +452,7 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
       {!readOnly && onCreateAccount && !department?.dean_id && (
         <form onSubmit={handleCreateAccount} className="mt-5 border-t border-slate-200 pt-5">
           <h4 className="text-sm font-semibold text-slate-800">Create dean login</h4>
-          <p className="mt-1 text-xs text-slate-500">A temporary password will be emailed to the dean’s address.</p>
+          <p className="mt-1 text-xs text-slate-500">A temporary password and setup link will be emailed. In demo mode, they are shown here instead.</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="text-xs font-semibold text-slate-600">
               Dean full name
@@ -452,14 +463,20 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
               <input required type="email" maxLength={255} value={accountForm.email} onChange={(event) => setAccountForm((current) => ({ ...current, email: event.target.value }))} className="bq-field mt-1 w-full px-3" placeholder="name@institution.edu" />
             </label>
           </div>
-          {accountState.error && <p role="alert" className="mt-3 text-sm text-red-700">{accountState.error}</p>}
-          {accountState.message && <p role="status" className="mt-3 text-sm text-emerald-700">{accountState.message}</p>}
           <div className="mt-3 flex justify-end">
             <button type="submit" disabled={accountState.saving} className="rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-70" style={{ background: "var(--bq-accent-strong)", color: "#fff" }}>
-              {accountState.saving ? "Creating account..." : "Create account and email credentials"}
+              {accountState.saving ? "Creating account..." : "Create dean account"}
             </button>
           </div>
         </form>
+      )}
+      {accountState.error && <p role="alert" className="mt-3 text-sm text-red-700">{accountState.error}</p>}
+      {accountState.message && (
+        <div role="status" className="mt-3 space-y-1 text-sm text-emerald-700">
+          <p>{accountState.message}</p>
+          {accountState.demoTemporaryPassword && <p>Temporary password: <code>{accountState.demoTemporaryPassword}</code></p>}
+          {accountState.demoSetupUrl && <p>Setup link: <a className="break-all underline" href={accountState.demoSetupUrl}>{accountState.demoSetupUrl}</a></p>}
+        </div>
       )}
       {!readOnly && department?.dean_id && !hasDeanLogin && (
         <p className="mt-5 border-t border-slate-200 pt-4 text-xs text-amber-700">
@@ -1231,6 +1248,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
       if (!response.ok) throw new Error(result.detail || "Could not create the dean account.");
       await loadData();
       setError("");
+      return result;
     } catch (err) {
       setError(err.message || "Could not create the dean account.");
       throw err;

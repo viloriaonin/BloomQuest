@@ -649,7 +649,10 @@ def test_create_department_dean_account_assigns_user_and_queues_credentials(monk
     campus = SimpleNamespace(id=4, name="North Campus", is_active=True)
     db = FakeSession(department=department, campus=campus, user_results=[None])
     background_tasks = BackgroundTasks()
+    monkeypatch.setattr(main, "DEMO_EMAIL_VERIFICATION", False)
     monkeypatch.setattr(main, "RESEND_API_KEY", "resend-test-key")
+    monkeypatch.setattr(main, "EMAIL_FROM", "BloomQuest <no-reply@example.edu>")
+    monkeypatch.setattr(main, "require_email_delivery_configured", lambda: None)
     monkeypatch.setattr(main, "generate_temporary_password", lambda: "DeanTemp1!")
     monkeypatch.setattr(main, "hash_password", lambda password: f"hashed:{password}")
     monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
@@ -663,22 +666,60 @@ def test_create_department_dean_account_assigns_user_and_queues_credentials(monk
     )
 
     created_user = next(value for value in db.added if isinstance(value, models.User))
-    assert result["role"] == "department_dean"
+    assert result["role"] == "department_admin"
+    assert result["email_status"] == "queued"
     assert result["email"] == "alex.dean@example.edu"
     assert created_user.password == "hashed:DeanTemp1!"
     assert created_user.department == department.name
+    assert created_user.admin_department_id == department.id
     assert department.dean_id == created_user.id == 88
     assert department.dean_name == "Dr. Alex Dean"
     assert db.commits == 1
     assert len(background_tasks.tasks) == 1
-    assert background_tasks.tasks[0].func is main.send_department_dean_credentials_email
-    assert background_tasks.tasks[0].args == (
+    assert background_tasks.tasks[0].func is main.send_approval_email
+    assert background_tasks.tasks[0].args[:4] == (
         "alex.dean@example.edu",
-        "Dr. Alex Dean",
         "DeanTemp1!",
+        "Dr. Alex Dean",
         department.name,
-        campus.name,
     )
+    assert background_tasks.tasks[0].args[4].startswith(
+        "http://localhost:3000/set-password?token="
+    )
+
+
+def test_create_department_dean_account_returns_secure_demo_setup_credentials(monkeypatch):
+    department = SimpleNamespace(id=9, name="Engineering", campus_id=4, dean_id=None, dean_name=None)
+    campus = SimpleNamespace(id=4, name="North Campus", is_active=True)
+    db = FakeSession(department=department, campus=campus, user_results=[None])
+    background_tasks = BackgroundTasks()
+    monkeypatch.setattr(main, "DEMO_EMAIL_VERIFICATION", True)
+    monkeypatch.setattr(
+        main,
+        "require_email_delivery_configured",
+        lambda: pytest.fail("Demo account creation must not require email configuration."),
+    )
+    monkeypatch.setattr(main, "generate_temporary_password", lambda: "SecureRandom1!")
+    monkeypatch.setattr(main, "hash_password", lambda password: f"hashed:{password}")
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+
+    result = main.create_department_dean_account(
+        department.id,
+        main.DepartmentDeanCreateRequest(full_name="Dr. Alex Dean", email="alex.dean@example.edu"),
+        background_tasks,
+        db,
+        admin=SimpleNamespace(id=1, role="campus_admin", campus_id=campus.id),
+    )
+
+    created_user = next(value for value in db.added if isinstance(value, models.User))
+    assert result["email_status"] == "demo"
+    assert result["demo_temporary_password"] == "SecureRandom1!"
+    assert result["demo_setup_url"].startswith("http://localhost:3000/set-password?token=")
+    assert created_user.password == "hashed:SecureRandom1!"
+    assert created_user.role == "department_admin"
+    assert created_user.admin_department_id == department.id
+    assert department.dean_id == created_user.id
+    assert background_tasks.tasks == []
 
 
 def test_create_department_dean_account_rejects_existing_department_assignment(monkeypatch):
