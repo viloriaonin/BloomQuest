@@ -60,6 +60,15 @@ def require_campus_admin(user: models.User = Depends(get_current_user)):
     return user
 
 
+def require_campus_admin_user(user: models.User = Depends(get_current_user)):
+    role = str(user.role).lower()
+    if role not in {"admin", "campus_admin"}:
+        raise HTTPException(status_code=403, detail="Campus administrator access required")
+    if not user.campus_id:
+        raise HTTPException(status_code=403, detail="A campus assignment is required")
+    return user
+
+
 def require_admin(user: models.User = Depends(get_current_user)):
     role = str(user.role).lower()
     if role not in {"super_admin", "campus_admin", "admin"}:

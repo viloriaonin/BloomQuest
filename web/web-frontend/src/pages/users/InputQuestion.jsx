@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { UploadCloud, FileText, FileSpreadsheet, Presentation, X, CheckCircle2, AlertCircle, Sparkles, PencilLine, FolderUp, RotateCcw, RefreshCw, Tags, Loader2 } from 'lucide-react';
+import { UploadCloud, FileText, FileSpreadsheet, Presentation, X, CheckCircle2, AlertCircle, Sparkles, PencilLine, FolderUp, RotateCcw, RefreshCw, Tags, Loader2, Eye } from 'lucide-react';
 import { usePopup } from '../../components/PopupProvider';
+import DownloadPreviewModal from '../../components/DownloadPreviewModal';
 import { API_URL } from '../../config/api';
 
 const MAX_QUESTIONS_PER_GENERATION = 100;
@@ -307,7 +308,7 @@ const UploadSlot = ({ policyKey, file, onFileSelected, onRemove, stepBadge, lock
 };
 
 const InputQuestion = () => {
-  const { showAlert } = usePopup();
+  const { showAlert, showConfirm } = usePopup();
   const [activeTab, setActiveTab] = useState('upload');
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -354,12 +355,13 @@ const InputQuestion = () => {
   const [questionTypePoints, setQuestionTypePoints] = useState({});
   const [questionTypeItems, setQuestionTypeItems] = useState({});
   const [generating, setGenerating] = useState(false);
+  const [generationStage, setGenerationStage] = useState(null);
   const [generationResult, setGenerationResult] = useState(null);
   const [excludedQuestionIds, setExcludedQuestionIds] = useState([]);
   const [previewBloomTab, setPreviewBloomTab] = useState('Remember'); // Syntax Error Fixed Here
-  const [generationProgress, setGenerationProgress] = useState(0);
   const [previewAction, setPreviewAction] = useState(null);
   const [downloadingFile, setDownloadingFile] = useState(null);
+  const [filePreview, setFilePreview] = useState(null);
   const uploadAbortControllerRef = useRef(null);
   const generationRequestInFlightRef = useRef(false);
   const maxQuestionsPerGeneration = Number(uploadResult?.max_questions_per_generation) || MAX_QUESTIONS_PER_GENERATION;
@@ -701,6 +703,7 @@ const InputQuestion = () => {
 
     setUploading(false);
     setGenerating(false);
+    setGenerationStage(null);
     setUploadResult(null);
     setGenerationResult(null);
     setExcludedQuestionIds([]);
@@ -774,6 +777,7 @@ const InputQuestion = () => {
     setWizardStep(1);
     setUploading(false);
     setGenerating(false);
+    setGenerationStage(null);
     setError('');
     setSuccessMessage('');
     sessionStorage.removeItem(INPUT_QUESTION_SESSION_KEY);
@@ -816,6 +820,16 @@ const InputQuestion = () => {
       setError(moduleErr || syllabusErr);
       return;
     }
+
+    const filesToAnalyze = [
+      moduleFile.name,
+      ...(!isFacultyUser && syllabusFile ? [syllabusFile.name] : []),
+    ];
+    const confirmed = await showConfirm(
+      `Analyze ${filesToAnalyze.join(isFacultyUser ? '' : ' and ')}${isFacultyUser && selectedUploadSubject ? ` for ${selectedUploadSubject.name}` : ''}? The selected files will be uploaded and analyzed to identify topics for your assessment.`,
+      'Confirm file analysis',
+    );
+    if (!confirmed) return;
 
     setError('');
     setUploading(true);
@@ -1026,7 +1040,7 @@ const InputQuestion = () => {
       uploading: false,
       generating: true,
     });
-    setGenerationProgress(10); // Start progress bar
+    setGenerationStage('generation');
 
     let topicMismatchRedirect = false;
     try {
@@ -1049,14 +1063,11 @@ const InputQuestion = () => {
         user_id: Number(localStorage.getItem('user_id')) || null,
       };
 
-      setGenerationProgress(20); // Progress: sending request
       const previewResponse = await fetch(`${API_URL}/questions/generate-preview`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      setGenerationProgress(70); // Progress: received response
-
       if (!previewResponse.ok) {
         const errData = await parseApiResponse(previewResponse);
         if (errData?.detail?.code === 'TOPICS_NOT_IN_MODULE') {
@@ -1098,11 +1109,9 @@ const InputQuestion = () => {
         throw new Error(message);
       }
 
-      setGenerationProgress(85); // Preview received; wait for review.
       const data = await parseApiResponse(previewResponse);
       setGenerationResult(data);
       setExcludedQuestionIds([]);
-      setGenerationProgress(100);
       setSuccessMessage('Review the generated questions. Similar questions are marked and can be excluded before saving.');
       persistInputQuestionSession({
         activeTab: 'upload',
@@ -1124,10 +1133,7 @@ const InputQuestion = () => {
     } finally {
       generationRequestInFlightRef.current = false;
       setGenerating(false);
-      // Keep progress bar visible for 500ms after completion before hiding
-      setTimeout(() => {
-        setGenerationProgress(0);
-      }, 500);
+      setGenerationStage(null);
       persistInputQuestionSession({
         ...(topicMismatchRedirect ? {
           activeTab: 'upload',
@@ -1161,7 +1167,7 @@ const InputQuestion = () => {
     setError('');
     setSuccessMessage('');
     setGenerating(true);
-    setGenerationProgress(35);
+    setGenerationStage('saving');
     try {
       const response = await fetch(`${API_URL}/questions/confirm-generation`, {
         method: 'POST',
@@ -1171,14 +1177,13 @@ const InputQuestion = () => {
       const data = await parseApiResponse(response);
       if (!response.ok) throw new Error(getErrorMessage(data) || `Saving failed with server status code: ${response.status}`);
       setGenerationResult(data);
-      setGenerationProgress(100);
       setSuccessMessage('Questions saved successfully to the Question Bank.');
       persistInputQuestionSession({ generationResult: data, excludedQuestionIds });
     } catch (err) {
       setError(getErrorMessage(err) || 'Unable to save the generated questions.');
     } finally {
       setGenerating(false);
-      setTimeout(() => setGenerationProgress(0), 500);
+      setGenerationStage(null);
     }
   };
 
@@ -1218,7 +1223,7 @@ const InputQuestion = () => {
     }
   };
 
-  const downloadFile = async (endpoint, filename) => {
+  const downloadFile = async (endpoint, filename, previewOnly = false) => {
     try {
       const userId = localStorage.getItem('user_id');
       const userParam = userId ? `&user_id=${encodeURIComponent(userId)}` : '';
@@ -1233,14 +1238,18 @@ const InputQuestion = () => {
         throw new Error(getErrorMessage(errorResponse) || 'Failed to retrieve the requested file.');
       }
       const blob = await response.blob();
-      const objectUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = objectUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 1000);
+      if (previewOnly) {
+        setFilePreview({ blob, filename });
+      } else {
+        const objectUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 1000);
+      }
     } catch (err) {
       setError(`Download failed: ${getErrorMessage(err)}`);
     } finally {
@@ -1255,10 +1264,18 @@ const InputQuestion = () => {
     void downloadFile(endpoint, filename);
   };
 
+  const startFilePreview = (endpoint, filename) => {
+    if (downloadingFile) return;
+    setError('');
+    setDownloadingFile(endpoint);
+    void downloadFile(endpoint, filename, true);
+  };
+
   const downloadSubjectCode = (uploadResult?.subject?.code || uploadResult?.subject?.name || 'assessment').trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
   const downloadExamType = examType.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
 
   return (
+    <>
     <div className="min-h-screen w-full" style={{ backgroundColor: pageBg, fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" }}>
       <GeneratingBarStyles />
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
@@ -1546,6 +1563,23 @@ const InputQuestion = () => {
                   )}
                 </div>
 
+                {uploading && (
+                  <div role="status" aria-live="polite" className="mt-5 rounded-xl border border-rose-100 bg-rose-50/70 p-4">
+                    <div className="flex items-start gap-3">
+                      <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-rose-700" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-slate-800">Analyzing your files</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-600">
+                          Uploading and analyzing {moduleFile?.name || 'module'}{!isFacultyUser && syllabusFile ? ` and ${syllabusFile.name}` : ''}. This may take a few moments.
+                        </p>
+                        <div className="relative mt-3 h-2 overflow-hidden rounded-full bg-rose-100">
+                          <div className="absolute top-0 h-full w-2/5 animate-[bq-indeterminate_1.2s_ease-in-out_infinite] rounded-full bg-[#B4454A]" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-6 flex justify-end border-t pt-4" style={{ borderColor: border }}>
                   <button
                     onClick={handleUpload}
@@ -1553,7 +1587,7 @@ const InputQuestion = () => {
                     className="rounded-lg px-5 py-2.5 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
                     style={{ backgroundColor: PRIMARY }}
                   >
-                    {uploading ? 'Analyzing…' : 'Continue'}
+                    {uploading ? 'Analyzing…' : 'Analyze Files'}
                   </button>
                 </div>
               </div>
@@ -1707,7 +1741,7 @@ const InputQuestion = () => {
                             style={{ backgroundColor: PRIMARY, minWidth: generating ? 280 : undefined }}
                           >
                             {generating ? (
-                              <GeneratingProgress label="Generating…" />
+                              <GeneratingProgress label={generationStage === 'saving' ? 'Saving questions…' : 'Generating…'} />
                             ) : (
                               <>
                                 <CheckCircle2 className="h-4 w-4" />
@@ -1715,20 +1749,26 @@ const InputQuestion = () => {
                               </>
                             )}
                           </button>
-                          {/* Progress bar under button */}
-                          {generating && (
-                            <div className="mt-2 w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-                              <div
-                                className="h-full transition-all duration-500 ease-out"
-                                style={{
-                                  width: `${generationProgress}%`,
-                                  background: 'linear-gradient(90deg, #8F1424 0%, #D64545 50%, #B4454A 100%)',
-                                }}
-                              />
-                            </div>
-                          )}
                         </div>
                       </div>
+                      {generating && (
+                        <div role="status" aria-live="polite" className="mt-4 rounded-xl border border-rose-100 bg-rose-50/70 p-4">
+                          <div className="flex items-start gap-3">
+                            <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-rose-700" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-semibold text-slate-800">{generationStage === 'saving' ? 'Saving questions' : 'Generating questions'}</p>
+                              <p className="mt-1 text-xs leading-5 text-slate-600">
+                                {generationStage === 'saving'
+                                  ? 'Adding your reviewed questions to the Question Bank.'
+                                  : `BloomQuest is preparing ${totalItems} question${Number(totalItems) === 1 ? '' : 's'} from the analyzed material. This may take a few moments.`}
+                              </p>
+                              <div className="relative mt-3 h-2 overflow-hidden rounded-full bg-rose-100">
+                                <div className="absolute top-0 h-full w-2/5 animate-[bq-indeterminate_1.2s_ease-in-out_infinite] rounded-full bg-[#B4454A]" />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1744,16 +1784,32 @@ const InputQuestion = () => {
                     <p className="text-xs text-gray-500">{generationResult.saved ? 'The selected questions are available in the Question Bank.' : 'Similar questions are marked below. Exclude any question you do not want to save.'}</p>
                   </div>
                   {generationResult.saved && <div className="flex flex-wrap items-center justify-end gap-3">
-                    <button type="button" onClick={() => startDownload('tos', `${downloadSubjectCode}-${downloadExamType}-TOS.xlsx`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
-                      {downloadingFile === 'tos' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Downloading TOS…</> : 'Download TOS (.xlsx)'}
-                    </button>
-                    <button type="button" onClick={() => startDownload('tos/pdf', `${downloadSubjectCode}-${downloadExamType}-TOS.pdf`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 bg-blue-800 hover:bg-blue-900 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
-                      {downloadingFile === 'tos/pdf' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Downloading TOS…</> : 'Download TOS (.pdf)'}
-                    </button>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button type="button" onClick={() => startFilePreview('tos', `${downloadSubjectCode}-${downloadExamType}-TOS.xlsx`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 border border-blue-200 bg-white text-blue-800 hover:bg-blue-50 text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
+                        {downloadingFile === 'tos' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Preparing…</> : <><Eye className="h-3.5 w-3.5" /> Preview TOS</>}
+                      </button>
+                      <button type="button" onClick={() => startDownload('tos', `${downloadSubjectCode}-${downloadExamType}-TOS.xlsx`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
+                        {downloadingFile === 'tos' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Downloading TOS…</> : 'Download TOS (.xlsx)'}
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button type="button" onClick={() => startFilePreview('tos/pdf', `${downloadSubjectCode}-${downloadExamType}-TOS.pdf`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 border border-blue-200 bg-white text-blue-900 hover:bg-blue-50 text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
+                        {downloadingFile === 'tos/pdf' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Preparing…</> : <><Eye className="h-3.5 w-3.5" /> Preview PDF</>}
+                      </button>
+                      <button type="button" onClick={() => startDownload('tos/pdf', `${downloadSubjectCode}-${downloadExamType}-TOS.pdf`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 bg-blue-800 hover:bg-blue-900 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
+                        {downloadingFile === 'tos/pdf' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Downloading TOS…</> : 'Download TOS (.pdf)'}
+                      </button>
+                    </div>
                     <div className="flex flex-wrap items-center gap-2 border-l border-slate-200 pl-3">
                       <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">Assessment</span>
+                      <button type="button" onClick={() => startFilePreview('assessment/docx', `${downloadSubjectCode}-${downloadExamType}-Test.docx`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 border border-purple-200 bg-white text-purple-800 hover:bg-purple-50 text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
+                        {downloadingFile === 'assessment/docx' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Preparing…</> : <><Eye className="h-3.5 w-3.5" /> Preview DOCX</>}
+                      </button>
                       <button type="button" onClick={() => startDownload('assessment/docx', `${downloadSubjectCode}-${downloadExamType}-Test.docx`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
                         {downloadingFile === 'assessment/docx' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Downloading Test…</> : 'Download Test (.docx)'}
+                      </button>
+                      <button type="button" onClick={() => startFilePreview('assessment/pdf', `${downloadSubjectCode}-${downloadExamType}-Test.pdf`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 border border-red-200 bg-white text-red-800 hover:bg-red-50 text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
+                        {downloadingFile === 'assessment/pdf' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Preparing…</> : <><Eye className="h-3.5 w-3.5" /> Preview PDF</>}
                       </button>
                       <button type="button" onClick={() => startDownload('assessment/pdf', `${downloadSubjectCode}-${downloadExamType}-Test.pdf`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
                         {downloadingFile === 'assessment/pdf' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Downloading Test…</> : 'Download Test (.pdf)'}
@@ -1897,6 +1953,8 @@ const InputQuestion = () => {
       </div>
     </div>
     </div>
+    {filePreview && <DownloadPreviewModal file={filePreview} onClose={() => setFilePreview(null)} />}
+    </>
   );
 };
 

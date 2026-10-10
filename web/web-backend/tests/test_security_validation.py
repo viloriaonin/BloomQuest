@@ -1179,9 +1179,12 @@ def test_saved_assessment_export_restores_exam_type_and_academic_year():
     assert "First Semester, Academic Year 2026-2027" in document_text
 
 
-def test_preview_saved_file_handles_merged_cells_in_spreadsheet_downloads():
+def test_preview_saved_file_renders_spreadsheet_as_pdf(monkeypatch):
     import openpyxl
     from main import preview_saved_file
+    import platform
+    import shutil
+    import subprocess
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -1215,8 +1218,50 @@ def test_preview_saved_file_handles_merged_cells_in_spreadsheet_downloads():
         def first(self):
             return self._log
 
+    expected_pdf = b"%PDF-preview"
+
+    def convert_to_pdf(command, **kwargs):
+        output_dir = command[command.index("--outdir") + 1]
+        with open(os.path.join(output_dir, "download.pdf"), "wb") as pdf_file:
+            pdf_file.write(expected_pdf)
+        return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+    monkeypatch.setattr(shutil, "which", lambda _name: "soffice")
+    monkeypatch.setattr(subprocess, "run", convert_to_pdf)
+
     result = preview_saved_file(999, user_id=1, db=db)
 
-    assert result["kind"] == "html"
-    assert "TOS" in result["content"]
-    assert "TABLE OF SPECIFICATIONS" in result["content"]
+    assert result.media_type == "application/pdf"
+    assert result.body == expected_pdf
+
+
+def test_preview_generated_file_converts_downloaded_office_blob(monkeypatch):
+    import main as main_module
+
+    expected_pdf = b"%PDF-preview"
+    monkeypatch.setattr(
+        main_module,
+        "render_download_preview_pdf",
+        lambda content, media_type: expected_pdf
+        if content == b"generated-xlsx" and media_type.endswith("spreadsheetml.sheet")
+        else b"",
+    )
+    previous_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=1)
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/downloads/preview-file",
+                files={"file": (
+                    "assessment.xlsx",
+                    b"generated-xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )},
+            )
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("application/pdf")
+        assert response.content == expected_pdf
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous_overrides)

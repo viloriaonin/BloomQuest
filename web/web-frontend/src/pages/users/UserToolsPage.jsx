@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Archive, ArrowRight, Bell, BookOpen, CheckCircle2, Download, FileQuestion, FileSpreadsheet, Search, Server, ShieldCheck, Trash2, Wifi } from "lucide-react";
+import { Archive, ArrowRight, Bell, BookOpen, CheckCircle2, Download, Eye, FileQuestion, FileSpreadsheet, LoaderCircle, Printer, Search, Server, ShieldCheck, Trash2, Wifi, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { usePopup } from "../../components/PopupProvider";
 import { API_URL } from "../../config/api";
@@ -308,7 +308,61 @@ const UserToolsPage = ({ section }) => {
   );
 };
 
-const DownloadsView = ({ downloads, downloadTab, setDownloadTab, groupedDownloads, selectedDownloadIds, setSelectedDownloadIds, deleteSelectedDownloads, retrieveDownload, downloadError, navigate }) => (
+const DownloadsView = ({ downloads, downloadTab, setDownloadTab, groupedDownloads, selectedDownloadIds, setSelectedDownloadIds, deleteSelectedDownloads, retrieveDownload, downloadError, navigate }) => {
+  const [preview, setPreview] = useState(null);
+  const [previewError, setPreviewError] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewSource, setPreviewSource] = useState("");
+  const previewFrame = React.useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (previewSource.startsWith("blob:")) URL.revokeObjectURL(previewSource);
+    };
+  }, [previewSource]);
+
+  const openPreview = async (item) => {
+    setPreview(item);
+    setPreviewError("");
+    setPreviewSource("");
+    setPreviewLoading(true);
+    try {
+      const userId = localStorage.getItem("user_id") || "";
+      const response = await fetch(`${API_URL}/downloads/${item.id}/preview?user_id=${encodeURIComponent(userId)}`);
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.detail || "The file preview could not be loaded.");
+      }
+
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("application/pdf")) {
+        throw new Error("The server did not return a printable file preview.");
+      }
+      setPreviewSource(URL.createObjectURL(await response.blob()));
+    } catch (error) {
+      setPreviewError(error.message || "The file preview could not be loaded.");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const closePreview = () => {
+    setPreview(null);
+    setPreviewSource("");
+    setPreviewError("");
+  };
+
+  const printPreview = () => {
+    const frameWindow = previewFrame.current?.contentWindow;
+    if (!frameWindow) {
+      setPreviewError("The preview is not ready to print yet.");
+      return;
+    }
+    frameWindow.focus();
+    frameWindow.print();
+  };
+
+  return (
   <div className="bq-page">
     <div className="bq-page-inner">
       <div className="mb-6">
@@ -358,7 +412,10 @@ const DownloadsView = ({ downloads, downloadTab, setDownloadTab, groupedDownload
                     <h2 className="line-clamp-3 font-semibold text-slate-900">{getDownloadName(item)}</h2>
                     <p className="mt-2 text-sm text-slate-500">{item.details || "Downloaded file"}</p>
                     <p className="mt-3 text-xs text-slate-400">{item.date || ""}</p>
-                    <button type="button" onClick={() => retrieveDownload(item)} className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[#B4454A] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#7F1D2D]"><Download size={15} /> Download again</button>
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      <button type="button" onClick={() => openPreview(item)} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"><Eye size={15} /> Preview</button>
+                      <button type="button" onClick={() => retrieveDownload(item)} className="inline-flex items-center gap-2 rounded-lg bg-[#B4454A] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#7F1D2D]"><Download size={15} /> Download again</button>
+                    </div>
                   </div>
                 </article>
               ))}
@@ -367,8 +424,27 @@ const DownloadsView = ({ downloads, downloadTab, setDownloadTab, groupedDownload
         </div>
       ) : <EmptyState title="No downloads yet" detail="Generated tests and Tables of Specifications will appear here." action="Open Question Bank" onClick={() => navigate("/question-bank")} />}
     </div>
+    {preview && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 sm:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closePreview(); }}>
+        <section role="dialog" aria-modal="true" aria-labelledby="download-preview-title" className="flex max-h-[95vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <header className="flex items-center justify-between gap-4 border-b border-slate-200 px-4 py-3 sm:px-6">
+            <div className="min-w-0">
+              <h2 id="download-preview-title" className="truncate font-semibold text-slate-900">File preview</h2>
+              <p className="truncate text-sm text-slate-500">{getDownloadName(preview)}</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button type="button" onClick={printPreview} disabled={previewLoading || !previewSource} className="inline-flex items-center gap-2 rounded-lg bg-[#B4454A] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#7F1D2D] disabled:cursor-not-allowed disabled:opacity-50"><Printer size={15} /> Print</button>
+              <button type="button" onClick={closePreview} aria-label="Close preview" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800"><X size={18} /></button>
+            </div>
+          </header>
+          {previewError ? <div role="alert" className="m-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{previewError}</div> : null}
+          {previewLoading ? <div className="flex min-h-80 items-center justify-center gap-2 text-sm text-slate-500"><LoaderCircle size={18} className="animate-spin" /> Loading preview…</div> : previewSource ? <iframe ref={previewFrame} title={`Preview of ${getDownloadName(preview)}`} src={previewSource} className="min-h-[65vh] w-full flex-1 border-0 bg-white" /> : null}
+        </section>
+      </div>
+    )}
   </div>
-);
+  );
+};
 
 const EmptyState = ({ title, detail, action, onClick }) => <div className="bq-panel flex flex-col items-center justify-center p-12 text-center"><CheckCircle2 className="h-10 w-10 text-emerald-600" /><h2 className="mt-4 font-semibold text-slate-900">{title}</h2><p className="mt-2 max-w-md text-sm text-slate-500">{detail}</p><button type="button" onClick={onClick} className="bq-primary-button mt-5">{action}</button></div>;
 const RecycleCard = ({ item, onRestore, checked, onCheckedChange }) => {

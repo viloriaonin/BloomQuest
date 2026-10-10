@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckSquare, ChevronRight, Download, FileText, Filter, FlaskConical, Heart, Info, Search, Shield, Sigma, Trash2, Sparkles, AlertCircle } from 'lucide-react';
+import { CheckSquare, ChevronRight, Download, Eye, FileText, Filter, FlaskConical, Heart, Info, Search, Shield, Sigma, Trash2, Sparkles, AlertCircle } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { usePopup } from '../../components/PopupProvider';
+import DownloadPreviewModal from '../../components/DownloadPreviewModal';
 import { API_URL } from '../../config/api';
 const PRIMARY = '#8F1424';
 const PRIMARY_SOFT = '#FBEEEF';
@@ -58,6 +59,43 @@ const GeneratingProgress = ({ label = 'Generating…' }) => (
 );
 
 const cleanText = (value) => String(value ?? '').trim().replace(/[{}[\]"']/g, '').replace(/\s+/g, ' ');
+
+const normalizeQuestionOptions = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((option) => cleanText(option)).filter(Boolean);
+  }
+
+  if (typeof value !== 'string') return [];
+
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      return parsed.map((option) => cleanText(option)).filter(Boolean);
+    }
+  } catch {
+    // Ignore non-JSON values and fall through to the plain-string handling below.
+  }
+
+  return [trimmed];
+};
+
+const normalizeAnswerLetters = (value) => {
+  if (value === null || value === undefined) return '';
+  const lettersOnly = String(value).toUpperCase().replace(/[^A-Z,\s]/g, '').replace(/\s+/g, ' ').trim();
+  return lettersOnly
+    .split(',')
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .join(', ');
+};
+
+const isLetterAnswerQuestionType = (questionType) => {
+  const type = String(questionType ?? '').trim();
+  return ['MCQ', 'Multiple Choice', 'Matching Type'].includes(type);
+};
 
 const normalizeJsonLike = (value) => {
   if (typeof value !== 'string') return value;
@@ -380,6 +418,7 @@ const QuestionBank = () => {
   const [deletingId, setDeletingId]           = useState(null);
   const [editingQuestion, setEditingQuestion] = useState(null);
   const [editForm, setEditForm]               = useState({});
+  const [savingEditId, setSavingEditId]       = useState(null);
   const [exporting, setExporting]             = useState(false);
   const [exportFormat, setExportFormat]       = useState('pdf');
   const [searchTerm, setSearchTerm]           = useState('');
@@ -406,6 +445,7 @@ const QuestionBank = () => {
   const [subcolumnAValues, setSubcolumnAValues] = useState({});
   const [generatingTos, setGeneratingTos] = useState(false);
   const [tosSavingProgress, setTosSavingProgress] = useState(0);
+  const [filePreview, setFilePreview] = useState(null);
   const undoTimerRef = useRef(null);
 
   useEffect(() => {
@@ -524,31 +564,76 @@ const QuestionBank = () => {
   };
 
   const handleEditOpen = (q) => {
+    const normalizedOptions = normalizeQuestionOptions(q.options);
+
     setEditingQuestion(q.id);
     setEditForm({
-      question: q.question,
-      correct_answer: q.correct_answer || '',
-      explanation: q.explanation || '',
+      question: q.question || '',
+      correct_answer: normalizeAnswerLetters(q.correct_answer ?? ''),
+      options: normalizedOptions,
     });
   };
 
   const handleEditSave = async () => {
+    if (!editingQuestion) return;
+
+    const trimmedQuestion = (editForm.question ?? '').trim();
+    const questionToEdit = questions.find((item) => item.id === editingQuestion) || {};
+    const currentQuestionType = questionToEdit.question_type || '';
+    const answerValue = normalizeAnswerLetters(editForm.correct_answer ?? '');
+
+    if (trimmedQuestion.length === 0) {
+      setError('Question text cannot be empty.');
+      return;
+    }
+
+    if (isLetterAnswerQuestionType(currentQuestionType) && !/^[A-Z](?:\s*,\s*[A-Z])*$/i.test(answerValue)) {
+      setError('Correct answer must use letter format only, such as A, B, or A, C.');
+      return;
+    }
+
     try {
+      setSavingEditId(editingQuestion);
+      const userId = localStorage.getItem('user_id') || '';
       const formData = new FormData();
-      formData.append('question', editForm.question);
-      formData.append('correct_answer', editForm.correct_answer);
-      formData.append('explanation', editForm.explanation);
-      const res = await fetch(`${API_URL}/questions/${editingQuestion}`, {
+      const options = Array.isArray(editForm.options) ? editForm.options.map((option) => String(option).trim()).filter(Boolean) : [];
+      const normalizedAnswer = answerValue
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .join(', ');
+
+      formData.append('question', trimmedQuestion);
+      formData.append('correct_answer', normalizedAnswer);
+      formData.append('explanation', '');
+      formData.append('difficulty', questionToEdit.difficulty || 'moderate');
+      if (options.length) {
+        formData.append('options', JSON.stringify(options));
+      }
+
+      const res = await fetch(`${API_URL}/questions/${editingQuestion}?user_id=${encodeURIComponent(userId)}`, {
         method: 'PUT',
         body: formData,
       });
       if (!res.ok) throw new Error('Update failed');
+
       setQuestions(prev =>
-        prev.map(q => q.id === editingQuestion ? { ...q, ...editForm } : q)
+        prev.map((q) => q.id === editingQuestion
+          ? {
+              ...q,
+              question: trimmedQuestion,
+              correct_answer: normalizedAnswer,
+              explanation: '',
+              options: options.length ? options : q.options,
+            }
+          : q)
       );
       setEditingQuestion(null);
+      setEditForm({});
     } catch (err) {
       setError('Failed to update question.');
+    } finally {
+      setSavingEditId(null);
     }
   };
 
@@ -666,7 +751,7 @@ const QuestionBank = () => {
     setTestModalOpen(true);
   };
 
-  const handleTestExport = async () => {
+  const handleTestExport = async (previewOnly = false) => {
     const format = testExportFormat;
     setExporting(true);
     setError('');
@@ -691,14 +776,19 @@ const QuestionBank = () => {
 
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${fileSubjectCode}-${fileExamType}-Test.${format}`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      const filename = `${fileSubjectCode}-${fileExamType}-Test.${format}`;
+      if (previewOnly) {
+        setFilePreview({ blob, filename });
+      } else {
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+      }
       setTestModalOpen(false);
     } catch (err) {
       setError(err.message || 'Download failed.');
@@ -707,7 +797,7 @@ const QuestionBank = () => {
     }
   };
 
-  const handleTosGeneration = async () => {
+  const handleTosGeneration = async (previewOnly = false) => {
     if (!selectedSubject || selectedQuestions.length === 0) {
       setError('Please select questions before generating TOS.');
       return;
@@ -764,14 +854,19 @@ const QuestionBank = () => {
       setTosSavingProgress(85); // Progress: generating file
       const blob = await res.blob();
       setTosSavingProgress(95); // Almost done
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${fileSubjectCode}-${fileExamType}-TOS.xlsx`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      const filename = `${fileSubjectCode}-${fileExamType}-TOS.xlsx`;
+      if (previewOnly) {
+        setFilePreview({ blob, filename });
+      } else {
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+      }
       setTosSavingProgress(100); // Complete
 
       // Reset modal
@@ -966,13 +1061,83 @@ const QuestionBank = () => {
                 {!loading && visibleQuestions.map((q) => (
                   <div key={q.id} className="rounded-lg border border-gray-200 bg-white p-5 transition-all hover:border-red-200 hover:shadow-sm">
                     {editingQuestion === q.id ? (
-                      <div className="space-y-3">
-                        <textarea className="w-full resize-none rounded-md border border-gray-200 p-3 text-sm text-gray-700 outline-none focus:border-red-400" rows={3} value={editForm.question} onChange={(e) => setEditForm(prev => ({ ...prev, question: e.target.value }))} />
-                        <input className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm outline-none focus:border-red-400" placeholder="Correct answer" value={editForm.correct_answer} onChange={(e) => setEditForm(prev => ({ ...prev, correct_answer: e.target.value }))} />
-                        <input className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm outline-none focus:border-red-400" placeholder="Explanation" value={editForm.explanation} onChange={(e) => setEditForm(prev => ({ ...prev, explanation: e.target.value }))} />
-                        <div className="flex gap-2">
-                          <button onClick={handleEditSave} className="rounded-md bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-700">Save</button>
-                          <button onClick={() => setEditingQuestion(null)} className="rounded-md bg-gray-100 px-4 py-2 text-xs font-medium text-gray-600 hover:bg-gray-200">Cancel</button>
+                      <div className="rounded-xl border border-red-100 bg-red-50/30 p-4">
+                        <div className="mb-4 flex items-center justify-between gap-3 border-b border-red-100 pb-3">
+                          <div>
+                            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#B4454A]">Edit question</p>
+                            <h3 className="mt-1 text-sm font-semibold text-slate-700">{q.question_type || 'Question'} • {q.bloom_level || 'Unassigned level'}</h3>
+                          </div>
+                          <span className="inline-flex items-center rounded-full border border-red-200 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-[#B4454A]">
+                            {q.question_type || 'Question'}
+                          </span>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div>
+                            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Question</label>
+                            <textarea
+                              className="w-full resize-none rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-red-400 focus:ring-2 focus:ring-red-100"
+                              rows={4}
+                              value={editForm.question ?? ''}
+                              onChange={(e) => setEditForm(prev => ({ ...prev, question: e.target.value }))}
+                            />
+                          </div>
+
+                          {Array.isArray(editForm.options) && editForm.options.length > 0 && (
+                            <div>
+                              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Choices</label>
+                              <div className="space-y-2">
+                                {editForm.options.map((option, index) => (
+                                  <div key={`${option}-${index}`} className="flex items-center gap-2">
+                                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-red-50 text-[11px] font-bold text-[#B4454A]">
+                                      {String.fromCharCode(65 + index)}
+                                    </span>
+                                    <input
+                                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:ring-2 focus:ring-red-100"
+                                      value={option}
+                                      onChange={(e) => {
+                                        const nextOptions = [...(editForm.options || [])];
+                                        nextOptions[index] = e.target.value;
+                                        setEditForm(prev => ({ ...prev, options: nextOptions }));
+                                      }}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <div>
+                            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Correct answer</label>
+                            <input
+                              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:ring-2 focus:ring-red-100"
+                              placeholder="A, B, C"
+                              value={editForm.correct_answer ?? ''}
+                              onChange={(e) => setEditForm(prev => ({ ...prev, correct_answer: normalizeAnswerLetters(e.target.value) }))}
+                            />
+                            <p className="mt-1 text-[10px] uppercase tracking-wide text-slate-400">Letters only, e.g. A or A, C</p>
+                          </div>
+                        </div>
+
+                        <div className="mt-5 flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingQuestion(null);
+                              setEditForm({});
+                            }}
+                            className="rounded-md border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleEditSave}
+                            disabled={savingEditId === q.id}
+                            className="rounded-md bg-[#B4454A] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#8f1c2b] disabled:cursor-not-allowed disabled:bg-slate-300"
+                          >
+                            {savingEditId === q.id ? 'Saving...' : 'Save changes'}
+                          </button>
                         </div>
                       </div>
                     ) : (
@@ -1315,6 +1480,9 @@ const QuestionBank = () => {
 
             <div className="mt-6 flex justify-end gap-2 border-t border-slate-100 pt-5">
               <button type="button" onClick={() => setTestModalOpen(false)} disabled={exporting} className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50">Cancel</button>
+              <button type="button" onClick={() => handleTestExport(true)} disabled={exporting} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50">
+                <Eye className="h-4 w-4" /> Preview &amp; Print
+              </button>
               <button type="button" onClick={handleTestExport} disabled={exporting} className="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-slate-300" style={{ backgroundColor: PRIMARY }}>
                 {exporting ? <GeneratingProgress label="Preparing…" /> : <><Download className="h-4 w-4" />Download Test</>}
               </button>
@@ -1426,6 +1594,15 @@ const QuestionBank = () => {
               <div>
                 <button
                   type="button"
+                  onClick={() => handleTosGeneration(true)}
+                  disabled={generatingTos || selectedTopics.length === 0}
+                  className="mb-2 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Eye className="h-4 w-4" />
+                  Preview &amp; Print
+                </button>
+                <button
+                  type="button"
                   onClick={handleTosGeneration}
                   disabled={generatingTos || selectedTopics.length === 0}
                   className="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-slate-300"
@@ -1456,6 +1633,7 @@ const QuestionBank = () => {
           </div>
         </div>
       ), document.body)}
+      {filePreview && <DownloadPreviewModal file={filePreview} onClose={() => setFilePreview(null)} />}
       </div>
     </div>
   );

@@ -528,6 +528,30 @@
 .bq-admin-metric p { color: #8b8f99; font-size: 0.75rem; }
 .bq-admin-metric strong { display: block; margin-top: 0.5rem; color: #ecedef; font-family: Consolas, monospace; font-size: 1.5rem; font-weight: 500; }
 
+.bq-admin-dark .bq-academic-attached .bq-department-leadership-fields {
+  background: #1b1e26 !important;
+  border-color: #262a34 !important;
+}
+.bq-admin-dark .bq-academic-attached .bq-department-leadership-fields input,
+.bq-admin-dark .bq-academic-attached .bq-department-leadership-fields select {
+  background: #0d0e13 !important;
+  border-color: #262a34 !important;
+  color: #ecedef !important;
+}
+.bq-admin-dark .bq-academic-attached .bq-department-leadership-fields input::placeholder {
+  color: #8b8f99 !important;
+}
+.bq-admin-light .bq-academic-attached .bq-department-leadership-fields {
+  background: #f8fafc !important;
+  border-color: rgba(15, 23, 42, 0.1) !important;
+}
+.bq-admin-light .bq-academic-attached .bq-department-leadership-fields input,
+.bq-admin-light .bq-academic-attached .bq-department-leadership-fields select {
+  background: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  color: #0f172a !important;
+}
+
 @media (max-width: 767px) {
   .bq-admin-dark .bq-admin-header { padding: 1rem; }
   .bq-admin-dark .bq-admin-header .text-right { display: none; }

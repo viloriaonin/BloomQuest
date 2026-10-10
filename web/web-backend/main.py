@@ -2,7 +2,6 @@ from typing import Optional
 from contextlib import asynccontextmanager
 import io
 import json
-import base64
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, status, BackgroundTasks, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -38,7 +37,7 @@ from routers import questions
 from routers.questions import _resolve_department_leadership
 from routers.assessment import build_assessment_docx, cleanup_file, convert_docx_to_pdf
 from routers import activity
-from security import get_current_user, get_optional_current_user, require_admin, require_academic_admin, require_admin_workspace, require_campus_admin, require_super_admin, assert_campus_access, assert_department_access, visible_campus_id, user_campus_id, subject_campus_id, assert_user_subject_campus_access
+from security import get_current_user, get_optional_current_user, require_admin, require_academic_admin, require_admin_workspace, require_campus_admin, require_campus_admin_user, require_super_admin, assert_campus_access, assert_department_access, visible_campus_id, user_campus_id, subject_campus_id, assert_user_subject_campus_access
 from routers import analytics
 import smtplib
 import string
@@ -5220,22 +5219,47 @@ def list_department_admins(db: Session = Depends(get_db), _admin: models.User = 
     } for user, department, campus in rows]
 
 
-@app.post("/api/super-admin/department-admins", status_code=201)
+@app.get("/api/campus-admin/department-admins")
+def list_campus_department_admins(
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_campus_admin_user),
+):
+    rows = db.query(models.User, models.Department, models.Campus).join(
+        models.Department, models.Department.id == models.User.admin_department_id
+    ).join(
+        models.Campus, models.Campus.id == models.Department.campus_id
+    ).filter(
+        models.User.role == "department_admin",
+        models.Department.campus_id == admin.campus_id,
+    ).order_by(models.Department.name.asc(), models.User.email.asc()).all()
+    return [{
+        "id": user.id,
+        "name": user.name or user.email,
+        "email": user.email,
+        "department_id": department.id,
+        "department": department.name,
+        "campus": campus.name,
+        "is_active": not user.archived and campus.is_active,
+    } for user, department, campus in rows]
+
+
+@app.post("/api/campus-admin/department-admins", status_code=201)
 def create_department_admin(
     payload: DepartmentAdminCreateRequest,
     db: Session = Depends(get_db),
-    admin: models.User = Depends(require_super_admin),
+    admin: models.User = Depends(require_campus_admin_user),
 ):
     normalized_email = normalize_email(payload.email)
     department = db.query(models.Department).filter(
-        models.Department.id == payload.department_id
+        models.Department.id == payload.department_id,
+        models.Department.campus_id == admin.campus_id,
     ).first()
     campus = db.query(models.Campus).filter(
-        models.Campus.id == department.campus_id,
+        models.Campus.id == admin.campus_id,
         models.Campus.is_active.is_(True),
     ).first() if department and department.campus_id else None
     if not department or not campus:
-        raise HTTPException(status_code=404, detail="Active department not found.")
+        raise HTTPException(status_code=404, detail="Active department in your campus not found.")
     if db.query(models.User).filter(func.lower(models.User.email) == normalized_email).first():
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
 
@@ -5254,7 +5278,7 @@ def create_department_admin(
     log_activity(
         db,
         "Department Admin Created",
-        f"Super Admin {admin.id} created a Department Admin for department {department.id}.",
+        f"Campus Admin {admin.id} created a Department Admin for department {department.id}.",
         "security",
         user_id=admin.id,
     )
@@ -5740,6 +5764,16 @@ def assign_department_dean(department_id: int, payload: LeadershipAssignmentRequ
 
     if payload.name is not None:
         normalized_name = (payload.name or "").strip()
+        linked_dean = db.query(models.User).filter(
+            models.User.id == department.dean_id,
+            models.User.role == "department_dean",
+        ).first() if department.dean_id else None
+        if normalized_name and linked_dean:
+            linked_dean.name = normalized_name
+            department.dean_name = normalized_name
+            db.commit()
+            log_activity(db, "Department Dean Updated", f"Admin {admin.id} updated dean for department '{department.name}'.", "academic", user_id=admin.id)
+            return {"department_id": department.id, "dean_id": department.dean_id, "dean_name": department.dean_name}
         department.dean_name = normalized_name or None
         department.dean_id = None
         db.commit()
@@ -7331,6 +7365,64 @@ def view_saved_file(activity_id: int, user_id: int = None, db: Session = Depends
     return Response(content=log.file_content, media_type=log.media_type or "application/octet-stream", headers={"Content-Disposition": f"inline; filename={log.filename or 'downloaded-file'}"})
 
 
+def render_download_preview_pdf(file_content: bytes, media_type: str) -> bytes:
+    if media_type == "application/pdf":
+        return file_content
+    if not (media_type.endswith("wordprocessingml.document") or media_type.endswith("spreadsheetml.sheet")):
+        raise HTTPException(status_code=415, detail="Preview is available for PDF, Word, and Excel downloads.")
+
+    import os
+    import platform
+    import shutil
+    import subprocess
+    import tempfile
+
+    office_type = "docx" if media_type.endswith("wordprocessingml.document") else "xlsx"
+    with tempfile.TemporaryDirectory(prefix="bloomquest-preview-") as temp_dir:
+        source_path = os.path.join(temp_dir, f"download.{office_type}")
+        pdf_path = os.path.join(temp_dir, "download.pdf")
+        with open(source_path, "wb") as source_file:
+            source_file.write(file_content)
+
+        if office_type == "docx":
+            convert_docx_to_pdf(source_path, pdf_path)
+        elif platform.system() == "Windows":
+            import pythoncom
+            import win32com.client
+
+            pythoncom.CoInitialize()
+            excel = None
+            workbook = None
+            try:
+                excel = win32com.client.DispatchEx("Excel.Application")
+                excel.Visible = False
+                excel.DisplayAlerts = False
+                workbook = excel.Workbooks.Open(os.path.abspath(source_path), ReadOnly=True, UpdateLinks=0)
+                workbook.ExportAsFixedFormat(0, os.path.abspath(pdf_path))
+            finally:
+                if workbook is not None:
+                    workbook.Close(False)
+                if excel is not None:
+                    excel.Quit()
+                pythoncom.CoUninitialize()
+        else:
+            libreoffice = shutil.which("libreoffice") or shutil.which("soffice")
+            if not libreoffice:
+                raise HTTPException(status_code=503, detail="Office-file preview requires LibreOffice on the server.")
+            result = subprocess.run(
+                [libreoffice, "--headless", "--convert-to", "pdf", "--outdir", temp_dir, source_path],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode != 0 or not os.path.exists(pdf_path):
+                error = (result.stderr or result.stdout or "No PDF was produced.").strip()
+                raise HTTPException(status_code=500, detail=f"Office-file preview conversion failed: {error}")
+
+        with open(pdf_path, "rb") as pdf_file:
+            return pdf_file.read()
+
+
 @app.get("/api/downloads/{activity_id}/preview")
 def preview_saved_file(activity_id: int, user_id: int = None, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     authenticated_user_id = getattr(current_user, "id", None)
@@ -7348,116 +7440,33 @@ def preview_saved_file(activity_id: int, user_id: int = None, db: Session = Depe
         raise HTTPException(status_code=404, detail="Saved download not found")
 
     media_type = log.media_type or "application/octet-stream"
-    if media_type == "application/pdf":
-        return {"kind": "pdf", "filename": log.filename, "content": base64.b64encode(log.file_content).decode("ascii")}
-    if media_type.endswith("wordprocessingml.document"):
-        from docx import Document
-        document = Document(io.BytesIO(log.file_content))
-        blocks = []
-        for paragraph in document.paragraphs:
-            if paragraph.text.strip():
-                style = paragraph.style.name.lower() if paragraph.style else ""
-                tag = "h1" if "title" in style else "h2" if "heading" in style else "p"
-                blocks.append(f"<{tag}>{paragraph.text}</{tag}>")
-        for table in document.tables:
-            rows = []
-            for row in table.rows:
-                cells = "".join(f"<td>{cell.text}</td>" for cell in row.cells)
-                rows.append(f"<tr>{cells}</tr>")
-            blocks.append(f"<table><tbody>{''.join(rows)}</tbody></table>")
-        return {"kind": "html", "filename": log.filename, "content": "".join(blocks)}
-    if media_type.endswith("spreadsheetml.sheet"):
-        import openpyxl
+    pdf_content = render_download_preview_pdf(log.file_content, media_type)
+    return Response(
+        content=pdf_content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline"},
+    )
 
-        workbook = openpyxl.load_workbook(io.BytesIO(log.file_content), read_only=False, data_only=True)
-        candidate_sheets = []
-        for sheet in workbook.worksheets:
-            if sheet.sheet_state == "hidden":
-                continue
-            text_values = []
-            for row in sheet.iter_rows(min_row=1, max_row=min(15, sheet.max_row), min_col=1, max_col=min(12, sheet.max_column)):
-                for cell in row:
-                    if cell.value is None:
-                        continue
-                    text_values.append(str(cell.value).strip().lower())
-            if any("table of specifications" in value for value in text_values):
-                candidate_sheets.append(sheet)
-        if not candidate_sheets:
-            candidate_sheets = [sheet for sheet in workbook.worksheets if sheet.sheet_state != "hidden"]
-        if not candidate_sheets:
-            return {"kind": "text", "filename": log.filename, "content": log.file_content.decode("utf-8", errors="replace")}
 
-        sheets = []
-        for sheet in candidate_sheets[:1]:
-            merged_ranges = []
-            merged_cells = getattr(sheet, "merged_cells", None)
-            if merged_cells is not None:
-                for merged in merged_cells.ranges:
-                    merged_ranges.append({
-                        "min_row": merged.min_row,
-                        "max_row": merged.max_row,
-                        "min_col": merged.min_col,
-                        "max_col": merged.max_col,
-                    })
+@app.post("/api/downloads/preview-file")
+def preview_generated_file(file: UploadFile = File(...), current_user: models.User = Depends(get_current_user)):
+    filename = file.filename or "downloaded-file"
+    extension = os.path.splitext(filename)[1].lower()
+    media_types = {
+        ".pdf": "application/pdf",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }
+    media_type = media_types.get(extension)
+    if not media_type:
+        raise HTTPException(status_code=415, detail="Preview is available for PDF, Word, and Excel downloads.")
 
-            html_rows = []
-            occupied = set()
-            for row in sheet.iter_rows():
-                cells = []
-                for cell in row:
-                    if (cell.row, cell.column) in occupied:
-                        continue
-                    value = "" if cell.value is None else str(cell.value)
-                    row_span = 1
-                    col_span = 1
-                    for merged in merged_ranges:
-                        if (
-                            merged["min_row"] <= cell.row <= merged["max_row"]
-                            and merged["min_col"] <= cell.column <= merged["max_col"]
-                            and (merged["min_row"], merged["min_col"]) == (cell.row, cell.column)
-                        ):
-                            row_span = merged["max_row"] - merged["min_row"] + 1
-                            col_span = merged["max_col"] - merged["min_col"] + 1
-                            for rr in range(merged["min_row"], merged["max_row"] + 1):
-                                for cc in range(merged["min_col"], merged["max_col"] + 1):
-                                    occupied.add((rr, cc))
-                            break
+    file_content = file.file.read(25 * 1024 * 1024 + 1)
+    if len(file_content) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="The file is too large to preview.")
 
-                    style_parts = []
-                    if cell.font and cell.font.bold:
-                        style_parts.append("font-weight: 700;")
-                    if cell.alignment and cell.alignment.horizontal:
-                        style_parts.append(f"text-align: {cell.alignment.horizontal};")
-                    if cell.border:
-                        style_parts.append("border: 1px solid #cbd5e1;")
-                    if cell.fill and getattr(cell.fill, "fill_type", None) == "solid":
-                        style_parts.append("background-color: #f8fafc;")
-                    cells.append({
-                        "value": value,
-                        "row_span": row_span,
-                        "col_span": col_span,
-                        "style": "".join(style_parts),
-                    })
-                if cells:
-                    html_rows.append(cells)
-
-            rows_html = []
-            for row in html_rows:
-                cells_html = []
-                for cell in row:
-                    cells_html.append(
-                        f'<td style="{cell["style"]}" rowspan="{cell["row_span"]}" colspan="{cell["col_span"]}">{cell["value"]}</td>'
-                    )
-                rows_html.append(f"<tr>{''.join(cells_html)}</tr>")
-            sheets.append({
-                "name": sheet.title,
-                "html": f"<table style='border-collapse: collapse; width: 100%; font-size: 12px; text-align: left;'>{''.join(rows_html)}</table>",
-            })
-        content_sections = []
-        for sheet in sheets:
-            content_sections.append(f"<section style='margin-bottom: 24px;'><h3 style='margin: 0 0 12px; font-weight: 700;'>{sheet['name']}</h3>{sheet['html']}</section>")
-        return {"kind": "html", "filename": log.filename, "content": "".join(content_sections)}
-    return {"kind": "text", "filename": log.filename, "content": log.file_content.decode("utf-8", errors="replace")}
+    pdf_content = render_download_preview_pdf(file_content, media_type)
+    return Response(content=pdf_content, media_type="application/pdf", headers={"Content-Disposition": "inline"})
 
 
 @app.delete("/api/downloads/{activity_id}")
@@ -7494,8 +7503,9 @@ async def update_question(
     question_id: int,
     question: str = Form(...),
     correct_answer: str = Form(...),
-    explanation: str = Form(...),
+    explanation: str = Form(""),
     difficulty: str = Form("moderate"),
+    options: str = Form(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -7505,15 +7515,30 @@ async def update_question(
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
     assert_question_access(db, current_user, q)
+
+    parsed_options = None
+    if options is not None:
+        cleaned_options = options.strip()
+        if cleaned_options:
+            try:
+                parsed_options = json.loads(cleaned_options)
+            except json.JSONDecodeError:
+                raise HTTPException(status_code=400, detail="Options must be valid JSON.")
+            if not isinstance(parsed_options, (list, dict)):
+                raise HTTPException(status_code=400, detail="Options payload must be a list or object.")
+
     db.add(models.QuestionVersion(snapshot={
         "question": q.question,
         "correct_answer": q.correct_answer,
         "explanation": q.explanation,
         "difficulty": q.difficulty,
+        "options": q.options,
     }, question_id=q.id))
     q.question = question
     q.correct_answer = correct_answer
     q.explanation = explanation
+    if parsed_options is not None:
+        q.options = parsed_options
     if difficulty not in {"easy", "moderate", "hard"}:
         raise HTTPException(status_code=400, detail="Invalid difficulty")
     q.difficulty = difficulty
