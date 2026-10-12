@@ -10,6 +10,7 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  Recycle,
   Settings,
   Sparkles,
 } from "lucide-react";
@@ -21,6 +22,7 @@ const icons = {
   bank: BookOpen,
   settings: Settings,
   favorites: Download,
+  recycle: Recycle,
   logout: LogOut,
   collapse: PanelLeftClose,
   expand: PanelLeftOpen,
