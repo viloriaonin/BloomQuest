@@ -213,7 +213,7 @@ export const ReportsContent = ({ showCampusFilter = false }) => {
       return !isAdminRow && matchesCampus && matchesRole && matchesPeriod && matchesDept && matchesProgram && matchesInstructor && matchesTab &&
         (showCampusFilter || text.includes(searchTerm.toLowerCase()));
     }).sort((a, b) => new Date(`${b.date} ${b.time}`) - new Date(`${a.date} ${a.time}`));
-  }, [activityLog, period, campus, role, selectedRole, department, departmentId, programId, instructorId, selectedDepartment, showFacultyFilters, showDepartmentAdminFilters, showCampusFilter, activeTab, searchTerm]);
+  }, [activityLog, period, campus, selectedRole, department, departmentId, programId, instructorId, showFacultyFilters, showDepartmentAdminFilters, showCampusFilter, activeTab, searchTerm]);
 
   const currentPage = pageByTab[activeTab] || 1;
   const pageCount = Math.max(1, Math.ceil(filteredLog.length / pageSize));
