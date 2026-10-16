@@ -14,6 +14,7 @@ import CampusAdminOverview from "./CampusAdminOverview";
 import CampusAdminAIUsage from "./CampusAdminAIUsage";
 import { QuestionBankContent } from "./QuestionBank";
 import { Radio, ShieldCheck, Menu } from "lucide-react";
+import { SuperAdminDashboardContent } from "./SuperAdminDashboard";
 
 const TAB_META = {
   dashboard: {
@@ -51,6 +52,61 @@ const TAB_META = {
   recycle: {
     label: "Recycle Bin",
     description: "Restore deleted content or remove it permanently.",
+  },
+  settings: {
+    label: "Settings",
+    description: "Manage your profile and account preferences.",
+  },
+  campuses: {
+    label: "Campus Management",
+    description: "Create, update, and manage university campuses.",
+  },
+  admins: {
+    label: "Admin Management",
+    description: "Manage Campus Admin and Department Admin accounts.",
+  },
+  "global-users": {
+    label: "Global Users",
+    description: "Review users across all university campuses.",
+  },
+  "activity-logs": {
+    label: "Activity Logs",
+    description: "Review and export university-wide activity.",
+  },
+};
+
+const SUPER_ADMIN_TAB_META = {
+  dashboard: {
+    label: "Dashboard",
+    description: "University-wide overview and cross-campus analytics.",
+  },
+  campuses: {
+    label: "Campus Management",
+    description: "Create, update, and manage university campuses.",
+  },
+  admins: {
+    label: "Admin Management",
+    description: "Manage Campus Admin and Department Admin accounts.",
+  },
+  "global-users": {
+    label: "Global Users",
+    description: "Review users across all university campuses.",
+  },
+  academic: {
+    label: "Academic Management",
+    description: "Manage academic structures across the university.",
+  },
+  "question-bank": {
+    label: "Question Bank",
+    description: "Review questions across the university academic structure.",
+  },
+  "ai-usage": {
+    label: "AI Usage",
+    description: "Review university-wide Gemini activity and usage trends.",
+  },
+  "activity-logs": {
+    label: "Activity Logs",
+    description: "Review and export university-wide activity.",
   },
   settings: {
     label: "Settings",
@@ -200,24 +256,42 @@ const DepartmentAdminOverview = ({ setActiveTab }) => {
 
 const AdminDashboard = () => {
   const location = useLocation();
-  const isDepartmentAdmin = String(localStorage.getItem("role") || "").toLowerCase() === "department_admin";
-  const [activeTab, setActiveTab] = useState(() => isDepartmentAdmin
-    ? "dashboard"
-    : location.pathname.startsWith("/admin/academic")
+  const storedRole = String(localStorage.getItem("role") || "").toLowerCase();
+  const isDepartmentAdmin = storedRole === "department_admin";
+  const isCampusAdmin = storedRole === "campus_admin";
+  const isLegacyAdmin = storedRole === "admin";
+  const isSuperAdmin = storedRole === "super_admin";
+  const isCampusExperience = isCampusAdmin || isLegacyAdmin;
+  const [activeTab, setActiveTab] = useState(() => isSuperAdmin
+    ? location.pathname.startsWith("/super-admin/academic")
+      ? "academic"
+      : location.pathname.startsWith("/super-admin/questions")
+        ? "question-bank"
+        : "dashboard"
+    : isDepartmentAdmin
+      ? "dashboard"
+      : location.pathname.startsWith("/admin/academic")
         ? "academic"
       : location.pathname.startsWith("/admin/questions")
         ? "question-bank"
       : location.pathname.startsWith("/admin/users")
         ? "users"
         : "dashboard");
-  const [userEmail, setUserEmail] = useState("admin@bloomquest.edu");
+  const [userEmail, setUserEmail] = useState(() => localStorage.getItem("email") || "admin@bloomquest.edu");
+  const [userFullName, setUserFullName] = useState(() => localStorage.getItem("name") || "");
+  const [campusName, setCampusName] = useState(() => localStorage.getItem("campus_name") || "");
   const [userRole, setUserRole] = useState("Administrator");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [adminTheme, setAdminTheme] = useState(() => localStorage.getItem("bloomquest-admin-theme") || "dark");
   const [departments, setDepartments] = useState([]);
   const [departmentsError, setDepartmentsError] = useState("");
+  const [superAdminError, setSuperAdminError] = useState("");
+  const [superAdminNotice, setSuperAdminNotice] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState("All Departments");
+  const [selectedProgramId, setSelectedProgramId] = useState("All Programs");
+  const selectedDepartmentRecord = departments.find((item) => item.name === selectedDepartment);
+  const availablePrograms = selectedDepartmentRecord?.programs || [];
 
   const toggleAdminTheme = () => {
     const nextTheme = adminTheme === "dark" ? "light" : "dark";
@@ -232,7 +306,23 @@ const AdminDashboard = () => {
     setMobileSidebarOpen((previous) => !previous);
   };
 
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    if (isSuperAdmin) {
+      setSuperAdminError("");
+      setSuperAdminNotice("");
+    }
+  };
+
   useEffect(() => {
+    if (isSuperAdmin) {
+      if (location.pathname.startsWith("/super-admin/academic")) {
+        setActiveTab("academic");
+      } else if (location.pathname.startsWith("/super-admin/questions")) {
+        setActiveTab("question-bank");
+      }
+      return;
+    }
     if (isDepartmentAdmin) {
       if (location.pathname.startsWith("/admin/questions")) {
         setActiveTab("question-bank");
@@ -246,38 +336,75 @@ const AdminDashboard = () => {
     } else if (location.pathname.startsWith("/admin/users")) {
       setActiveTab("users");
     }
-  }, [isDepartmentAdmin, location.pathname]);
+  }, [isDepartmentAdmin, isSuperAdmin, location.pathname]);
 
   useEffect(() => {
-    const storedEmail = window.localStorage.getItem("email");
-    const storedRole = window.localStorage.getItem("role");
-    if (storedEmail) setUserEmail(storedEmail);
-    if (storedRole) setUserRole(storedRole);
+    const syncProfile = () => {
+      setUserEmail(window.localStorage.getItem("email") || "admin@bloomquest.edu");
+      setUserFullName(window.localStorage.getItem("name") || "");
+      setCampusName(window.localStorage.getItem("campus_name") || "");
+      setUserRole(window.localStorage.getItem("role") || "Administrator");
+    };
+    window.addEventListener("profile-updated", syncProfile);
+    return () => window.removeEventListener("profile-updated", syncProfile);
   }, []);
 
   useEffect(() => {
-    if (isDepartmentAdmin) {
+    if (!isCampusExperience) {
       return undefined;
     }
     const loadDashboardData = async () => {
       try {
         const headers = { Authorization: `Bearer ${localStorage.getItem("token") || ""}` };
-        const response = await fetch(`${API_URL}/departments`, { headers });
-        if (!response.ok) {
-          const payload = await response.json().catch(() => ({}));
-          throw new Error(payload.detail || "Could not load campus departments.");
+        const [departmentsResponse, hierarchyResponse] = await Promise.all([
+          fetch(`${API_URL}/departments`, { headers }),
+          fetch(`${API_URL}/academic-hierarchy`, { headers }),
+        ]);
+        if (!departmentsResponse.ok || !hierarchyResponse.ok) {
+          const payload = await departmentsResponse.json().catch(() => ({}));
+          throw new Error(payload.detail || "Could not load campus departments and programs.");
         }
-        setDepartments(await response.json());
+        const [departmentData, hierarchy] = await Promise.all([
+          departmentsResponse.json(),
+          hierarchyResponse.json(),
+        ]);
+        const hierarchyDepartments = new Map(
+          (hierarchy.campuses || [])
+            .flatMap((campus) => campus.departments || [])
+            .map((department) => [Number(department.id), department]),
+        );
+        setDepartments(departmentData.map((department) => ({
+          ...department,
+          programs: hierarchyDepartments.get(Number(department.id))?.programs || department.programs || [],
+        })));
       } catch (err) {
         setDepartmentsError(err.message || "Could not load campus departments.");
       }
     };
     loadDashboardData();
-  }, [isDepartmentAdmin]);
+  }, [isCampusExperience]);
 
-  const meta = TAB_META[activeTab] || { label: activeTab, description: "" };
+  const meta = (isSuperAdmin ? SUPER_ADMIN_TAB_META : TAB_META)[activeTab] || { label: activeTab, description: "" };
 
   const renderTabContent = () => {
+    if (isSuperAdmin) {
+      if (activeTab === "settings") {
+        return <AdminSettings theme={adminTheme} onThemeChange={setAdminTheme} superAdmin />;
+      }
+      const superAdminContentTab = {
+        "global-users": "users",
+        "activity-logs": "activity",
+        "question-bank": "questions",
+        "ai-usage": "ai_usage",
+      }[activeTab] || activeTab;
+      return (
+        <SuperAdminDashboardContent
+          activeTab={superAdminContentTab}
+          setError={setSuperAdminError}
+          setNotice={setSuperAdminNotice}
+        />
+      );
+    }
     if (isDepartmentAdmin) {
       if (activeTab === "dashboard") {
         return <DepartmentAdminOverview setActiveTab={setActiveTab} />;
@@ -294,6 +421,7 @@ const AdminDashboard = () => {
         />
       );
     }
+    if (!isCampusExperience) return null;
     if (activeTab === "users" && location.pathname.startsWith("/admin/users/")) {
       return <UserDetailPage />;
     }
@@ -301,25 +429,45 @@ const AdminDashboard = () => {
       case "dashboard":
         return (
           <div className="space-y-6">
-            <section className="bq-admin-panel flex flex-wrap items-center justify-between gap-3">
+            <section className="bq-admin-panel grid gap-4 shadow-md lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
               <div>
                 <h2>Dashboard filter</h2>
                 <p className="bq-admin-muted mt-1 text-sm">Filter campus-wide and department dashboard insights.</p>
               </div>
-              <label className="flex items-center gap-3 text-sm font-medium">
-                <span>Department</span>
-                <select
-                  aria-label="Filter dashboard by department"
-                  value={selectedDepartment}
-                  onChange={(event) => setSelectedDepartment(event.target.value)}
-                  className="bq-field min-w-56 px-3 py-2"
-                >
-                  <option value="All Departments">All Departments</option>
-                  {departments.map((item) => (
-                    <option key={item.id} value={item.name}>{item.name}</option>
-                  ))}
-                </select>
-              </label>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="min-w-0 text-sm font-medium">
+                  Department
+                  <select
+                    aria-label="Filter dashboard by department"
+                    value={selectedDepartment}
+                    onChange={(event) => {
+                      setSelectedDepartment(event.target.value);
+                      setSelectedProgramId("All Programs");
+                    }}
+                    className="bq-field mt-1.5 block w-56 max-w-full px-3 py-2"
+                  >
+                    <option value="All Departments">All Departments</option>
+                    {departments.map((item) => (
+                      <option key={item.id} value={item.name}>{item.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="min-w-0 text-sm font-medium">
+                  Program
+                  <select
+                    aria-label="Filter dashboard by program"
+                    value={selectedProgramId}
+                    onChange={(event) => setSelectedProgramId(event.target.value)}
+                    disabled={!selectedDepartmentRecord}
+                    className="bq-field mt-1.5 block w-56 max-w-full px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="All Programs">All Programs</option>
+                    {availablePrograms.map((program) => (
+                      <option key={program.id} value={program.id}>{program.name}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             </section>
             {departmentsError && <p role="alert" className="bq-admin-panel text-sm text-red-300">{departmentsError}</p>}
             <section className="space-y-3">
@@ -328,8 +476,11 @@ const AdminDashboard = () => {
                 <p className="bq-admin-muted mt-1 text-sm">Additional campus-level account, academic, and question insights.</p>
               </div>
               <CampusAdminOverview
-                departmentId={departments.find((item) => item.name === selectedDepartment)?.id}
+                departments={departments}
+                departmentId={selectedDepartmentRecord?.id}
+                programId={selectedProgramId === "All Programs" ? undefined : Number(selectedProgramId)}
                 selectedDepartment={selectedDepartment}
+                selectedProgram={availablePrograms.find((program) => String(program.id) === selectedProgramId)?.name}
               />
             </section>
           </div>
@@ -356,7 +507,7 @@ const AdminDashboard = () => {
   };
 
   return (
-    <div className={`bq-shell bq-admin-shell ${activeTab === "academic" ? "bq-admin-shell-academic" : ""} ${adminTheme === "light" ? "bq-admin-light" : "bq-admin-dark"} h-screen w-full overflow-hidden`}>
+    <div className={`bq-shell bq-admin-shell ${isCampusExperience ? "bq-admin-shell-campus" : ""} ${activeTab === "academic" ? "bq-admin-shell-academic" : ""} ${adminTheme === "light" ? "bq-admin-light" : "bq-admin-dark"} h-screen w-full overflow-hidden`}>
       {mobileSidebarOpen && (
         <button
           type="button"
@@ -367,13 +518,16 @@ const AdminDashboard = () => {
       )}
       <Sidebar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleTabChange}
         adminTheme={adminTheme}
         onThemeToggle={toggleAdminTheme}
         collapsed={sidebarCollapsed}
         mobileOpen={mobileSidebarOpen}
         onNavigate={() => setMobileSidebarOpen(false)}
         departmentAdmin={isDepartmentAdmin}
+        campusAdmin={isCampusAdmin}
+        campusExperience={isCampusExperience}
+        superAdmin={isSuperAdmin}
       />
       <main className="bq-admin-main flex flex-1 flex-col overflow-auto">
         <header
@@ -384,7 +538,7 @@ const AdminDashboard = () => {
               <Menu size={18} />
             </button>
             <div>
-            <div className="flex items-center gap-2"><p className="bq-admin-eyebrow">{isDepartmentAdmin ? "DEPARTMENT WORKSPACE" : "ADMIN WORKSPACE"}</p><span className="bq-admin-live"><Radio size={10} /> LIVE</span></div>
+            <div className="flex items-center gap-2"><p className="bq-admin-eyebrow">{isDepartmentAdmin ? "DEPARTMENT WORKSPACE" : isSuperAdmin ? "UNIVERSITY WORKSPACE" : "ADMIN WORKSPACE"}</p><span className="bq-admin-live"><Radio size={10} /> LIVE</span></div>
             <h1 className="bq-admin-title">{meta.label}</h1>
             <p className="bq-admin-muted mt-1">{meta.description}</p>
             </div>
@@ -392,21 +546,39 @@ const AdminDashboard = () => {
           <div className="flex items-center gap-3">
             <DataRefreshButton className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white/10 hover:text-white" />
             <div className="text-right">
-              <p className="text-sm font-medium">{isDepartmentAdmin ? "Department Admin" : userRole}</p>
-              <p className="bq-admin-mono">{userEmail}</p>
+              {isCampusAdmin ? (
+                <>
+                  <p className="text-sm font-medium">{userFullName || userEmail}</p>
+                  <p className="text-xs">{`Campus Admin - (${campusName || "Campus"})`}</p>
+                  <p className="bq-admin-mono">{userEmail}</p>
+                </>
+              ) : (
+                <>
+                  {isSuperAdmin && <p className="text-sm font-medium">{userFullName || userEmail}</p>}
+                  <p className="text-xs">{isDepartmentAdmin ? "Department Admin" : isSuperAdmin ? "Super administrator" : userRole}</p>
+                  <p className="bq-admin-mono">{userEmail}</p>
+                </>
+              )}
             </div>
             <div
               className="bq-admin-avatar flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold"
             >
-              {userEmail.charAt(0).toUpperCase()}
+              {(userFullName || userEmail).charAt(0).toUpperCase()}
               <span><ShieldCheck size={11} /></span>
             </div>
           </div>
         </header>
         <div className={`bq-page flex-1 ${activeTab === "academic" || (isDepartmentAdmin && activeTab !== "dashboard" && activeTab !== "settings") ? "bq-page-academic" : ""}`}>
           <div className="bq-page-inner">
+            {isSuperAdmin && superAdminError && <div role="alert" className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{superAdminError}</div>}
+            {isSuperAdmin && superAdminNotice && <div role="status" className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{superAdminNotice}</div>}
             {renderTabContent()}
           </div>
+          {!isDepartmentAdmin && (
+            <footer className="bq-admin-footer bq-admin-muted mt-8 border-t px-6 py-4 text-center text-xs">
+              © {new Date().getFullYear()} BloomQuest. All rights reserved.
+            </footer>
+          )}
         </div>
       </main>
     </div>

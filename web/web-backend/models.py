@@ -252,16 +252,6 @@ class QuestionSetExport(Base):
     filename = Column(String(255), nullable=False)
     created_at = Column(DateTime, server_default=func.now())
 
-class QuestionVersion(Base):
-    __tablename__ = "question_versions"
-    id = Column(Integer, primary_key=True, index=True)
-    question_id = Column(Integer, ForeignKey("generated_questions.id"), nullable=False)
-    snapshot = Column(JSON, nullable=False)
-    filename = Column(String(255), nullable=True)
-    media_type = Column(String(255), nullable=True)
-    file_content = Column(LargeBinary, nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
-
 class UserSession(Base):
     __tablename__ = "user_sessions"
     id = Column(Integer, primary_key=True, index=True)

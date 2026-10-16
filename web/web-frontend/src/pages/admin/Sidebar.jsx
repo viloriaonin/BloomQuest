@@ -6,9 +6,9 @@ import ReportsBtn from "./Reports";
 import QuestionBankBtn from "./QuestionBank";
 import LogoutBtn from "./Logout";
 import bloomquestLogo from "../../assets/images/bloomquest-logo.png";
-import { FolderArchive, GraduationCap, Settings, Sun, Moon, Sparkles, Users } from "lucide-react";
+import { Activity, Building2, FolderArchive, GraduationCap, Settings, ShieldCheck, Sun, Moon, Sparkles, Users } from "lucide-react";
 
-const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed, mobileOpen, onNavigate, departmentAdmin = false }) => {
+const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed, mobileOpen, onNavigate, departmentAdmin = false, campusAdmin = false, campusExperience = false, superAdmin = false }) => {
   return (
     <aside
       className={`bq-admin-sidebar fixed inset-y-0 left-0 z-40 flex h-screen shrink-0 flex-col transition-all duration-300 md:static md:z-auto ${collapsed ? "is-collapsed w-20" : "w-56"} ${mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
@@ -27,18 +27,63 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed
           </div>
           <div>
             <h1 className="font-bold text-[1.05rem] tracking-wide leading-none" style={{ color: "#0F172A" }}>BloomQuest</h1>
-            <p className="text-xs mt-1" style={{ color: "#64748B" }}>{departmentAdmin ? "Department workspace" : "Admin workspace"}</p>
+            <p className="text-xs mt-1" style={{ color: "#64748B" }}>{departmentAdmin ? "Department workspace" : superAdmin ? "University workspace" : "Admin workspace"}</p>
           </div>
         </div>
       </div>
 
       <div className="px-3 pt-4 pb-2">
-        <span className="px-2.5 text-[10px] font-bold tracking-[0.16em] uppercase text-slate-400">{departmentAdmin ? "Department tools" : "Administration"}</span>
+        <span className="px-2.5 text-[10px] font-bold tracking-[0.16em] uppercase text-slate-400">{departmentAdmin ? "Department tools" : superAdmin ? "University administration" : "Administration"}</span>
       </div>
 
       <nav onClick={onNavigate} className="flex-1 px-2.5 space-y-1 overflow-y-auto pb-4">
         <DashboardBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
-        {departmentAdmin ? (
+        {superAdmin ? (
+          <>
+            {[
+              ["campuses", "Campus Management", Building2],
+              ["admins", "Admin Management", ShieldCheck],
+              ["global-users", "Global Users", Users],
+            ].map(([tab, label, Icon]) => (
+              <button
+                key={tab}
+                type="button"
+                title={collapsed ? label : undefined}
+                aria-label={collapsed ? label : undefined}
+                onClick={() => setActiveTab(tab)}
+                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150"
+                style={activeTab === tab ? { background: "var(--bq-accent)", color: "#ffffff" } : { color: "var(--bq-muted)", background: "transparent" }}
+              >
+                <Icon size={20} className={activeTab === tab ? "text-white" : "text-[#C4485A]"} />
+                <span className="text-sm font-medium tracking-wide">{label}</span>
+              </button>
+            ))}
+            <AcademicMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
+            <QuestionBankBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
+            <button
+              type="button"
+              title={collapsed ? "AI Usage" : undefined}
+              aria-label={collapsed ? "AI Usage" : undefined}
+              onClick={() => setActiveTab("ai-usage")}
+              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150"
+              style={activeTab === "ai-usage" ? { background: "var(--bq-accent)", color: "#ffffff" } : { color: "var(--bq-muted)", background: "transparent" }}
+            >
+              <Sparkles size={20} className={activeTab === "ai-usage" ? "text-white" : "text-[#C4485A]"} />
+              <span className="text-sm font-medium tracking-wide">AI Usage</span>
+            </button>
+            <button
+              type="button"
+              title={collapsed ? "Activity Logs" : undefined}
+              aria-label={collapsed ? "Activity Logs" : undefined}
+              onClick={() => setActiveTab("activity-logs")}
+              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-all duration-150"
+              style={activeTab === "activity-logs" ? { background: "var(--bq-accent)", color: "#ffffff" } : { color: "var(--bq-muted)", background: "transparent" }}
+            >
+              <Activity size={20} className={activeTab === "activity-logs" ? "text-white" : "text-[#C4485A]"} />
+              <span className="text-sm font-medium tracking-wide">Activity Logs</span>
+            </button>
+          </>
+        ) : departmentAdmin ? (
           <>
             <button
               type="button"
@@ -65,15 +110,15 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed
             <AcademicMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
             <QuestionBankBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
           </>
-        ) : (
+        ) : campusExperience ? (
           <>
             <AcademicMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
             <QuestionBankBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
             <UserMgmtBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
             <ReportsBtn activeTab={activeTab} setActiveTab={setActiveTab} collapsed={collapsed} />
           </>
-        )}
-        {!departmentAdmin && <button
+        ) : null}
+        {campusExperience && <button
           type="button"
           title={collapsed ? "AI Usage" : undefined}
           aria-label={collapsed ? "AI Usage" : undefined}
@@ -84,7 +129,7 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed
           <Sparkles size={20} className={activeTab === "ai-usage" ? "text-white" : "text-[#C4485A]"} />
           <span className="text-sm font-medium tracking-wide">AI Usage</span>
         </button>}
-        <button
+        {(campusExperience || departmentAdmin || superAdmin) && <button
           type="button"
           title={collapsed ? "Settings" : undefined}
           aria-label={collapsed ? "Settings" : undefined}
@@ -94,8 +139,8 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed
         >
           <Settings size={20} className={activeTab === "settings" ? "text-white" : "text-[#C4485A]"} />
           <span className="text-sm font-medium tracking-wide">Settings</span>
-        </button>
-        {!departmentAdmin && <button
+        </button>}
+        {campusExperience && <button
           type="button"
           title={collapsed ? "Recycle Bin" : undefined}
           aria-label={collapsed ? "Recycle Bin" : undefined}
@@ -109,25 +154,27 @@ const Sidebar = ({ activeTab, setActiveTab, adminTheme, onThemeToggle, collapsed
       </nav>
 
       <div className="px-3 py-4" style={{ borderTop: "1px solid rgba(15, 23, 42, 0.08)" }}>
-        <button
-          type="button"
-          title={collapsed ? "Appearance" : undefined}
-          onClick={onThemeToggle}
-          className="bq-admin-theme-toggle mb-2 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors"
-          aria-label={`Switch to ${adminTheme === "dark" ? "light" : "dark"} mode`}
-          aria-checked={adminTheme === "light"}
-          role="switch"
-        >
-          <span className="bq-admin-theme-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg">
-            {adminTheme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-          </span>
-          <span className="bq-admin-theme-copy min-w-0 flex-1">
-            <span className="bq-admin-theme-label block text-xs font-semibold">Appearance</span>
-          </span>
-          <span className={`bq-admin-theme-switch ${adminTheme === "light" ? "is-light" : "is-dark"}`} aria-hidden="true">
-            <span className="bq-admin-theme-switch-thumb" />
-          </span>
-        </button>
+        {!campusAdmin && !superAdmin && (campusExperience || departmentAdmin) && (
+          <button
+            type="button"
+            title={collapsed ? "Appearance" : undefined}
+            onClick={onThemeToggle}
+            className="bq-admin-theme-toggle mb-2 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors"
+            aria-label={`Switch to ${adminTheme === "dark" ? "light" : "dark"} mode`}
+            aria-checked={adminTheme === "light"}
+            role="switch"
+          >
+            <span className="bq-admin-theme-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg">
+              {adminTheme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            </span>
+            <span className="bq-admin-theme-copy min-w-0 flex-1">
+              <span className="bq-admin-theme-label block text-xs font-semibold">Appearance</span>
+            </span>
+            <span className={`bq-admin-theme-switch ${adminTheme === "light" ? "is-light" : "is-dark"}`} aria-hidden="true">
+              <span className="bq-admin-theme-switch-thumb" />
+            </span>
+          </button>
+        )}
         <LogoutBtn collapsed={collapsed} />
       </div>
     </aside>

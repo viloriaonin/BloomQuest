@@ -7,8 +7,12 @@ import { API_URL } from "../../config/api";
 // Expected response: JSON array (or { data: [...] }) of objects shaped like:
 //   {
 //     id: number | string,
+//     user_id: number | null, // attributed user
+//     program_id: number | null,
+//     department_id: number | null,
 //     name: string,        // faculty display name, e.g. "Dr. Santos"
 //     dept: string,        // e.g. "CICS", "COE", "CAS", "CBA"
+//     campus_id: number | null,
 //     action: string,      // free-text, e.g. "Uploaded module file", "Generated 20 questions"
 //     detail: string,      // activity_logs.details
 //     type: string,        // activity_logs.type — one of: "generate", "upload", "classify", "login"
@@ -16,10 +20,6 @@ import { API_URL } from "../../config/api";
 //     date: string,        // "YYYY-MM-DD"
 //     time: string,        // "hh:mm AM/PM"
 //   }
-//
-// If your API already supports query params for filtering, you can pass
-// period/department/faculty straight through instead of filtering client-side
-// (see the commented-out query-string version in fetchActivityLog below).
 // ---------------------------------------------------------------------------
 const ACTIVITY_ENDPOINT = `${API_URL}/activity-logs`;
 
@@ -34,10 +34,6 @@ async function fetchActivityLog() {
     // headers: { Authorization: `Bearer ${token}` }, // uncomment if using a bearer token
   });
 
-  // --- server-side filtering version, if your API supports it ---
-  // const params = new URLSearchParams({ department, faculty, days: selectedPeriod.days ?? "" });
-  // const res = await fetch(`${ACTIVITY_ENDPOINT}?${params.toString()}`);
-
   if (!res.ok) {
     throw new Error(`Request failed with status ${res.status}`);
   }
@@ -47,6 +43,13 @@ async function fetchActivityLog() {
 }
 
 const ALL_DEPARTMENTS = "All Departments";
+const ALL_PROGRAMS = "All Programs";
+const ALL_INSTRUCTORS = "All Instructors";
+const ACTIVITY_ROLES = [
+  { value: "faculty", label: "Faculty" },
+  { value: "department_admin", label: "Department Admin" },
+  { value: "campus_admin", label: "Campus Admin" },
+];
 
 const PERIODS = [
   { label: "Last 7 Days", days: 7 },
@@ -88,8 +91,12 @@ function withinPeriod(dateStr, days) {
 
 export const ReportsContent = ({ showCampusFilter = false }) => {
   const [period, setPeriod] = useState(PERIODS[1].label); // Last 30 Days
-  const [department, setDepartment] = useState(ALL_DEPARTMENTS);
   const [campus, setCampus] = useState("");
+  const [role, setRole] = useState("");
+  const [department, setDepartment] = useState(ALL_DEPARTMENTS);
+  const [departmentId, setDepartmentId] = useState("");
+  const [programId, setProgramId] = useState("");
+  const [instructorId, setInstructorId] = useState("");
   const [campuses, setCampuses] = useState([]);
   const [activeTab, setActiveTab] = useState("logins");
   const [searchTerm, setSearchTerm] = useState("");
@@ -143,19 +150,57 @@ export const ReportsContent = ({ showCampusFilter = false }) => {
 
   const departmentOptions = useMemo(() => {
     const visibleCampuses = campuses.filter((item) => !campus || String(item.id) === campus);
+    if (showCampusFilter) {
+      return [
+        { value: "", label: ALL_DEPARTMENTS },
+        ...visibleCampuses.flatMap((item) => item.departments || []).map((dept) => ({
+          value: String(dept.id),
+          label: dept.name,
+        })),
+      ];
+    }
     const departmentNames = [...new Set(visibleCampuses.flatMap((item) => item.departments || []).map((item) => item.name).filter(Boolean))]
       .sort((first, second) => first.localeCompare(second));
     return [ALL_DEPARTMENTS, ...departmentNames];
-  }, [campuses, campus]);
+  }, [campuses, campus, showCampusFilter]);
+  const selectedRole = ACTIVITY_ROLES.find((item) => item.value === role)?.value || "";
+  const showFacultyFilters = showCampusFilter && selectedRole === "faculty";
+  const showDepartmentAdminFilters = showCampusFilter && selectedRole === "department_admin";
+  const selectedDepartment = useMemo(() => campuses
+    .flatMap((item) => item.departments || [])
+    .find((item) => String(item.id) === departmentId), [campuses, departmentId]);
+  const programOptions = useMemo(() => (selectedDepartment?.programs || []).map((item) => ({
+    value: String(item.id),
+    label: item.name,
+  })), [selectedDepartment]);
+  const instructorOptions = useMemo(() => {
+    const departmentMembers = selectedDepartment?.faculty || [];
+    const programMembers = selectedDepartment?.programs
+      ?.find((item) => String(item.id) === programId)?.faculty || [];
+    const members = programId
+      ? [...programMembers, ...departmentMembers.filter((member) => String(member.program_id || "") === programId)]
+      : departmentMembers;
+    const uniqueMembers = [...new Map(members.map((member) => [String(member.id), member])).values()];
+    return uniqueMembers
+      .filter((member) => member.id !== null && member.id !== undefined && member.name)
+      .sort((first, second) => first.name.localeCompare(second.name))
+      .map((member) => ({ value: String(member.id), label: member.name }));
+  }, [programId, selectedDepartment]);
 
   const filteredLog = useMemo(() => {
     const selectedPeriod = PERIODS.find((p) => p.label === period);
     return activityLog.filter((row) => {
-      const isAdminRow = String(row.role ?? "").toLowerCase() === "admin" ||
-        String(row.name ?? "").toLowerCase() === "system";
-      const matchesPeriod = withinPeriod(row.date, selectedPeriod.days);
-      const matchesDept = department === ALL_DEPARTMENTS || row.dept === department;
+      const normalizedRole = String(row.role || "system").toLowerCase();
+      const isAdminRow = !showCampusFilter && (normalizedRole === "admin" ||
+        String(row.name ?? "").toLowerCase() === "system");
+      const matchesRole = !showCampusFilter || !selectedRole || normalizedRole === selectedRole;
       const matchesCampus = !showCampusFilter || !campus || String(row.campus_id || "") === campus;
+      const matchesPeriod = withinPeriod(row.date, selectedPeriod.days);
+      const matchesDept = showFacultyFilters || showDepartmentAdminFilters
+        ? !departmentId || String(row.department_id || "") === departmentId
+        : department === ALL_DEPARTMENTS || row.dept === department;
+      const matchesProgram = !showFacultyFilters || !programId || String(row.program_id || "") === programId;
+      const matchesInstructor = !showFacultyFilters || !instructorId || String(row.user_id || "") === instructorId;
       const categories = {
         logins: ["login"],
         generated: ["generate", "question", "question_set", "classify"],
@@ -165,9 +210,10 @@ export const ReportsContent = ({ showCampusFilter = false }) => {
       const deleted = String(row.type || "").toLowerCase() === "delete" || /\bdeleted?\b|permanently removed/i.test(`${row.action || ""} ${row.detail || ""}`);
       const matchesTab = activeTab === "deleted" ? deleted : categories[activeTab]?.includes(rowType);
       const text = `${row.name || ""} ${row.action || ""} ${row.detail || ""}`.toLowerCase();
-      return !isAdminRow && matchesPeriod && matchesDept && matchesCampus && matchesTab && text.includes(searchTerm.toLowerCase());
+      return !isAdminRow && matchesCampus && matchesRole && matchesPeriod && matchesDept && matchesProgram && matchesInstructor && matchesTab &&
+        (showCampusFilter || text.includes(searchTerm.toLowerCase()));
     }).sort((a, b) => new Date(`${b.date} ${b.time}`) - new Date(`${a.date} ${a.time}`));
-  }, [activityLog, period, department, campus, showCampusFilter, activeTab, searchTerm]);
+  }, [activityLog, period, campus, role, selectedRole, department, departmentId, programId, instructorId, selectedDepartment, showFacultyFilters, showDepartmentAdminFilters, showCampusFilter, activeTab, searchTerm]);
 
   const currentPage = pageByTab[activeTab] || 1;
   const pageCount = Math.max(1, Math.ceil(filteredLog.length / pageSize));
@@ -175,7 +221,7 @@ export const ReportsContent = ({ showCampusFilter = false }) => {
 
   useEffect(() => {
     setPageByTab((current) => ({ ...current, [activeTab]: 1 }));
-  }, [activeTab, period, department, campus, searchTerm]);
+  }, [activeTab, period, campus, role, department, departmentId, programId, instructorId, searchTerm]);
 
   useEffect(() => {
     if (currentPage > pageCount) {
@@ -196,11 +242,20 @@ export const ReportsContent = ({ showCampusFilter = false }) => {
   };
 
   const countForTab = (tab) => activityLog.filter((row) => {
+    const normalizedRole = String(row.role || "system").toLowerCase();
+    const matchesRole = !showCampusFilter || !selectedRole || normalizedRole === selectedRole;
     const matchesCampus = !showCampusFilter || !campus || String(row.campus_id || "") === campus;
-    const matchesDept = department === ALL_DEPARTMENTS || row.dept === department;
+    const matchesDept = showFacultyFilters || showDepartmentAdminFilters
+      ? !departmentId || String(row.department_id || "") === departmentId
+      : department === ALL_DEPARTMENTS || row.dept === department;
+    const matchesProgram = !showFacultyFilters || !programId || String(row.program_id || "") === programId;
+    const matchesInstructor = !showFacultyFilters || !instructorId || String(row.user_id || "") === instructorId;
     const selectedPeriod = PERIODS.find((item) => item.label === period);
     const text = `${row.name || ""} ${row.action || ""} ${row.detail || ""}`.toLowerCase();
-    return matchesCampus && matchesDept && withinPeriod(row.date, selectedPeriod.days) && text.includes(searchTerm.toLowerCase()) && matchesReportTab(row, tab);
+    return matchesCampus && matchesRole && matchesDept && matchesProgram && matchesInstructor &&
+      withinPeriod(row.date, selectedPeriod.days) &&
+      (showCampusFilter || text.includes(searchTerm.toLowerCase())) &&
+      matchesReportTab(row, tab);
   }).length;
 
   const rowsForExport = () => {
@@ -272,14 +327,56 @@ export const ReportsContent = ({ showCampusFilter = false }) => {
 
       {/* Filters */}
       <div className="rounded-3xl bg-white border border-gray-200 p-6 shadow-sm">
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className={`grid gap-4 ${showCampusFilter ? "md:grid-cols-2 xl:grid-cols-6" : "md:grid-cols-3"}`}>
           {showCampusFilter && (
             <FilterSelect
               label="Campus"
               value={campus}
-              onChange={(value) => { setCampus(value); setDepartment(ALL_DEPARTMENTS); }}
+              onChange={(value) => {
+                setCampus(value);
+                setDepartmentId("");
+                setProgramId("");
+                setInstructorId("");
+              }}
               options={[{ value: "", label: "All Campuses" }, ...campuses.map((item) => ({ value: String(item.id), label: item.name }))]}
             />
+          )}
+          {showCampusFilter && (
+            <FilterSelect
+              label="Role"
+              value={role}
+              onChange={(value) => {
+                setRole(value);
+                setDepartmentId("");
+                setProgramId("");
+                setInstructorId("");
+              }}
+              options={[{ value: "", label: "All Roles" }, ...ACTIVITY_ROLES]}
+            />
+          )}
+          {(showFacultyFilters || showDepartmentAdminFilters) && (
+            <FilterSelect
+              label="Department"
+              value={departmentId}
+              onChange={(value) => { setDepartmentId(value); setProgramId(""); setInstructorId(""); }}
+              options={departmentOptions}
+            />
+          )}
+          {showFacultyFilters && (
+            <>
+              <FilterSelect
+                label="Program"
+                value={programId}
+                onChange={(value) => { setProgramId(value); setInstructorId(""); }}
+                options={[{ value: "", label: ALL_PROGRAMS }, ...programOptions]}
+              />
+              <FilterSelect
+                label="Instructor"
+                value={instructorId}
+                onChange={setInstructorId}
+                options={[{ value: "", label: ALL_INSTRUCTORS }, ...instructorOptions]}
+              />
+            </>
           )}
           <FilterSelect
             label="Period"
@@ -287,16 +384,16 @@ export const ReportsContent = ({ showCampusFilter = false }) => {
             onChange={setPeriod}
             options={PERIODS.map((p) => p.label)}
           />
-          <FilterSelect
+          {!showCampusFilter && <FilterSelect
             label="Department"
             value={department}
             onChange={setDepartment}
             options={departmentOptions}
-          />
+          />}
         </div>
       </div>
 
-      <div className="flex items-center gap-3"><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search activity..." className="bq-field w-full px-4 sm:max-w-sm" /></div>
+      {!showCampusFilter && <div className="flex items-center gap-3"><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search activity..." className="bq-field w-full px-4 sm:max-w-sm" /></div>}
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white px-3 shadow-sm"><div className="flex min-w-max items-center gap-1" role="tablist" aria-label="Report categories">{reportTabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} onClick={() => setActiveTab(tab.id)} className={`border-b-2 px-4 py-3 text-sm font-semibold ${activeTab === tab.id ? "border-[#B4454A] text-[#B4454A]" : "border-transparent text-slate-500 hover:border-slate-200 hover:text-slate-700"}`}>{tab.label}<span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] ${activeTab === tab.id ? "bg-red-50 text-[#B4454A]" : "bg-slate-100 text-slate-500"}`}>{countForTab(tab)}</span></button>)}</div></div>
 
       {/* Activity Log */}

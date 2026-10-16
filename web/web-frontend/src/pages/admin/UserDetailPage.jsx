@@ -55,6 +55,10 @@ const UserDetailPage = () => {
   const [showDemoDeanPassword, setShowDemoDeanPassword] = useState(false);
   const [loadingDemoDeanPassword, setLoadingDemoDeanPassword] = useState(false);
   const [demoDeanPasswordError, setDemoDeanPasswordError] = useState("");
+  const [pendingDestructiveAction, setPendingDestructiveAction] = useState("");
+  const [adminActionPassword, setAdminActionPassword] = useState("");
+  const [adminActionError, setAdminActionError] = useState("");
+  const [submittingAdminAction, setSubmittingAdminAction] = useState(false);
 
   const loadDetail = useCallback(async () => {
     setLoading(true);
@@ -81,11 +85,14 @@ const UserDetailPage = () => {
       .catch(() => setDepartments([]));
   }, []);
 
-  const accountAction = async (endpoint, message) => {
+  const accountAction = async (endpoint, message, adminPassword = null) => {
     const response = await apiFetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: detail.user.email }),
+      body: JSON.stringify({
+        email: detail.user.email,
+        ...(adminPassword ? { admin_password: adminPassword } : {}),
+      }),
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
@@ -102,6 +109,13 @@ const UserDetailPage = () => {
       `${action[0].toUpperCase()}${action.slice(1)} user`,
     );
     if (!confirmed) return;
+    const isCampusAdmin = String(localStorage.getItem("role") || "").toLowerCase() === "campus_admin";
+    if (action === "archive" && isCampusAdmin) {
+      setPendingDestructiveAction(action);
+      setAdminActionPassword("");
+      setAdminActionError("");
+      return;
+    }
     try {
       await accountAction(`/users/${action}`, `User ${action}d successfully.`);
     } catch (err) {
@@ -160,6 +174,13 @@ const UserDetailPage = () => {
   const handleDelete = async () => {
     const confirmed = await showConfirm("This is a permanent recycle-bin style delete. The account will be removed and cannot be restored. Confirm permanent deletion?", "Permanent delete");
     if (!confirmed) return;
+    const isCampusAdmin = String(localStorage.getItem("role") || "").toLowerCase() === "campus_admin";
+    if (isCampusAdmin) {
+      setPendingDestructiveAction("delete");
+      setAdminActionPassword("");
+      setAdminActionError("");
+      return;
+    }
     try {
       const response = await apiFetch(`/users/${encodeURIComponent(detail.user.email)}/permanent`, { method: "DELETE" });
       const data = await response.json().catch(() => ({}));
@@ -168,6 +189,47 @@ const UserDetailPage = () => {
       navigate("/admin/users");
     } catch (err) {
       await showAlert(err.message, "User Management");
+    }
+  };
+
+  const submitAdminVerifiedAction = async (event) => {
+    event.preventDefault();
+    if (!adminActionPassword.trim()) {
+      setAdminActionError("Enter your admin password to continue.");
+      return;
+    }
+    setSubmittingAdminAction(true);
+    setAdminActionError("");
+    try {
+      if (pendingDestructiveAction === "archive") {
+        const response = await apiFetch("/users/archive", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: detail.user.email, admin_password: adminActionPassword }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "Could not archive this user.");
+        setPendingDestructiveAction("");
+        setAdminActionPassword("");
+        await showAlert("User archived successfully.", "User Management");
+        await loadDetail();
+      } else if (pendingDestructiveAction === "delete") {
+        const response = await apiFetch(`/users/${encodeURIComponent(detail.user.email)}/permanent`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: detail.user.email, admin_password: adminActionPassword }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "Could not permanently delete this user.");
+        setPendingDestructiveAction("");
+        await showAlert("User permanently deleted.", "User Management");
+        navigate("/admin/users");
+        return;
+      }
+    } catch (err) {
+      setAdminActionError(err.message || "Could not complete this action.");
+    } finally {
+      setSubmittingAdminAction(false);
     }
   };
 
@@ -240,8 +302,13 @@ const UserDetailPage = () => {
   const questionCount = detail.question_count ?? detail.questions?.length ?? 0;
   const statusLabel = user.archived ? "Archived" : "Active";
   const userRole = user.role?.toLowerCase();
-  const canResetPassword = userRole === "faculty"
-    || (user.is_department_dean === true && ["department_admin", "department_dean"].includes(userRole));
+  const isCampusAdmin = String(localStorage.getItem("role") || "").toLowerCase() === "campus_admin";
+  const isDepartmentDean = userRole === "department_dean" || user.is_department_dean === true;
+  const campusAdminCanManageAccount = !isCampusAdmin || isDepartmentDean;
+  const canResetPassword = !isCampusAdmin && (
+    userRole === "faculty"
+    || (user.is_department_dean === true && ["department_admin", "department_dean"].includes(userRole))
+  );
   const canViewDemoDeanPassword = String(localStorage.getItem("role") || "").toLowerCase() === "campus_admin"
     && user.is_department_dean === true
     && user.demo_password_available === true
@@ -370,59 +437,67 @@ const UserDetailPage = () => {
               <KeyRound size={15} className="mr-2 inline" />Reset password
             </button>
           )}
-          <button
-            type="button"
-            onClick={handleArchiveRestore}
-            className="bq-secondary-button"
-          >
-            {user.archived ? "Restore account" : "Archive account"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedDepartment(String(departments.find((item) => item.name === user.department)?.id || ""));
-              setDepartmentManageOpen((open) => !open);
-              setProgramManageOpen(false);
-            }}
-            className="bq-secondary-button"
-          >
-            Change department
-          </button>
-          <button
-            type="button"
-            onClick={async () => {
-              const currentDepartmentId = departments.find((item) => item.name === user.department)?.id;
-              setSelectedDepartment(currentDepartmentId ? String(currentDepartmentId) : "");
-              if (!currentDepartmentId) {
-                setPrograms([]);
-                setSelectedProgram("");
-                setProgramManageOpen((open) => !open);
-                return;
-              }
+          {(user.archived || campusAdminCanManageAccount) && (
+            <button
+              type="button"
+              onClick={handleArchiveRestore}
+              className="bq-secondary-button"
+            >
+              {user.archived ? "Restore account" : "Archive account"}
+            </button>
+          )}
+          {!isCampusAdmin && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDepartment(String(departments.find((item) => item.name === user.department)?.id || ""));
+                  setDepartmentManageOpen((open) => !open);
+                  setProgramManageOpen(false);
+                }}
+                className="bq-secondary-button"
+              >
+                Change department
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const currentDepartmentId = departments.find((item) => item.name === user.department)?.id;
+                  setSelectedDepartment(currentDepartmentId ? String(currentDepartmentId) : "");
+                  if (!currentDepartmentId) {
+                    setPrograms([]);
+                    setSelectedProgram("");
+                    setProgramManageOpen((open) => !open);
+                    return;
+                  }
 
-              try {
-                const response = await apiFetch(`/departments/${currentDepartmentId}/programs`);
-                const data = await response.json().catch(() => []);
-                const nextPrograms = Array.isArray(data) ? data : [];
-                setPrograms(nextPrograms);
-                setSelectedProgram(String(detail.user.program_id || ""));
-              } catch {
-                setPrograms([]);
-                setSelectedProgram("");
-              }
-              setProgramManageOpen((open) => !open);
-            }}
-            className="bq-secondary-button"
-          >
-            Change program assignment
-          </button>
-          <button
-            type="button"
-            onClick={handleDelete}
-            className="rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800"
-          >
-            Delete account
-          </button>
+                  try {
+                    const response = await apiFetch(`/departments/${currentDepartmentId}/programs`);
+                    const data = await response.json().catch(() => []);
+                    const nextPrograms = Array.isArray(data) ? data : [];
+                    setPrograms(nextPrograms);
+                    setSelectedProgram(String(detail.user.program_id || ""));
+                  } catch {
+                    setPrograms([]);
+                    setSelectedProgram("");
+                  }
+                  setProgramManageOpen((open) => !open);
+                }}
+                className="bq-secondary-button"
+              >
+                Change program assignment
+              </button>
+            </>
+          )}
+          {campusAdminCanManageAccount && (
+            <button
+              type="button"
+              onClick={handleDelete}
+              className="rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white hover:bg-red-800"
+            >
+              Delete account
+            </button>
+          )}
         </div>
         {canViewDemoDeanPassword && demoDeanPassword && (
           <div className="mt-3 max-w-lg rounded-lg border border-amber-200 bg-amber-50 p-3">
@@ -475,6 +550,43 @@ const UserDetailPage = () => {
           </form>
         )}
       </section>
+      {pendingDestructiveAction && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 p-4">
+          <form onSubmit={submitAdminVerifiedAction} className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-slate-900">
+              {pendingDestructiveAction === "archive" ? "Verify to archive dean account" : "Verify to delete dean account"}
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Enter your admin password to {pendingDestructiveAction} {user.name || user.email}.
+              {pendingDestructiveAction === "delete" && " This permanently removes the account and cannot be undone."}
+            </p>
+            <label htmlFor="admin-account-action-password" className="mt-4 block text-sm font-medium text-slate-700">Admin password</label>
+            <input
+              id="admin-account-action-password"
+              type="password"
+              autoComplete="current-password"
+              value={adminActionPassword}
+              onChange={(event) => { setAdminActionPassword(event.target.value); setAdminActionError(""); }}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+              required
+            />
+            {adminActionError && <p role="alert" className="mt-3 text-sm text-red-700">{adminActionError}</p>}
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={submittingAdminAction}
+                onClick={() => { setPendingDestructiveAction(""); setAdminActionPassword(""); setAdminActionError(""); }}
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button type="submit" disabled={submittingAdminAction} className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50">
+                {submittingAdminAction ? "Verifying…" : "Verify and continue"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
       {resetEmailPromptOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 p-4">
           <section role="dialog" aria-modal="true" aria-labelledby="reset-password-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">

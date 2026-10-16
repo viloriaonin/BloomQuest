@@ -130,6 +130,77 @@ test("Academic Management opens directly to departments without a campus overvie
   expect(screen.getByText("Campus · Main Campus")).toBeInTheDocument();
 });
 
+test("Super Admin sees an indication when a campus has no departments", async () => {
+  localStorage.setItem("role", "super_admin");
+  global.fetch.mockImplementation(async (url) => {
+    if (String(url).endsWith("/academic-hierarchy")) {
+      return {
+        ok: true,
+        json: async () => ({ campuses: [{ id: 1, name: "Main Campus", departments: [] }] }),
+      };
+    }
+    if (String(url).endsWith("/subjects")) return { ok: true, json: async () => [] };
+    return { ok: true, json: async () => [] };
+  });
+
+  renderAt("/admin/academic/campus/1");
+
+  expect(await screen.findByText("No departments in this campus.")).toBeInTheDocument();
+});
+
+test("Super Admin sees an indication when a department has no programs", async () => {
+  localStorage.setItem("role", "super_admin");
+  global.fetch.mockImplementation(async (url) => {
+    if (String(url).endsWith("/academic-hierarchy")) {
+      return {
+        ok: true,
+        json: async () => ({
+          campuses: [{
+            id: 1,
+            name: "Main Campus",
+            departments: [{ id: 2, name: "CICS", programs: [], faculty: [] }],
+          }],
+        }),
+      };
+    }
+    if (String(url).endsWith("/subjects")) return { ok: true, json: async () => [] };
+    return { ok: true, json: async () => [] };
+  });
+
+  renderAt("/admin/academic/campus/1/department/2");
+
+  expect(await screen.findByText("No programs in this department.")).toBeInTheDocument();
+});
+
+test("Super Admin sees an indication when a program has no subjects", async () => {
+  localStorage.setItem("role", "super_admin");
+  global.fetch.mockImplementation(async (url) => {
+    if (String(url).endsWith("/academic-hierarchy")) {
+      return {
+        ok: true,
+        json: async () => ({
+          campuses: [{
+            id: 1,
+            name: "Main Campus",
+            departments: [{
+              id: 2,
+              name: "CICS",
+              programs: [{ id: 3, name: "Computer Science", faculty: [] }],
+              faculty: [],
+            }],
+          }],
+        }),
+      };
+    }
+    if (String(url).endsWith("/subjects")) return { ok: true, json: async () => [] };
+    return { ok: true, json: async () => [] };
+  });
+
+  renderAt("/admin/academic/campus/1/department/2/program/3");
+
+  expect(await screen.findByText("No subjects assigned yet.")).toBeInTheDocument();
+});
+
 test("Department Admin is taken to the assigned department with management actions", async () => {
   localStorage.setItem("role", "department_admin");
   localStorage.setItem("department_id", "2");
@@ -168,6 +239,7 @@ test("Campus Admin does not see the academic change request form", async () => {
   expect(screen.getByRole("button", { name: "Edit Department Details" })).toBeInTheDocument();
   const summary = screen.getByText("Programs");
   const leadership = screen.getByRole("heading", { name: "Department Dean" });
+  expect(leadership.closest(".bq-department-leadership-fields")).toBeInTheDocument();
   expect(summary.compareDocumentPosition(leadership) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Add Program" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Add Subject" })).not.toBeInTheDocument();
@@ -179,6 +251,54 @@ test("Campus Admin does not see the academic change request form", async () => {
   expect(screen.queryByRole("menuitem", { name: "Edit" })).not.toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Request an academic change" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Submit change request" })).not.toBeInTheDocument();
+});
+
+test("Campus Admin can edit a dean name without displaying the dean login email", async () => {
+  localStorage.setItem("role", "campus_admin");
+  const fetchMock = createFetchMock();
+  global.fetch = fetchMock;
+  const defaultFetch = fetchMock.getMockImplementation();
+  fetchMock.mockImplementation(async (url, options = {}) => {
+    if (String(url).endsWith("/academic-hierarchy")) {
+      return {
+        ok: true,
+        json: async () => ({
+          ...hierarchy,
+          campuses: hierarchy.campuses.map((campus) => ({
+            ...campus,
+            departments: campus.departments.map((department) => ({
+              ...department,
+              dean_id: 55,
+              dean_name: "Dr. Existing Dean",
+              dean: {
+                id: 55,
+                name: "Dr. Existing Dean",
+                email: "dean@example.edu",
+                role: "department_dean",
+              },
+            })),
+          })),
+        }),
+      };
+    }
+    return defaultFetch(url, options);
+  });
+
+  renderAt("/admin/academic/campus/1/department/2");
+
+  const deanNameInput = await screen.findByPlaceholderText("Enter dean name");
+  expect(deanNameInput).toBeEnabled();
+  expect(screen.queryByText("Login account: dean@example.edu")).not.toBeInTheDocument();
+  fireEvent.change(deanNameInput, { target: { value: "Dr. Updated Dean" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  await waitFor(() => {
+    const request = global.fetch.mock.calls.find(([url, options]) =>
+      String(url).endsWith("/departments/2/dean") && options?.method === "PUT",
+    );
+    expect(request).toBeDefined();
+    expect(JSON.parse(request[1].body)).toEqual({ name: "Dr. Updated Dean" });
+  });
 });
 
 test("department details dialog stays within the viewport and can scroll", async () => {
@@ -673,6 +793,95 @@ test("Department Admin does not see department-level subject management", async 
   await screen.findByRole("heading", { name: "CICS" });
   expect(screen.queryByRole("heading", { name: "Department-level subjects" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Associate with program" })).not.toBeInTheDocument();
+});
+
+test("Super Admin can view faculty programs but cannot change them or see department-level subjects", async () => {
+  localStorage.setItem("role", "super_admin");
+  const originalFetch = global.fetch;
+  const hierarchyWithDeanEmail = {
+    ...hierarchy,
+    campuses: hierarchy.campuses.map((campus) => ({
+      ...campus,
+      departments: campus.departments.map((department) => ({
+        ...department,
+        dean_id: 57,
+        dean: { id: 57, name: "Dr. Dean", email: "dean@example.edu", role: "department_dean" },
+      })),
+    })),
+  };
+  global.fetch = jest.fn(async (url, options) => {
+    if (String(url).endsWith("/academic-hierarchy")) {
+      return { ok: true, json: async () => hierarchyWithDeanEmail };
+    }
+    return originalFetch(url, options);
+  });
+  renderAt("/admin/academic/campus/1/department/2");
+
+  await screen.findByRole("heading", { name: "CICS" });
+  expect(screen.getByRole("button", { name: "Back" })).toHaveClass("shadow-sm");
+  expect(screen.queryByText("View only")).not.toBeInTheDocument();
+  expect(screen.queryByRole("option", { name: "Set dean by name / no faculty account" })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Assign dean from department faculty")).not.toBeInTheDocument();
+  expect(screen.getByPlaceholderText("Enter dean name")).toHaveValue("Dr. Dean");
+  expect(screen.getByText("Dean email")).toBeInTheDocument();
+  expect(screen.getByText("dean@example.edu")).toBeInTheDocument();
+  const facultySection = screen.getByRole("heading", { name: "Department faculty" }).closest("section");
+  expect(facultySection).toBeInTheDocument();
+  expect(within(facultySection).getByText("Computer Science")).toBeInTheDocument();
+  expect(screen.queryByLabelText("Program for Ada Faculty")).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Department-level subjects" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Academic change requests" })).not.toBeInTheDocument();
+  expect(global.fetch).not.toHaveBeenCalledWith(
+    expect.stringContaining("/faculty/44/program"),
+    expect.objectContaining({ method: "PUT" }),
+  );
+  expect(global.fetch).not.toHaveBeenCalledWith(
+    expect.stringContaining("/department-academic-change-requests"),
+    expect.anything(),
+  );
+});
+
+test("Super Admin sees when a department has no currently assigned dean", async () => {
+  localStorage.setItem("role", "super_admin");
+  global.fetch.mockImplementation(async (url) => {
+    if (String(url).endsWith("/academic-hierarchy")) {
+      return {
+        ok: true,
+        json: async () => ({
+          campuses: [{
+            id: 1,
+            name: "Main Campus",
+            departments: [{
+              id: 2,
+              name: "CICS",
+              code: "CICS",
+              dean_id: null,
+              dean_name: "",
+              dean: null,
+              programs: [],
+              faculty: [],
+            }],
+          }],
+        }),
+      };
+    }
+    if (String(url).endsWith("/subjects")) return { ok: true, json: async () => [] };
+    return { ok: true, json: async () => [] };
+  });
+
+  renderAt("/admin/academic/campus/1/department/2");
+
+  expect(await screen.findByRole("status")).toHaveTextContent("No dean is currently assigned to this department.");
+  expect(screen.queryByPlaceholderText("Enter dean name")).not.toBeInTheDocument();
+});
+
+test("Campus Admin can still view department-level subjects", async () => {
+  localStorage.setItem("role", "campus_admin");
+  renderAt("/admin/academic/campus/1/department/2");
+
+  expect(await screen.findByRole("heading", { name: "Department-level subjects" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Back" })).toHaveClass("shadow-sm");
+  expect(screen.getByText("Academic Foundations")).toBeInTheDocument();
 });
 
 test("department list shows its dean and Add Department saves the Dean field", async () => {

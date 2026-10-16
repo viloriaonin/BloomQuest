@@ -5,6 +5,9 @@ import LoadingSpinner from "../../components/LoadingSpinner";
 import { Activity, Eye, EyeOff, FileText, Filter, History, Plus, X, Users } from "lucide-react";
 import { API_URL } from "../../config/api";
 
+const isDepartmentDean = (user) => (
+  String(user?.role || "").toLowerCase() === "department_dean" || user?.is_department_dean === true
+);
 
 export const UserMgmtContent = () => {
   const { showAlert, showConfirm } = usePopup();
@@ -21,6 +24,7 @@ export const UserMgmtContent = () => {
   const [errorUsers, setErrorUsers] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [roleFilter, setRoleFilter] = useState("all");
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [programFilter, setProgramFilter] = useState("all");
   const [academicDepartments, setAcademicDepartments] = useState([]);
@@ -41,6 +45,8 @@ export const UserMgmtContent = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [userView, setUserView] = useState("active");
   const [activityUser, setActivityUser] = useState(null);
+  const [destructiveAction, setDestructiveAction] = useState(null);
+  const [submittingDestructiveAction, setSubmittingDestructiveAction] = useState(false);
   const [userActivity] = useState([]);
   const [facultyDetail] = useState(null);
   const [loadingActivity] = useState(false);
@@ -458,6 +464,11 @@ export const UserMgmtContent = () => {
 
   const handleArchiveUser = async (user) => {
     if (!user) return;
+    if (isCampusAdmin) {
+      if (!isDepartmentDean(user)) return;
+      setDestructiveAction({ action: "archive", user, password: "", error: "" });
+      return;
+    }
     const confirmed = await showConfirm(`Are you sure you want to archive ${user.full_name || user.email}?`, "Archive User");
     if (!confirmed) return;
 
@@ -498,13 +509,18 @@ export const UserMgmtContent = () => {
     }
   };
 
-  const handleDeleteUser = async (email) => {
-    if (!email) return;
-    const confirmed = await showConfirm(`Permanently delete user ${email}? This cannot be undone.`, "Delete User");
+  const handleDeleteUser = async (user) => {
+    if (!user?.email) return;
+    if (isCampusAdmin) {
+      if (!isDepartmentDean(user)) return;
+      setDestructiveAction({ action: "delete", user, password: "", error: "" });
+      return;
+    }
+    const confirmed = await showConfirm(`Permanently delete user ${user.email}? This cannot be undone.`, "Delete User");
     if (!confirmed) return;
 
     try {
-      const response = await fetch(`${API_URL}/users/${encodeURIComponent(email)}`, {
+      const response = await fetch(`${API_URL}/users/${encodeURIComponent(user.email)}/permanent`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
@@ -525,6 +541,47 @@ export const UserMgmtContent = () => {
     }
   };
 
+  const submitDestructiveAction = async (event) => {
+    event.preventDefault();
+    if (!destructiveAction || submittingDestructiveAction) return;
+    if (!destructiveAction.password.trim()) {
+      setDestructiveAction((current) => ({ ...current, error: "Enter your admin password to continue." }));
+      return;
+    }
+
+    setSubmittingDestructiveAction(true);
+    try {
+      const { action, user, password } = destructiveAction;
+      const response = action === "archive"
+        ? await fetch(`${API_URL}/users/archive`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: user.email, admin_password: password }),
+        })
+        : await fetch(`${API_URL}/users/${encodeURIComponent(user.email)}/permanent`, {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+          },
+          body: JSON.stringify({ email: user.email, admin_password: password }),
+        });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || `Could not ${action} user.`);
+      setDestructiveAction(null);
+      await showAlert(
+        action === "archive" ? "User archived successfully." : "User permanently deleted.",
+        action === "archive" ? "Archived" : "Deleted",
+      );
+      await fetchUsers();
+      if (action === "delete") await fetchPendingRequests();
+    } catch (err) {
+      setDestructiveAction((current) => current ? { ...current, error: err.message || "Could not complete this action." } : current);
+    } finally {
+      setSubmittingDestructiveAction(false);
+    }
+  };
+
   const matchesSearch = (user) => {
     const query = searchTerm.trim().toLowerCase();
     if (!query) return true;
@@ -534,8 +591,14 @@ export const UserMgmtContent = () => {
   };
 
   const matchesUserFilters = (user) => {
-    return (departmentFilter === "all" || user.department === departmentFilter)
-      && (programFilter === "all" || user.program === programFilter);
+    const matchesRole = roleFilter === "all"
+      || (roleFilter === "department_dean" ? isDepartmentDean(user) : String(user.role || "").toLowerCase() === roleFilter);
+    const matchesProgram = (!isCampusAdmin || roleFilter === "faculty")
+      ? programFilter === "all" || user.program === programFilter
+      : true;
+    return matchesRole
+      && (departmentFilter === "all" || user.department === departmentFilter)
+      && matchesProgram;
   };
 
   const formatActivityDate = (value) => {
@@ -588,7 +651,7 @@ export const UserMgmtContent = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, departmentFilter, programFilter, userView]);
+  }, [searchTerm, roleFilter, departmentFilter, programFilter, userView]);
 
   return (
     <div className="bq-admin-user-management bq-attached-user-ui relative space-y-4 page-transition">
@@ -679,19 +742,20 @@ export const UserMgmtContent = () => {
         </div>
       </div>
         <div className="relative rounded-md border border-gray-200 bg-white p-2 shadow-sm">
-          <div className="flex flex-col gap-2 sm:flex-row">
+          {!isCampusAdmin && <div className="flex flex-col gap-2 sm:flex-row">
             <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search users, email, department, or program..." className="bq-field min-w-0 flex-1 px-3 py-1.5 text-sm" />
-            <button type="button" onClick={() => setFilterOpen((open) => !open)} className={`inline-flex items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-sm font-semibold transition ${filterOpen || departmentFilter !== "all" || programFilter !== "all" ? "border-[#B4454A] bg-red-50 text-[#B4454A]" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"}`}><Filter size={15} /> Filter</button>
-          </div>
-          {filterOpen && <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+            {!isCampusAdmin && <button type="button" onClick={() => setFilterOpen((open) => !open)} className={`inline-flex items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-sm font-semibold transition ${filterOpen || departmentFilter !== "all" || programFilter !== "all" ? "border-[#B4454A] bg-red-50 text-[#B4454A]" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"}`}><Filter size={15} /> Filter</button>}
+          </div>}
+          {(filterOpen || isCampusAdmin) && <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
             <div className="grid gap-3 sm:grid-cols-2">
-            <label className="text-xs font-semibold text-gray-600">Department<select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)} className="bq-field mt-1 w-full px-2 py-2 text-sm"><option value="all">All departments</option>{departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}</select></label>
-            <label className="text-xs font-semibold text-gray-600">Program<select value={programFilter} onChange={(event) => setProgramFilter(event.target.value)} className="bq-field mt-1 w-full px-2 py-2 text-sm"><option value="all">All programs</option>{programOptions.map((program) => <option key={program} value={program}>{program}</option>)}</select></label>
+            {isCampusAdmin && <label className="text-xs font-semibold text-gray-600">Role<select aria-label="Filter users by role" value={roleFilter} onChange={(event) => { setRoleFilter(event.target.value); setProgramFilter("all"); }} className="bq-field mt-1 w-full px-2 py-2 text-sm"><option value="all">All roles</option><option value="faculty">Faculty</option><option value="department_dean">Department dean</option></select></label>}
+            <label className="text-xs font-semibold text-gray-600">Department<select aria-label="Filter users by department" value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)} className="bq-field mt-1 w-full px-2 py-2 text-sm"><option value="all">All departments</option>{departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}</select></label>
+            {(!isCampusAdmin || roleFilter === "faculty") && <label className="text-xs font-semibold text-gray-600">Program<select value={programFilter} onChange={(event) => setProgramFilter(event.target.value)} className="bq-field mt-1 w-full px-2 py-2 text-sm"><option value="all">All programs</option>{programOptions.map((program) => <option key={program} value={program}>{program}</option>)}</select></label>}
             </div>
             {taxonomyError && <p role="alert" className="mt-2 text-xs text-red-700">{taxonomyError}</p>}
-            <div className="mt-3 flex justify-end">
+            {!isCampusAdmin && <div className="mt-3 flex justify-end">
               <button type="button" onClick={() => { setDepartmentFilter("all"); setProgramFilter("all"); }} className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 transition hover:bg-gray-100">Clear filters</button>
-            </div>
+            </div>}
           </div>}
         </div>
       <div className="flex flex-wrap gap-1 rounded-md border border-gray-200 bg-white p-1 shadow-sm" role="tablist" aria-label="User management sections">
@@ -846,17 +910,6 @@ export const UserMgmtContent = () => {
               <button
                 type="button"
                 onClick={() => {
-                  setShowFacultyForm((visible) => !visible);
-                  setShowDeanForm(false);
-                }}
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-red-700 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-800"
-              >
-                <Plus size={16} />
-                Add faculty member
-              </button>
-              <button
-                type="button"
-                onClick={() => {
                   setShowDeanForm((visible) => !visible);
                   setShowFacultyForm(false);
                 }}
@@ -885,7 +938,7 @@ export const UserMgmtContent = () => {
               </label>
               <label className="text-xs font-semibold text-gray-600">
                 Department
-                <select required value={deanForm.department_id} onChange={(event) => setDeanForm((current) => ({ ...current, department_id: event.target.value }))} className="bq-field mt-1 w-full px-3 py-2 text-sm">
+                <select aria-label="Department for dean" required value={deanForm.department_id} onChange={(event) => setDeanForm((current) => ({ ...current, department_id: event.target.value }))} className="bq-field mt-1 w-full px-3 py-2 text-sm">
                   <option value="">Select department</option>
                   {campusFacultyDepartments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
                 </select>
@@ -1075,12 +1128,14 @@ export const UserMgmtContent = () => {
                     >
                       Restore
                     </button>
-                    <button
-                      onClick={() => handleDeleteUser(user.email)}
-                      className="rounded-full bg-red-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-red-700 transition shadow-sm"
-                    >
-                      Delete
-                    </button>
+                    {(!isCampusAdmin || isDepartmentDean(user)) && (
+                      <button
+                        onClick={() => handleDeleteUser(user)}
+                        className="rounded-full bg-red-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-red-700 transition shadow-sm"
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -1089,11 +1144,43 @@ export const UserMgmtContent = () => {
         )}
       </div>}
 
+      {destructiveAction && (
+        <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
+          <form onSubmit={submitDestructiveAction} className="bq-modal-panel w-full max-w-md p-6">
+            <h3 className="text-lg font-bold text-gray-900">
+              {destructiveAction.action === "archive" ? "Archive department dean" : "Delete department dean"}
+            </h3>
+            <p className="mt-2 text-sm text-gray-600">
+              {destructiveAction.action === "archive"
+                ? `Enter your admin password to archive ${destructiveAction.user.full_name || destructiveAction.user.email}.`
+                : `This permanently deletes ${destructiveAction.user.full_name || destructiveAction.user.email}. Enter your admin password to continue.`}
+            </p>
+            <label className="mt-4 block text-sm font-medium text-gray-700" htmlFor="destructive-admin-password">Admin password</label>
+            <input
+              id="destructive-admin-password"
+              type="password"
+              autoComplete="current-password"
+              value={destructiveAction.password}
+              onChange={(event) => setDestructiveAction((current) => ({ ...current, password: event.target.value, error: "" }))}
+              className="bq-field mt-1 w-full px-3 py-2 text-sm"
+              required
+            />
+            {destructiveAction.error && <p role="alert" className="mt-2 text-sm text-red-700">{destructiveAction.error}</p>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" disabled={submittingDestructiveAction} onClick={() => setDestructiveAction(null)} className="bq-secondary-button px-3 py-2 text-sm">Cancel</button>
+              <button type="submit" disabled={submittingDestructiveAction} className="rounded-md bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50">
+                {submittingDestructiveAction ? "Verifying..." : destructiveAction.action === "archive" ? "Verify and archive" : "Verify and delete"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {activityUser && (
         <div className="bq-modal-overlay fixed inset-0 z-50 flex justify-end" onMouseDown={(event) => { if (event.target === event.currentTarget) setActivityUser(null); }}>
           <aside className="bq-modal-panel h-full w-full max-w-xl overflow-y-auto rounded-none border-l p-6">
             <div className="mb-6 flex items-start justify-between gap-4 border-b border-gray-200 pb-4">
-              <div><p className="bq-eyebrow">User activity</p><h3 className="text-xl font-bold text-gray-900">{activityUser.full_name || activityUser.email}</h3><p className="mt-1 text-sm text-gray-500">{activityUser.email}</p><div className="mt-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3"><div className="rounded-lg border border-gray-200 bg-gray-50 p-2"><span className="block text-gray-400">Joined</span><strong className="mt-1 block text-gray-700">{formatActivityDate(activityUser.created_at || activityUser.joined)}</strong></div><div className="rounded-lg border border-gray-200 bg-gray-50 p-2"><span className="block text-gray-400">Last Active</span><strong className="mt-1 block text-gray-700">{formatActivityDate(activityUser.last_active)}</strong></div><div className="rounded-lg border border-gray-200 bg-gray-50 p-2"><span className="block text-gray-400">Last Export</span><strong className="mt-1 block text-gray-700">{formatActivityDate(activityUser.last_export)}</strong></div><div className="rounded-lg border border-gray-200 bg-gray-50 p-2"><span className="block text-gray-400">Last Generate</span><strong className="mt-1 block text-gray-700">{formatActivityDate(activityUser.last_generate)}</strong></div><div className="rounded-lg border border-gray-200 bg-gray-50 p-2"><span className="block text-gray-400">Activity</span><strong className="mt-1 block text-gray-700">{activityUser.activity_count ?? 0} records</strong></div></div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => { setActivityUser(null); handleOpenManage(activityUser); }} className="bq-primary-button px-3 py-2 text-xs">Manage User</button>{activityUser.archived ? <button type="button" onClick={() => { setActivityUser(null); handleRestoreUser(activityUser.email); }} className="bq-secondary-button px-3 py-2 text-xs">Restore User</button> : <button type="button" onClick={() => { setActivityUser(null); handleArchiveUser(activityUser); }} className="bq-secondary-button px-3 py-2 text-xs">Archive User</button>}</div></div>
+              <div><p className="bq-eyebrow">User activity</p><h3 className="text-xl font-bold text-gray-900">{activityUser.full_name || activityUser.email}</h3><p className="mt-1 text-sm text-gray-500">{activityUser.email}</p><div className="mt-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3"><div className="rounded-lg border border-gray-200 bg-gray-50 p-2"><span className="block text-gray-400">Joined</span><strong className="mt-1 block text-gray-700">{formatActivityDate(activityUser.created_at || activityUser.joined)}</strong></div><div className="rounded-lg border border-gray-200 bg-gray-50 p-2"><span className="block text-gray-400">Last Active</span><strong className="mt-1 block text-gray-700">{formatActivityDate(activityUser.last_active)}</strong></div><div className="rounded-lg border border-gray-200 bg-gray-50 p-2"><span className="block text-gray-400">Last Export</span><strong className="mt-1 block text-gray-700">{formatActivityDate(activityUser.last_export)}</strong></div><div className="rounded-lg border border-gray-200 bg-gray-50 p-2"><span className="block text-gray-400">Last Generate</span><strong className="mt-1 block text-gray-700">{formatActivityDate(activityUser.last_generate)}</strong></div><div className="rounded-lg border border-gray-200 bg-gray-50 p-2"><span className="block text-gray-400">Activity</span><strong className="mt-1 block text-gray-700">{activityUser.activity_count ?? 0} records</strong></div></div><div className="mt-3 flex flex-wrap gap-2">{!isCampusAdmin && <button type="button" onClick={() => { setActivityUser(null); handleOpenManage(activityUser); }} className="bq-primary-button px-3 py-2 text-xs">Manage User</button>}{activityUser.archived ? <button type="button" onClick={() => { setActivityUser(null); handleRestoreUser(activityUser.email); }} className="bq-secondary-button px-3 py-2 text-xs">Restore User</button> : (!isCampusAdmin || isDepartmentDean(activityUser)) && <button type="button" onClick={() => { setActivityUser(null); handleArchiveUser(activityUser); }} className="bq-secondary-button px-3 py-2 text-xs">Archive User</button>}</div></div>
               <button type="button" onClick={() => setActivityUser(null)} className="bq-secondary-button px-2 py-2"><X size={16} /></button>
             </div>
             {loadingActivity ? <LoadingSpinner label="Loading faculty history..." spinnerColor="border-gray-500" /> : facultyDetail && <div className="space-y-6">

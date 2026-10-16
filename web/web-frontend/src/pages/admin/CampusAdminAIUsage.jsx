@@ -5,26 +5,80 @@ import { API_URL } from "../../config/api";
 
 ChartJS.register(BarElement, CategoryScale, Legend, LinearScale, Tooltip);
 
-const EMPTY_FILTERS = { date_from: "", date_to: "", model_name: "", request_status: "" };
+const EMPTY_FILTERS = {
+  date_from: "",
+  date_to: "",
+  department_id: "",
+  program_id: "",
+  instructor_id: "",
+  request_status: "",
+};
 const formatNumber = (value) => new Intl.NumberFormat().format(Number(value) || 0);
-const CHART_OPTIONS = {
+const BREAKDOWN_CHART_OPTIONS = {
   responsive: true,
   maintainAspectRatio: false,
-  plugins: { legend: { position: "bottom" } },
-  scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+  plugins: { legend: { display: false } },
+  scales: {
+    x: {
+      grid: { display: false },
+      ticks: {
+        autoSkip: false,
+        minRotation: 18,
+        maxRotation: 25,
+        color: "rgba(203, 213, 225, 0.62)",
+      },
+    },
+    y: {
+      beginAtZero: true,
+      ticks: { precision: 0, color: "rgba(203, 213, 225, 0.62)" },
+      grid: { color: "rgba(255, 255, 255, 0.06)" },
+    },
+  },
 };
-
 const CampusAdminAIUsage = () => {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [usage, setUsage] = useState(null);
+  const [departments, setDepartments] = useState([]);
+  const [filtersLoading, setFiltersLoading] = useState(true);
+  const [filtersError, setFiltersError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadFilterOptions = async () => {
+      setFiltersLoading(true);
+      setFiltersError("");
+      try {
+        const response = await fetch(`${API_URL}/academic-hierarchy`, {
+          headers: { Authorization: `******"token") || ""}` },
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(payload.detail || "Could not load department, program, and instructor filters.");
+        }
+        const hierarchy = await response.json();
+        const campusDepartments = (hierarchy.campuses || []).flatMap((campus) => campus.departments || []);
+        setDepartments(campusDepartments);
+      } catch (loadError) {
+        if (loadError.name !== "AbortError") {
+          setFiltersError(loadError.message || "Could not load department, program, and instructor filters.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setFiltersLoading(false);
+      }
+    };
+    loadFilterOptions();
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
     const loadUsage = async () => {
       setLoading(true);
       setError("");
+      setUsage(null);
       try {
         const params = new URLSearchParams();
         Object.entries(filters).forEach(([key, value]) => {
@@ -50,13 +104,78 @@ const CampusAdminAIUsage = () => {
   }, [filters]);
 
   const totals = usage?.totals || {};
-  const monthRows = usage?.requests_by_month || [];
-  const modelRows = usage?.model_usage || [];
   const userRows = usage?.requests_by_user || [];
   const errorRows = usage?.error_types || [];
   const tokenUsage = usage?.token_usage;
-  const modelOptions = [...new Set([...(usage?.available_models || []), ...(filters.model_name ? [filters.model_name] : [])])];
+  const selectedDepartment = departments.find((department) => String(department.id) === filters.department_id);
+  const programOptions = selectedDepartment?.programs || [];
+  const selectedProgram = programOptions.find((program) => String(program.id) === filters.program_id);
+  const instructorOptions = selectedProgram
+    ? selectedProgram.faculty || []
+    : selectedDepartment
+      ? selectedDepartment.faculty || []
+      : [];
+  const uniqueInstructorOptions = [...new Map(instructorOptions.map((instructor) => [instructor.id, instructor])).values()];
+  const breakdownLevel = filters.instructor_id
+    ? "instructor"
+    : filters.program_id
+      ? "instructor"
+      : filters.department_id
+        ? "program"
+        : "department";
+  const breakdownTitle = {
+    department: "by department",
+    program: "by program",
+    instructor: "by instructor",
+  }[breakdownLevel];
+  const breakdown = userRows.reduce((groups, user) => {
+    let id;
+    let label;
+    if (breakdownLevel === "instructor") {
+      id = `instructor-${user.user_id}`;
+      label = user.name;
+    } else if (breakdownLevel === "program") {
+      const program = programOptions.find((option) => Number(option.id) === Number(user.program_id));
+      id = user.program_id ? `program-${user.program_id}` : "program-unassigned";
+      label = program?.name || "No program";
+    } else {
+      const department = departments.find((option) => (
+        Number(option.id) === Number(user.department_id)
+        || (
+          user.department
+          && option.name.trim().toLowerCase() === user.department.trim().toLowerCase()
+        )
+      ));
+      id = department ? `department-${department.id}` : "department-unassigned";
+      label = department?.name || "No department";
+    }
+    const group = groups.get(id) || { label, requests: 0, questions: 0 };
+    group.requests += Number(user.requests) || 0;
+    group.questions += Number(user.questions) || 0;
+    groups.set(id, group);
+    return groups;
+  }, new Map());
+  const breakdownRows = [...breakdown.values()];
+  const requestChartData = {
+    labels: breakdownRows.map((row) => row.label),
+    datasets: [{ label: "Requests", data: breakdownRows.map((row) => row.requests), backgroundColor: "#C4485A", borderRadius: 3, borderSkipped: "bottom" }],
+  };
+  const questionChartData = {
+    labels: breakdownRows.map((row) => row.label),
+    datasets: [{ label: "Questions generated", data: breakdownRows.map((row) => row.questions), backgroundColor: "#C4485A", borderRadius: 3, borderSkipped: "bottom" }],
+  };
   const updateFilter = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
+  const updateDepartmentFilter = (departmentId) => setFilters((current) => ({
+    ...current,
+    department_id: departmentId,
+    program_id: "",
+    instructor_id: "",
+  }));
+  const updateProgramFilter = (programId) => setFilters((current) => ({
+    ...current,
+    program_id: programId,
+    instructor_id: "",
+  }));
   const stats = [
     ["AI Requests", totals.total_ai_requests, "#C4485A"],
     ["Generation Requests", totals.generation_requests, "#5587B8"],
@@ -74,12 +193,15 @@ const CampusAdminAIUsage = () => {
           <div><h2>AI usage filters</h2><p className="bq-admin-muted mt-1 text-sm">View Gemini activity for your assigned campus.</p></div>
           <button type="button" className="bq-admin-action" onClick={() => setFilters(EMPTY_FILTERS)}>Clear filters</button>
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <label className="text-sm">From<input aria-label="AI usage start date" type="date" value={filters.date_from} onChange={(event) => updateFilter("date_from", event.target.value)} className="bq-field mt-1 w-full" /></label>
           <label className="text-sm">To<input aria-label="AI usage end date" type="date" value={filters.date_to} onChange={(event) => updateFilter("date_to", event.target.value)} className="bq-field mt-1 w-full" /></label>
-          <label className="text-sm">Gemini model<select aria-label="Filter AI usage by Gemini model" value={filters.model_name} onChange={(event) => updateFilter("model_name", event.target.value)} className="bq-field mt-1 w-full"><option value="">All models</option>{modelOptions.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
+          <label className="text-sm">Department<select aria-label="Filter AI usage by department" value={filters.department_id} disabled={filtersLoading} onChange={(event) => updateDepartmentFilter(event.target.value)} className="bq-field mt-1 w-full"><option value="">All departments</option>{departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></label>
+          <label className="text-sm">Program<select aria-label="Filter AI usage by program" value={filters.program_id} disabled={filtersLoading || !selectedDepartment || !programOptions.length} onChange={(event) => updateProgramFilter(event.target.value)} className="bq-field mt-1 w-full"><option value="">{selectedDepartment && !programOptions.length ? "No programs available" : selectedDepartment ? "All programs" : "Select a department first"}</option>{programOptions.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}</select></label>
+          <label className="text-sm">Instructor<select aria-label="Filter AI usage by instructor" value={filters.instructor_id} disabled={filtersLoading || !selectedDepartment || !uniqueInstructorOptions.length} onChange={(event) => updateFilter("instructor_id", event.target.value)} className="bq-field mt-1 w-full"><option value="">{selectedDepartment && !uniqueInstructorOptions.length ? "No instructors available" : selectedDepartment ? "All instructors" : "Select a department first"}</option>{uniqueInstructorOptions.map((instructor) => <option key={instructor.id} value={instructor.id}>{instructor.name}</option>)}</select></label>
           <label className="text-sm">Status<select aria-label="Filter AI usage by status" value={filters.request_status} onChange={(event) => updateFilter("request_status", event.target.value)} className="bq-field mt-1 w-full"><option value="">All statuses</option><option value="success">Successful</option><option value="failed">Failed</option><option value="rate_limited">Rate limited</option><option value="in_progress">In progress</option></select></label>
         </div>
+        {filtersError && <p role="alert" className="mt-3 text-sm text-red-300">{filtersError}</p>}
       </section>
 
       {error && <div role="alert" className="bq-admin-panel border border-red-500/40 text-sm text-red-300">{error}</div>}
@@ -94,14 +216,9 @@ const CampusAdminAIUsage = () => {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <section className="bq-admin-panel"><h2>Requests and questions by month</h2><div className="mt-4 h-72">{monthRows.length ? <Bar data={{ labels: monthRows.map((row) => row.month), datasets: [{ label: "Requests", data: monthRows.map((row) => row.requests), backgroundColor: "#5587B8", borderRadius: 3 }, { label: "Questions", data: monthRows.map((row) => row.questions), backgroundColor: "#E0A458", borderRadius: 3 }] }} options={CHART_OPTIONS} /> : <p className="bq-admin-muted pt-8">{loading ? "Loading monthly activity..." : "No monthly activity in this range."}</p>}</div></section>
-        <section className="bq-admin-panel"><h2>Gemini model usage</h2><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[480px] text-left text-sm"><thead><tr className="border-b border-slate-700"><th className="py-2 pr-3">Model</th><th className="py-2 pr-3">Requests</th><th className="py-2 pr-3">API calls</th><th className="py-2">Questions</th></tr></thead><tbody>{modelRows.map((row) => <tr key={row.model} className="border-b border-slate-800"><td className="py-3 pr-3">{row.model}</td><td className="py-3 pr-3">{formatNumber(row.requests)}</td><td className="py-3 pr-3">{formatNumber(row.api_calls)}</td><td className="py-3">{formatNumber(row.questions)}</td></tr>)}</tbody></table>{!loading && !modelRows.length && <p className="bq-admin-muted py-5">No model activity recorded.</p>}</div></section>
+        <section className="bq-admin-panel"><h2>AI requests {breakdownTitle}</h2><div className="mt-4 h-72">{loading ? <p className="bq-admin-muted pt-8">Loading request breakdown...</p> : breakdownRows.length ? <Bar data={requestChartData} options={BREAKDOWN_CHART_OPTIONS} /> : <p className="bq-admin-muted pt-8">No request data for this selection.</p>}</div></section>
+        <section className="bq-admin-panel"><h2>Questions generated {breakdownTitle}</h2><div className="mt-4 h-72">{loading ? <p className="bq-admin-muted pt-8">Loading question breakdown...</p> : breakdownRows.length ? <Bar data={questionChartData} options={BREAKDOWN_CHART_OPTIONS} /> : <p className="bq-admin-muted pt-8">No question data for this selection.</p>}</div></section>
       </div>
-
-      <section className="bq-admin-panel">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2>Requests by user</h2><p className="bq-admin-muted mt-1 text-sm">AI requests recorded for accounts at your campus.</p></div><span className="bq-admin-mono">{formatNumber(userRows.length)} USERS</span></div>
-        <div className="mt-4 max-h-[32rem] overflow-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="sticky top-0 bq-admin-panel"><tr className="border-b border-slate-700"><th className="py-2 pr-3">User</th><th className="py-2 pr-3">Role</th><th className="py-2 pr-3">Requests</th><th className="py-2">Questions</th></tr></thead><tbody>{userRows.map((row) => <tr key={row.user_id} className="border-b border-slate-800"><td className="py-3 pr-3">{row.name}<span className="bq-admin-muted block text-xs">{row.email}</span></td><td className="py-3 pr-3">{row.role || "-"}</td><td className="py-3 pr-3">{formatNumber(row.requests)}</td><td className="py-3">{formatNumber(row.questions)}</td></tr>)}</tbody></table>{!loading && !userRows.length && <p className="bq-admin-muted py-5">No requesters match these filters.</p>}</div>
-      </section>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <section className="bq-admin-panel"><h2>Token usage</h2>{tokenUsage?.available ? <div className="mt-4 grid gap-3 sm:grid-cols-3">{[["Input", tokenUsage.input_tokens], ["Output", tokenUsage.output_tokens], ["Total", tokenUsage.total_tokens]].map(([label, value]) => <div key={label} className="rounded-lg border border-slate-700 p-4"><p className="bq-admin-stat-label">{label} tokens</p><p className="mt-2 text-2xl font-semibold">{formatNumber(value)}</p></div>)}</div> : <p className="bq-admin-muted mt-4 text-sm">Token totals are hidden when complete Gemini usage metadata is not available for every request in this selection.</p>}</section>

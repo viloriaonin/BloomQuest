@@ -524,9 +524,8 @@ def test_campus_admin_can_create_department_admin_with_scoped_department(db_sess
     try:
         with TestClient(app) as client:
             response = client.post("/api/super-admin/department-admins", json={
-                "name": "Department Admin",
+                "full_name": "Department Admin",
                 "email": "new-admin@example.com",
-                "password": "new-admin-password",
                 "department_id": department.id,
             })
             assert response.status_code == 405
@@ -579,12 +578,18 @@ def test_super_admin_cannot_create_department_admin(db_session):
     try:
         with TestClient(app) as client:
             response = client.post("/api/campus-admin/department-admins", json={
-                "name": "Department Admin",
+                "full_name": "Department Admin",
                 "email": "new-admin@example.com",
-                "password": "new-admin-password",
                 "department_id": department.id,
             })
             assert response.status_code == 403
+            update_response = client.put("/api/super-admin/department-admins/999", json={
+                "department_id": department.id,
+                "is_active": False,
+            })
+            assert update_response.status_code == 403
+            delete_response = client.delete("/api/super-admin/department-admins/999")
+            assert delete_response.status_code == 404
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(previous)

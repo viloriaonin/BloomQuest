@@ -22,7 +22,7 @@ const UserWorkspacePage = React.lazy(() => import("./pages/users/UserWorkspacePa
 const UserToolsPage = React.lazy(() => import("./pages/users/UserToolsPage"));
 const AdminDashboard = React.lazy(() => import("./pages/admin/admindashboard"));
 const DepartmentAdminDashboard = React.lazy(() => import("./pages/admin/admindashboard").then((module) => ({ default: module.DepartmentAdminDashboard })));
-const SuperAdminDashboard = React.lazy(() => import("./pages/admin/SuperAdminDashboard"));
+export const SuperAdminDashboardFallback = React.lazy(() => import("./pages/admin/SuperAdminDashboard"));
 
 // ---------------------------------------------------------
 // 1. User Layout (Standard Sidebar)
@@ -122,6 +122,9 @@ const AdminRoute = ({ children, academicOnly = false }) => {
             setIsAuthorized("denied");
             return;
           }
+          localStorage.setItem("name", data?.name || "");
+          localStorage.setItem("email", data?.email || "");
+          localStorage.setItem("campus_name", data?.campus_name || "");
           localStorage.setItem("role", backendRole);
           setIsAuthorized("allowed");
         }
@@ -148,11 +151,61 @@ const AdminRoute = ({ children, academicOnly = false }) => {
 
 const SuperAdminRoute = ({ children }) => {
   const role = getUserRole();
+  const [authorization, setAuthorization] = React.useState(() => (
+    role
+      ? { status: "checking", role: null }
+      : { status: "denied", role: null }
+  ));
+
+  React.useEffect(() => {
+    if (!role) {
+      setAuthorization({ status: "denied", role: null });
+      return undefined;
+    }
+
+    let cancelled = false;
+    fetch(`${API_URL}/admin/me`, {
+      cache: "no-store",
+      headers: { Authorization: `******"token") || ""}` },
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error("Unauthorized");
+        return response.json();
+      })
+      .then((data) => {
+        if (cancelled) return;
+
+        const backendRole = String(data?.role || "").toLowerCase();
+        if (!["super_admin", ...ADMIN_ROLES].includes(backendRole)) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("role");
+          setAuthorization({ status: "denied", role: null });
+          return;
+        }
+
+        localStorage.setItem("role", backendRole);
+        setAuthorization({ status: "allowed", role: backendRole });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("role");
+          setAuthorization({ status: "denied", role: null });
+        }
+      });
+
+    return () => { cancelled = true; };
+  }, [role]);
+
   if (!role) return <Navigate to="/" replace />;
-  if (role === "super_admin") return children;
-  return ["campus_admin", "admin"].includes(role)
+  if (authorization.status === "checking") {
+    return <div className="flex h-screen items-center justify-center text-sm text-slate-500">Checking admin access…</div>;
+  }
+  if (authorization.status !== "allowed") return <Navigate to="/" replace />;
+  if (authorization.role === "super_admin") return children;
+  return ["campus_admin", "admin"].includes(authorization.role)
     ? <Navigate to="/admin/dashboard" replace />
-    : role === "department_admin"
+    : authorization.role === "department_admin"
       ? <Navigate to="/admin/academic" replace />
     : <Navigate to="/dashboard" replace />;
 };
@@ -293,12 +346,12 @@ function App() {
         {/* ========================================= */}
 
         <Route path="/super-admin" element={<Navigate to="/super-admin/dashboard" replace />} />
-        <Route path="/super-admin/academic" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
-        <Route path="/super-admin/academic/campus/:campusId" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
-        <Route path="/super-admin/academic/campus/:campusId/department/:departmentId" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
-        <Route path="/super-admin/academic/campus/:campusId/department/:departmentId/program/:programId" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
-        <Route path="/super-admin/questions" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
-        <Route path="/super-admin/*" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
+        <Route path="/super-admin/academic" element={<SuperAdminRoute><PageContainer><AdminDashboard /></PageContainer></SuperAdminRoute>} />
+        <Route path="/super-admin/academic/campus/:campusId" element={<SuperAdminRoute><PageContainer><AdminDashboard /></PageContainer></SuperAdminRoute>} />
+        <Route path="/super-admin/academic/campus/:campusId/department/:departmentId" element={<SuperAdminRoute><PageContainer><AdminDashboard /></PageContainer></SuperAdminRoute>} />
+        <Route path="/super-admin/academic/campus/:campusId/department/:departmentId/program/:programId" element={<SuperAdminRoute><PageContainer><AdminDashboard /></PageContainer></SuperAdminRoute>} />
+        <Route path="/super-admin/questions" element={<SuperAdminRoute><PageContainer><AdminDashboard /></PageContainer></SuperAdminRoute>} />
+        <Route path="/super-admin/*" element={<SuperAdminRoute><PageContainer><AdminDashboard /></PageContainer></SuperAdminRoute>} />
         
         {/* Redirect base /admin to the admin dashboard */}
         <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />

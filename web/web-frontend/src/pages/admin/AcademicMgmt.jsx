@@ -282,6 +282,8 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
   const hasDeanLogin = ["department_dean", "department_admin"].includes(
     String(department?.dean?.role || "").toLowerCase(),
   );
+  const assignedDeanName = department?.dean_name || department?.dean?.name || "";
+  const hasAssignedDean = Boolean(department?.dean_id || assignedDeanName);
 
   React.useEffect(() => {
     setForm({
@@ -349,15 +351,10 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
             <p className="mt-0.5 text-sm text-slate-500">Assign the dean responsible for this department.</p>
           </div>
         </div>
-        {readOnly && (
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600">
-            View only
-          </span>
-        )}
       </div>
 
       <div className="p-5 sm:p-6">
-        <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-4 sm:p-5">
+        <div className="bq-department-leadership-fields rounded-xl border border-slate-200/80 bg-slate-50/80 p-4 sm:p-5">
           <div className="mb-3 flex items-center gap-3">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: "var(--bq-accent-soft)", color: "var(--bq-accent)" }}>
               <Users size={16} />
@@ -367,17 +364,29 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
               <p className="mt-0.5 text-xs text-slate-500">Enter a name or select a faculty member.</p>
             </div>
           </div>
-          <input
-            value={form.dean_name}
-            onChange={(event) => {
-              setForm((prev) => ({ ...prev, dean_name: event.target.value, dean_id: "" }));
-              setSaveState({ status: "idle", message: "" });
-            }}
-            placeholder="Enter dean name"
-            disabled={readOnly || hasDeanLogin}
-            className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-rose-400 focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
-            style={{ borderColor: "var(--bq-border)" }}
-          />
+          {!(readOnly && !hasAssignedDean) && (
+            <input
+              value={form.dean_name}
+              onChange={(event) => {
+                setForm((prev) => ({ ...prev, dean_name: event.target.value, dean_id: "" }));
+                setSaveState({ status: "idle", message: "" });
+              }}
+              placeholder="Enter dean name"
+              disabled={readOnly}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-rose-400 focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+              style={{ borderColor: "var(--bq-border)" }}
+            />
+          )}
+          {readOnly && (hasAssignedDean ? (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3.5 py-3">
+              <p className="text-xs font-semibold text-slate-500">Dean email</p>
+              <p className="mt-1 break-all text-sm text-slate-700">{department?.dean?.email || "No email on file."}</p>
+            </div>
+          ) : (
+            <p role="status" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm font-medium text-amber-800">
+              No dean is currently assigned to this department.
+            </p>
+          ))}
           {showDeanFacultyPicker && faculty.length > 0 && (
             <select
               aria-label="Assign dean from department faculty"
@@ -394,18 +403,14 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
               disabled={readOnly}
               className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3.5 py-3 text-sm text-slate-700 outline-none transition hover:border-slate-300 focus:border-rose-400 focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed disabled:bg-slate-100"
             >
-              <option value="">Set dean by name / no faculty account</option>
               {faculty.map((member) => (
                 <option key={member.id} value={member.id}>{member.name} · {member.email}</option>
               ))}
             </select>
           )}
-          {hasDeanLogin && (
-            <p className="mt-3 rounded-lg bg-white px-3 py-2 text-xs text-slate-600">Login account: {department.dean.email}</p>
-          )}
         </div>
 
-        {!readOnly && onSave && !hasDeanLogin && (
+        {!readOnly && onSave && (
           <form onSubmit={handleSubmit} className="mt-4 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-h-5 text-sm" aria-live="polite">
               {saveState.status === "saving" && (
@@ -700,6 +705,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
   const currentRole = (localStorage.getItem("role") || "").toLowerCase();
   const adminTheme = localStorage.getItem("bloomquest-admin-theme") || "dark";
   const isSuperAdmin = currentRole === "super_admin";
+  const isCampusAdmin = currentRole === "campus_admin";
   const isDepartmentAdmin = currentRole === "department_admin";
   const departmentAdminSection = isDepartmentAdmin ? activeSection || "academic" : null;
   React.useEffect(() => () => {
@@ -1040,21 +1046,6 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
     }
   };
 
-  const assignFacultyProgram = async (facultyId, nextProgramId) => {
-    try {
-      const response = await fetch(`${ACADEMIC_API}/faculty/${facultyId}/program`, {
-        method: "PUT",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ program_id: nextProgramId ? Number(nextProgramId) : null }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.detail || "Could not assign faculty to the program.");
-      await loadData();
-    } catch (err) {
-      setError(err.message || "Could not assign faculty to the program.");
-    }
-  };
-
   const assignProgramChair = async (program, chairName) => {
     const normalizedName = chairName.trim();
     const matchingFaculty = (program.faculty || []).find(
@@ -1329,8 +1320,15 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
         </div>
 
         {campusId && (!isDepartmentAdmin || programId) && (
-          <button type="button" className="mb-3 inline-flex items-center gap-1 text-xs font-semibold text-slate-500" style={{ color: "var(--bq-muted)" }} onClick={() => navigate(backRoute)}>
-            <ArrowLeft size={14} /> Back
+          <button
+            type="button"
+            className={isSuperAdmin || isCampusAdmin
+              ? "mb-4 inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-4 focus:ring-rose-200"
+              : "mb-3 inline-flex items-center gap-1 text-xs font-semibold text-slate-500"}
+            style={isSuperAdmin || isCampusAdmin ? { background: "var(--bq-accent-strong)", color: "#fff" } : { color: "var(--bq-muted)" }}
+            onClick={() => navigate(backRoute)}
+          >
+            <ArrowLeft size={isSuperAdmin || isCampusAdmin ? 16 : 14} /> Back
           </button>
         )}
 
@@ -1357,7 +1355,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                     title={campus.name}
                     code={campus.code}
                     description="Campus academic structure"
-                    meta={pluralize(campus.departments?.length || 0, "Department")}
+                    meta={campus.departments?.length ? pluralize(campus.departments.length, "Department") : "No departments yet"}
                     onSelect={() => navigate(`${basePath}/campus/${campus.id}`)}
                     actionLabel="View Departments"
                     readOnlyActions
@@ -1425,6 +1423,12 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                     readOnlyActions={isSuperAdmin}
                   />
                 ))}
+              </div>
+            )}
+            {isSuperAdmin && listedDepartments.length === 0 && (
+              <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+                <GraduationCap size={28} className="mx-auto text-slate-300" />
+                <p className="mt-3 text-sm font-semibold text-slate-700">No departments in this campus.</p>
               </div>
             )}
 
@@ -1681,12 +1685,12 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                     onSave={saveDepartmentLeadership}
                     onCreateAccount={isDepartmentAdmin ? undefined : createDepartmentDeanAccount}
                     readOnly={isSuperAdmin}
-                    showDeanFacultyPicker={isDepartmentAdmin || isSuperAdmin}
+                    showDeanFacultyPicker={isDepartmentAdmin}
                   />
                 )}
                 {isSuperAdmin && <section className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--bq-border)" }}>
                   <div className="flex items-center justify-between gap-3 border-b px-4 py-3" style={{ borderColor: "var(--bq-border)" }}>
-                    <div><h3 className="font-semibold">Department faculty</h3><p className="text-xs text-slate-500">Assign active faculty to programs in this department.</p></div>
+                    <div><h3 className="font-semibold">Department faculty</h3><p className="text-xs text-slate-500">Active faculty and their assigned programs.</p></div>
                     <span className="text-xs text-slate-500">{pluralize(departmentFaculty.length, "Faculty member")}</span>
                   </div>
                   {departmentFaculty.length ? <div className="overflow-x-auto">
@@ -1697,12 +1701,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                           <tr key={member.id}>
                             <td className="px-4 py-3 text-sm font-medium">{member.name}</td>
                             <td className="px-4 py-3 text-sm text-slate-500">{member.email}</td>
-                            <td className="px-4 py-3">
-                              <select aria-label={`Program for ${member.name}`} value={member.program_id || ""} onChange={(event) => assignFacultyProgram(member.id, event.target.value)} className="bq-field w-full max-w-xs px-3 py-2 text-sm">
-                                <option value="">Not assigned</option>
-                                {departmentPrograms.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
-                              </select>
-                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-600">{member.program || departmentPrograms.find((program) => String(program.id) === String(member.program_id))?.name || "Not assigned"}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1812,7 +1811,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                     </section>
                   </>
                 )}
-                {!isDepartmentAdmin && departmentAdminSection !== "faculty" && <section className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--bq-border)" }}>
+                {!isDepartmentAdmin && !isSuperAdmin && departmentAdminSection !== "faculty" && <section className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--bq-border)" }}>
                   <div className="border-b px-4 py-3" style={{ borderColor: "var(--bq-border)" }}>
                     <h3 className="font-semibold">Department-level subjects</h3>
                     <p className="text-xs text-slate-500">Associate these subjects with a program when appropriate.</p>
@@ -1855,6 +1854,12 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                     </div>
                   </div>
                 ))}
+                {isSuperAdmin && departmentPrograms.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+                    <Layers3 size={28} className="mx-auto text-slate-300" />
+                    <p className="mt-3 text-sm font-semibold text-slate-700">No programs in this department.</p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1978,7 +1983,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
           </div>
         ))}
       </section>
-      {departmentId && selectedDepartment && !isDepartmentAdmin && (
+      {departmentId && selectedDepartment && !isDepartmentAdmin && !isSuperAdmin && (
         <section className="bq-academic-surface mx-auto w-full max-w-7xl rounded-2xl border p-4 shadow-sm sm:p-5" style={{ background: "var(--admin-panel, #14161c)", borderColor: "var(--admin-border, #262a34)", color: "var(--admin-text, #ecedef)" }}>
           <DepartmentWorkflowPanels
             department={selectedDepartment}

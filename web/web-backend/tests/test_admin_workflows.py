@@ -507,6 +507,69 @@ def test_delete_user_archives_instead_of_permanently_deleting(monkeypatch):
     assert result["message"] == "User archived successfully."
 
 
+def test_campus_admin_must_authenticate_and_can_only_archive_a_department_dean(monkeypatch):
+    admin = SimpleNamespace(id=1, role="campus_admin", campus_id=3, password="admin-hash")
+    dean = SimpleNamespace(id=23, email="dean@example.com", role="department_dean", archived=False, campus_id=3)
+    db = FakeSession(user_results=[dean], department=SimpleNamespace(name="Engineering", dean_id=dean.id))
+    monkeypatch.setattr(main, "verify_password", lambda password, stored_hash: password == "CorrectPassword1!")
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+
+    with pytest.raises(HTTPException) as missing_password:
+        main.archive_user(main.AccountActionRequest(email=dean.email), db, admin=admin)
+    assert missing_password.value.status_code == 401
+
+    db = FakeSession(user_results=[dean], department=SimpleNamespace(name="Engineering", dean_id=dean.id))
+    with pytest.raises(HTTPException) as incorrect_password:
+        main.archive_user(
+            main.AccountActionRequest(email=dean.email, admin_password="IncorrectPassword1!"),
+            db,
+            admin=admin,
+        )
+    assert incorrect_password.value.status_code == 401
+
+    faculty = SimpleNamespace(id=24, email="faculty@example.com", role="faculty", archived=False, campus_id=3)
+    db = FakeSession(user_results=[faculty], department=SimpleNamespace(name="Engineering", dean_id=dean.id))
+    with pytest.raises(HTTPException) as faculty_forbidden:
+        main.archive_user(
+            main.AccountActionRequest(email=faculty.email, admin_password="CorrectPassword1!"),
+            db,
+            admin=admin,
+        )
+    assert faculty_forbidden.value.status_code == 403
+    assert faculty.archived is False
+
+    db = FakeSession(user_results=[dean], department=SimpleNamespace(name="Engineering", dean_id=dean.id))
+    result = main.archive_user(
+        main.AccountActionRequest(email=dean.email, admin_password="CorrectPassword1!"),
+        db,
+        admin=admin,
+    )
+    assert dean.archived is True
+    assert result["status"] == "archived"
+
+
+def test_campus_admin_permanent_dean_delete_requires_password(monkeypatch):
+    admin = SimpleNamespace(id=1, role="campus_admin", campus_id=3, password="admin-hash")
+    dean = SimpleNamespace(id=23, email="dean@example.com", role="department_dean", archived=True, campus_id=3)
+    db = FakeSession(user_results=[dean], department=SimpleNamespace(name="Engineering", dean_id=dean.id))
+    monkeypatch.setattr(main, "verify_password", lambda password, stored_hash: password == "CorrectPassword1!")
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+
+    with pytest.raises(HTTPException) as missing_password:
+        main.permanent_delete_user(dean.email, db, admin=admin)
+    assert missing_password.value.status_code == 401
+
+    db = FakeSession(user_results=[dean], department=SimpleNamespace(name="Engineering", dean_id=dean.id))
+    result = main.permanent_delete_user(
+        dean.email,
+        db,
+        admin=admin,
+        payload=main.AccountActionRequest(email=dean.email, admin_password="CorrectPassword1!"),
+    )
+    assert dean in db.deleted
+    assert result["status"] == "deleted"
+
+
 def test_permanent_delete_user_removes_account_record(monkeypatch):
     user = SimpleNamespace(id=23, email="faculty@example.com", role="faculty", archived=True)
     db = FakeSession(user_results=[user], department=SimpleNamespace(name="Engineering"))
@@ -593,13 +656,18 @@ def test_create_campus_admin_queues_credentials_email(monkeypatch):
         email="avery@example.com",
         password="InitialPass1!",
         campus_id=campus.id,
+        current_password="CurrentAdminPassword1!",
     )
 
     result = main.create_campus_admin(
         payload,
         background_tasks,
         db,
-        admin=SimpleNamespace(id=1, role="super_admin"),
+        admin=SimpleNamespace(
+            id=1,
+            role="super_admin",
+            password=main.hash_password("CurrentAdminPassword1!"),
+        ),
     )
 
     assert result["email"] == payload.email

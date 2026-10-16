@@ -430,9 +430,6 @@ const QuestionBank = () => {
     try { return JSON.parse(localStorage.getItem('bloomquest-favorite-questions') || '[]'); } catch { return []; }
   });
   const [bankView, setBankView] = useState(() => localStorage.getItem('bloomquest-question-bank-view') || 'questions');
-  const [versionsOpen, setVersionsOpen] = useState(false);
-  const [versionQuestion, setVersionQuestion] = useState(null);
-  const [versions, setVersions] = useState([]);
   const [deletedSubject, setDeletedSubject] = useState(null);
   const [showSidebarInfo, setShowSidebarInfo] = useState(true);
   const [tosModalOpen, setTosModalOpen] = useState(false);
@@ -649,24 +646,6 @@ const QuestionBank = () => {
       localStorage.setItem('bloomquest-favorite-questions', JSON.stringify(next));
       return next;
     });
-  };
-
-  const openVersions = async (question) => {
-    try {
-      const res = await fetch(`${API_URL}/questions/${question.id}/versions`);
-      if (!res.ok) throw new Error('Could not load question versions');
-      setVersions(await res.json());
-      setVersionQuestion(question);
-      setVersionsOpen(true);
-    } catch (err) { setError(err.message); }
-  };
-
-  const restoreVersion = async (version) => {
-    if (!versionQuestion) return;
-    const res = await fetch(`${API_URL}/questions/${versionQuestion.id}/versions/${version.id}/restore`, { method: 'POST' });
-    if (!res.ok) { setError('Could not restore question version'); return; }
-    setVersionsOpen(false);
-    fetchQuestions(selectedSubject, true);
   };
 
   const moveSelectedQuestion = (index, direction) => {
@@ -1206,7 +1185,6 @@ const QuestionBank = () => {
                               <button type="button" onClick={() => toggleFavorite(q.id)} aria-label={favoriteIds.includes(q.id) ? 'Remove from favorites' : 'Add to favorites'} className={`rounded-md p-1.5 transition-colors ${favoriteIds.includes(q.id) ? '' : 'text-slate-400 hover:text-slate-600'}`} style={favoriteIds.includes(q.id) ? { color: PRIMARY } : undefined}>
                                 <Heart className="h-4 w-4" fill={favoriteIds.includes(q.id) ? 'currentColor' : 'none'} />
                               </button>
-                              <button type="button" onClick={() => openVersions(q)} className="rounded-md px-2 py-1.5 text-xs font-medium text-slate-400 transition-colors hover:text-slate-700">Versions</button>
                               <button onClick={() => handleEditOpen(q)} className="rounded-md px-2 py-1.5 text-xs font-medium text-slate-400 transition-colors hover:text-slate-700">Edit</button>
                               <button onClick={() => handleDelete(q.id)} disabled={deletingId === q.id} className="rounded-md px-2 py-1.5 text-xs font-medium text-slate-400 transition-colors hover:text-red-600">
                                 {deletingId === q.id ? 'Deleting…' : 'Delete'}
@@ -1429,15 +1407,6 @@ const QuestionBank = () => {
             <label className="mt-4 block text-sm font-semibold text-slate-700">File type<select value={exportFormat} onChange={(event) => setExportFormat(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2.5 font-normal outline-none focus:border-[#B4454A]"><option value="pdf">PDF</option><option value="docx">Word document</option></select></label>
             <label className="mt-4 block text-sm font-semibold text-slate-700">Content<select value={answerMode} onChange={(event) => setAnswerMode(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2.5 font-normal outline-none focus:border-[#B4454A]"><option value="with_key">Questions and answer key</option><option value="questions_only">Questions only</option><option value="key_only">Answer key only</option></select></label>
             <div className="mt-6 flex justify-end gap-2"><button type="button" onClick={() => setAssessmentSettingsOpen(false)} className="bq-secondary-button">Cancel</button></div>
-          </section>
-        </div>
-      )}
-
-      {versionsOpen && versionQuestion && (
-        <div className="bq-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setVersionsOpen(false); }}>
-          <section role="dialog" aria-modal="true" className="bq-panel max-h-[calc(100vh-2rem)] w-full max-w-xl overflow-y-auto p-6">
-            <div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-bold text-slate-900">Question version history</h2><p className="mt-1 text-sm text-slate-500">Previous snapshots for this question.</p></div><button type="button" onClick={() => setVersionsOpen(false)} className="text-sm font-semibold text-red-700">Close</button></div>
-            <div className="mt-5 space-y-3">{versions.length ? versions.map((version) => <article key={version.id} className="rounded-lg border border-slate-200 p-4"><p className="text-sm font-semibold text-slate-900">{version.snapshot.question}</p><p className="mt-2 text-xs text-slate-500">Saved {version.created_at ? new Date(version.created_at).toLocaleString() : 'previously'}</p><button type="button" onClick={() => restoreVersion(version)} className="mt-3 text-xs font-semibold text-[#B4454A]">Restore this version</button></article>) : <p className="text-sm text-slate-500">No previous versions have been saved yet.</p>}</div>
           </section>
         </div>
       )}

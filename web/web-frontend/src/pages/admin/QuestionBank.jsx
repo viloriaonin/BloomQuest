@@ -984,12 +984,14 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
   const currentRole = (localStorage.getItem("role") || "").toLowerCase();
   const isSuperAdmin = currentRole === "super_admin";
   const isDepartmentAdmin = currentRole === "department_admin";
+  const isCampusAdmin = currentRole === "campus_admin";
   const [hierarchy, setHierarchy] = useState({ campuses: [] });
   const [allSubjects, setAllSubjects] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [selection, setSelection] = useState({ campusId: null, departmentId: null, programId: null, subjectId: null });
   const [searchTerm, setSearchTerm] = useState("");
+  const [creatorFilter, setCreatorFilter] = useState("All creators");
   const [questionType, setQuestionType] = useState("All types");
   const [bloomLevel, setBloomLevel] = useState("All levels");
   const [loading, setLoading] = useState(true);
@@ -1107,16 +1109,30 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
   const selectedProgram = selectedDepartment?.programs.find((program) => program.id === selection.programId);
   const programSubjects = selection.programId ? subjects : [];
   const selectedSubject = subjects.find((subject) => subject.id === selection.subjectId);
+  const creatorOptions = [...new Map(
+    (selectedProgram?.faculty || [])
+      .filter((member) => member.name?.trim() && member.email?.trim())
+      .map((member) => {
+        const email = member.email.trim().toLowerCase();
+        return [
+          email,
+          { value: email, label: member.name.trim() },
+        ];
+      }),
+  ).values()].sort((first, second) => first.label.localeCompare(second.label));
   const visibleQuestions = questions.filter((question) => {
     const haystack = `${question.question || ""} ${question.topic_name || ""} ${question.creator_name || ""}`.toLowerCase();
+    const creatorKey = question.creator_email?.trim().toLowerCase() || "__unassigned__";
     return (questionType === "All types" || question.question_type === questionType)
       && (bloomLevel === "All levels" || question.bloom_level === bloomLevel)
+      && (creatorFilter === "All creators" || creatorKey === creatorFilter)
       && haystack.includes(searchTerm.toLowerCase());
   });
 
   const choose = (nextSelection) => {
     setError("");
     setQuestions([]);
+    setCreatorFilter("All creators");
     setSelection(nextSelection);
   };
   const backTo = (level) => {
@@ -1162,10 +1178,20 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
         <div className="flex flex-col justify-between gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-end">
           <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#B4454A]">Faculty collections</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{selectedSubject ? selectedSubject.name : selectedProgram ? selectedProgram.name : selectedDepartment ? selectedDepartment.name : !isSuperAdmin && selectedCampus ? "Choose a department" : selectedCampus ? selectedCampus.name : "Question Bank"}</h2><p className="mt-1 text-sm text-slate-500">Browse questions through the academic structure.</p></div>
         </div>
-        {(selection.programId || selection.subjectId || (selection.departmentId && !isDepartmentAdmin) || (isSuperAdmin && selection.campusId)) && <button type="button" onClick={goBack} className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-[#B4454A] px-4 py-2 text-sm font-semibold text-[#B4454A] transition hover:bg-[#B4454A] hover:text-white"><ArrowLeft size={15} /> Back</button>}
+        {(selection.programId || selection.subjectId || (selection.departmentId && !isDepartmentAdmin) || (isSuperAdmin && selection.campusId)) && (
+          <button
+            type="button"
+            onClick={goBack}
+            className={isCampusAdmin || isSuperAdmin
+              ? "mt-4 inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-4 focus:ring-rose-200"
+              : "mt-4 inline-flex items-center gap-1.5 rounded-lg border border-[#B4454A] px-4 py-2 text-sm font-semibold text-[#B4454A] transition hover:bg-[#B4454A] hover:text-white"}
+            style={isCampusAdmin || isSuperAdmin ? { background: "var(--bq-accent-strong)", color: "#fff" } : undefined}
+          >
+            <ArrowLeft size={isCampusAdmin || isSuperAdmin ? 16 : 15} /> Back
+          </button>
+        )}
       </section>
 
-      {selectedSubject && <div className="flex justify-end"><label className="text-xs font-semibold text-slate-600">Bloom level <select value={bloomLevel} onChange={(event) => setBloomLevel(event.target.value)} className="bq-field ml-2 py-2 text-sm"><option>All levels</option>{BLOOMS_LEVELS.map((level) => <option key={level.name}>{level.name}</option>)}</select></label></div>}
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">Loading academic structure...</div> : !selectedCampus ? isSuperAdmin ? (
         <section>
@@ -1174,35 +1200,39 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
             <span className="text-xs text-slate-500">{hierarchy.campuses.length} campus{hierarchy.campuses.length === 1 ? "" : "es"}</span>
           </div>
           {isSuperAdmin ? (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {hierarchy.campuses.map((campus) => (
-                <button
-                  key={campus.id}
-                  type="button"
-                  onClick={() => choose({ campusId: campus.id, departmentId: null, programId: null, subjectId: null })}
-                  className="bq-panel group rounded-xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-                  style={{ background: "var(--admin-panel, #14161c)", borderColor: "var(--admin-border, #262a34)", color: "var(--admin-text, #ecedef)" }}
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--bq-accent-soft)", color: "var(--bq-accent)" }}>
-                      <Building2 size={20} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-start justify-between gap-2">
-                        <span className="font-semibold text-slate-900">{campus.name}</span>
-                        <ChevronRight size={17} className="mt-1 shrink-0 text-slate-300 transition group-hover:text-[#B4454A]" />
+            hierarchy.campuses.length ? (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {hierarchy.campuses.map((campus) => (
+                  <button
+                    key={campus.id}
+                    type="button"
+                    onClick={() => choose({ campusId: campus.id, departmentId: null, programId: null, subjectId: null })}
+                    className="bq-panel group rounded-xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                    style={{ background: "var(--admin-panel, #14161c)", borderColor: "var(--admin-border, #262a34)", color: "var(--admin-text, #ecedef)" }}
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--bq-accent-soft)", color: "var(--bq-accent)" }}>
+                        <Building2 size={20} />
                       </span>
-                      {campus.code && <span className="mt-1 inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">{campus.code}</span>}
-                      <span className="mt-2 block text-xs text-slate-500">{campus.departments.length} department{campus.departments.length === 1 ? "" : "s"}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-start justify-between gap-2">
+                          <span className="font-semibold text-slate-900">{campus.name}</span>
+                          <ChevronRight size={17} className="mt-1 shrink-0 text-slate-300 transition group-hover:text-[#B4454A]" />
+                        </span>
+                        {campus.code && <span className="mt-1 inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">{campus.code}</span>}
+                        <span className="mt-2 block text-xs text-slate-500">{campus.departments.length ? `${campus.departments.length} department${campus.departments.length === 1 ? "" : "s"}` : "No departments yet"}</span>
+                      </span>
+                    </div>
+                    <span className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
+                      <span>Campus academic structure</span>
+                      <span className="font-semibold text-[#B4454A]">View campus</span>
                     </span>
-                  </div>
-                  <span className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
-                    <span>Campus academic structure</span>
-                    <span className="font-semibold text-[#B4454A]">View campus</span>
-                  </span>
-                </button>
-              ))}
-            </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">No campuses are available in the academic structure.</div>
+            )
           ) : (
             <div className="space-y-3">{hierarchy.campuses.map((campus) => <ListItem key={campus.id} icon={Shield} title={campus.name} code={campus.code} detail={`${campus.departments.length} department${campus.departments.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: campus.id, departmentId: null, programId: null, subjectId: null })} />)}</div>
           )}
@@ -1212,13 +1242,55 @@ const AdminQuestionBankPage = ({ basePath = "/admin" }) => {
           No campus is assigned to this account. Contact your administrator.
         </div>
       ) : !selectedDepartment ? (
-        <section><div className="mb-3"><h3 className="text-lg font-semibold text-slate-900">Choose a department</h3></div><div className="space-y-3">{selectedCampus.departments.map((department) => <ListItem key={department.id} icon={FlaskConical} title={department.name} code={department.code} detail={`${department.programs.length} program${department.programs.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: selectedCampus.id, departmentId: department.id, programId: null, subjectId: null })} />)}</div></section>
+        <section><div className="mb-3"><h3 className="text-lg font-semibold text-slate-900">Choose a department</h3></div><div className="space-y-3">{selectedCampus.departments.map((department) => <ListItem key={department.id} icon={FlaskConical} title={department.name} code={department.code} detail={department.programs.length ? `${department.programs.length} program${department.programs.length === 1 ? "" : "s"}` : "No programs yet"} onClick={() => choose({ campusId: selectedCampus.id, departmentId: department.id, programId: null, subjectId: null })} />)}</div>{isSuperAdmin && selectedCampus.departments.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">No departments are available in this campus.</div>}</section>
       ) : !selectedProgram ? (
-        <section><div className="mb-3"><h3 className="text-lg font-semibold text-slate-900">Choose a program</h3></div><div className="space-y-3">{selectedDepartment.programs.map((program) => <ListItem key={program.id} icon={BookOpen} title={program.name} code={program.code} detail={`${program.faculty?.length || 0} faculty member${program.faculty?.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: selectedCampus.id, departmentId: selectedDepartment.id, programId: program.id, subjectId: null })} />)}</div></section>
+        <section><div className="mb-3"><h3 className="text-lg font-semibold text-slate-900">Choose a program</h3></div><div className="space-y-3">{selectedDepartment.programs.map((program) => <ListItem key={program.id} icon={BookOpen} title={program.name} code={program.code} detail={`${program.faculty?.length || 0} faculty member${program.faculty?.length === 1 ? "" : "s"}`} onClick={() => choose({ campusId: selectedCampus.id, departmentId: selectedDepartment.id, programId: program.id, subjectId: null })} />)}</div>{isSuperAdmin && selectedDepartment.programs.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">No programs are available in this department.</div>}</section>
       ) : !selectedSubject ? (
         <section><div className="mb-3"><h3 className="text-lg font-semibold text-slate-900">Choose a subject</h3></div><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{programSubjects.map((subject, index) => <Card key={subject.id} icon={[Shield, Sigma, FlaskConical][index % 3]} title={subject.name} code={subject.code} detail={`${subject.question_count || 0} question${subject.question_count === 1 ? "" : "s"} in this collection`} onClick={() => choose({ ...selection, subjectId: subject.id })} accent={["#F0645A", "#6FA8E0", "#5CB37B"][index % 3]} />)}</div>{!programSubjects.length && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">No subjects are assigned to this program yet.</div>}</section>
       ) : (
-        <section className="space-y-4"><div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center"><span className="text-sm font-semibold text-slate-700">{questions.length} question{questions.length === 1 ? "" : "s"}</span><div className="ml-auto flex w-full flex-wrap gap-2 sm:w-auto"><label className="relative min-w-[220px] flex-1"><Search size={15} className="absolute left-3 top-2.5 text-slate-400" /><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search question bank" className="bq-field w-full py-2 pl-9 text-sm" /></label><select value={questionType} onChange={(event) => setQuestionType(event.target.value)} className="bq-field py-2 text-sm"><option>All types</option>{QUESTION_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div></div>{questionsLoading ? <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">Loading questions...</div> : <div className="grid gap-4 lg:grid-cols-2">{visibleQuestions.map((question) => <article key={question.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-[#B4454A]/40 hover:shadow-md"><div className="flex items-start justify-between gap-3"><span className="rounded-full bg-rose-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#B4454A]">{question.question_type || "Question"}</span><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">{question.bloom_level || "Unclassified"}</span></div><h3 className="mt-4 text-sm font-semibold leading-6 text-slate-900">{question.question}</h3>{question.topic_name && <p className="mt-2 text-xs text-slate-500">Topic: {question.topic_name}</p>}<div className="mt-5 grid gap-2 border-t border-slate-100 pt-4 text-xs text-slate-500 sm:grid-cols-2"><span className="flex items-center gap-1.5"><UserRound size={14} className="text-[#B4454A]" />{question.creator_name || "System or unassigned"}</span><span className="flex items-center gap-1.5 sm:justify-end"><CalendarDays size={14} className="text-[#B4454A]" />{formatDate(question.created_at)}</span></div></article>)}</div>}{!questionsLoading && !visibleQuestions.length && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">No questions match this view.</div>}</section>
+        <section className="space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+            <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">Filter questions</h3>
+                <p className="text-xs text-slate-500">Narrow this subject’s questions by creator, type, or Bloom level.</p>
+              </div>
+              <span className="text-sm font-semibold text-slate-600">{visibleQuestions.length} of {questions.length} questions</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <label className="min-w-0 text-xs font-semibold text-slate-600">
+                Search
+                <span className="relative mt-1.5 block">
+                  <Search size={15} className="absolute left-3 top-2.5 text-slate-400" />
+                  <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search questions" className="bq-field w-full py-2 pl-9 text-sm font-normal" />
+                </span>
+              </label>
+              <label className="min-w-0 text-xs font-semibold text-slate-600">
+                Created by
+                <select value={creatorFilter} onChange={(event) => setCreatorFilter(event.target.value)} className="bq-field mt-1.5 w-full py-2 text-sm font-normal">
+                  <option value="All creators">All creators</option>
+                  {creatorOptions.map((creator) => <option key={creator.value} value={creator.value}>{creator.label}</option>)}
+                </select>
+              </label>
+              <label className="min-w-0 text-xs font-semibold text-slate-600">
+                Question type
+                <select value={questionType} onChange={(event) => setQuestionType(event.target.value)} className="bq-field mt-1.5 w-full py-2 text-sm font-normal">
+                  <option>All types</option>
+                  {QUESTION_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+              <label className="min-w-0 text-xs font-semibold text-slate-600">
+                Bloom level
+                <select value={bloomLevel} onChange={(event) => setBloomLevel(event.target.value)} className="bq-field mt-1.5 w-full py-2 text-sm font-normal">
+                  <option>All levels</option>
+                  {BLOOMS_LEVELS.map((level) => <option key={level.name}>{level.name}</option>)}
+                </select>
+              </label>
+            </div>
+          </div>
+          {questionsLoading ? <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">Loading questions...</div> : <div className="grid gap-4 lg:grid-cols-2">{visibleQuestions.map((question) => <article key={question.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-[#B4454A]/40 hover:shadow-md"><div className="flex items-start justify-between gap-3"><span className="rounded-full bg-rose-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#B4454A]">{question.question_type || "Question"}</span><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">{question.bloom_level || "Unclassified"}</span></div><h3 className="mt-4 text-sm font-semibold leading-6 text-slate-900">{question.question}</h3>{question.topic_name && <p className="mt-2 text-xs text-slate-500">Topic: {question.topic_name}</p>}<div className="mt-5 grid gap-2 border-t border-slate-100 pt-4 text-xs text-slate-500 sm:grid-cols-2"><span className="flex items-center gap-1.5"><UserRound size={14} className="text-[#B4454A]" />{question.creator_name || "System or unassigned"}</span><span className="flex items-center gap-1.5 sm:justify-end"><CalendarDays size={14} className="text-[#B4454A]" />{formatDate(question.created_at)}</span></div></article>)}</div>}
+          {!questionsLoading && !visibleQuestions.length && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">No questions match this view.</div>}
+        </section>
       )}
     </div>
   );

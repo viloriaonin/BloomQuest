@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import sys
 from datetime import date, datetime
 from io import BytesIO
@@ -7,7 +8,7 @@ from types import SimpleNamespace
 
 import openpyxl
 import pytest
-from fastapi import HTTPException, UploadFile
+from fastapi import BackgroundTasks, HTTPException, UploadFile
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -16,10 +17,10 @@ from sqlalchemy.pool import StaticPool
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import models
+import main
 from database import Base
 from database import get_db
-from main import app, assert_question_access, validate_account_request_scope, create_department, create_subject_manually, update_user_department, get_admin_user_overview, DepartmentCreateRequest, UserDepartmentUpdateRequest, SubjectCreateRequest, get_subjects, get_faculty_program_subjects, get_questions, get_super_admin_overview, get_super_admin_ai_usage, get_admin_campus_overview, get_admin_ai_usage, get_question_sets, export_question_bank_tos, upload_files
-from main import get_question_versions
+from main import app, assert_question_access, validate_account_request_scope, create_department, create_subject_manually, update_user_department, get_admin_user_overview, get_admin_me, DepartmentCreateRequest, UserDepartmentUpdateRequest, SubjectCreateRequest, CampusCreateRequest, CampusStatusRequest, create_campus, set_campus_status, get_subjects, get_faculty_program_subjects, get_questions, get_super_admin_overview, get_super_admin_ai_usage, get_admin_campus_overview, get_admin_ai_usage, get_question_sets, export_question_bank_tos, upload_files
 from routers.questions import _assert_upload_access, _resolve_department_leadership, export_institutional_tos, upload_and_analyze_syllabus
 from routers.activity import get_activity_logs
 from security import assert_campus_access, assert_user_subject_campus_access, get_current_user, require_admin, require_campus_admin, require_super_admin, visible_campus_id
@@ -35,6 +36,26 @@ def db_session():
     finally:
         session.close()
         engine.dispose()
+
+
+def test_admin_me_returns_assigned_campus_name_and_admin_profile(db_session):
+    campus = models.Campus(name="Main Campus", code="MAIN")
+    db_session.add(campus)
+    db_session.flush()
+    admin = models.User(
+        email="campus-admin@example.com",
+        name="Taylor Campus Admin",
+        role="campus_admin",
+        campus_id=campus.id,
+    )
+    db_session.add(admin)
+    db_session.flush()
+
+    profile = get_admin_me(db_session, admin)
+
+    assert profile["name"] == "Taylor Campus Admin"
+    assert profile["email"] == "campus-admin@example.com"
+    assert profile["campus_name"] == "Main Campus"
 
 
 def test_assessment_analytics_requires_auth_and_scopes_tos_and_reuse_candidates():
@@ -696,29 +717,6 @@ def test_campus_admin_can_load_user_profile_within_campus(db_session):
     assert all("lifecycle_status" not in question for question in result["subjects"][0]["questions"])
 
 
-def test_question_version_history_hides_legacy_review_metadata(db_session):
-    question = models.GeneratedQuestion(question="Question with a legacy status")
-    db_session.add(question)
-    db_session.flush()
-    db_session.add(models.QuestionVersion(
-        question_id=question.id,
-        snapshot={
-            "question": question.question,
-            "review_status": "approved",
-            "lifecycle_status": "published",
-        },
-    ))
-    db_session.commit()
-
-    versions = get_question_versions(
-        question.id,
-        db_session,
-        SimpleNamespace(role="super_admin"),
-    )
-
-    assert versions[0]["snapshot"] == {"question": question.question}
-
-
 def test_activity_logs_include_campus_from_target_user(db_session):
     campus = models.Campus(name="Activity Campus", code="ACTIVITY")
     db_session.add(campus)
@@ -726,9 +724,21 @@ def test_activity_logs_include_campus_from_target_user(db_session):
     department = models.Department(name="Activity Department", campus_id=campus.id)
     db_session.add(department)
     db_session.flush()
+    program = models.Program(name="Activity Program", department_id=department.id)
+    db_session.add(program)
+    db_session.flush()
     faculty = models.User(email="activity-faculty@example.com", password="secret", role="faculty", campus_id=campus.id, department=department.name)
     admin = models.User(email="activity-admin@example.com", password="secret", role="super_admin")
     db_session.add_all([faculty, admin])
+    db_session.flush()
+    faculty.program_id = program.id
+    department_admin = models.User(
+        email="activity-department-admin@example.com",
+        password="not-used-in-test",
+        role="department_admin",
+        admin_department_id=department.id,
+    )
+    db_session.add(department_admin)
     db_session.flush()
     db_session.add(models.ActivityLog(
         user_id=None,
@@ -738,12 +748,24 @@ def test_activity_logs_include_campus_from_target_user(db_session):
         details="Updated faculty assignment",
         type="user",
     ))
+    db_session.add(models.ActivityLog(
+        user_id=department_admin.id,
+        action="Department settings viewed",
+        details="Viewed department settings",
+        type="user",
+    ))
     db_session.commit()
 
     result = get_activity_logs(db_session, admin)
 
-    assert result[0]["campus_id"] == campus.id
-    assert result[0]["campus"] == campus.name
+    faculty_activity = next(row for row in result if row["user_id"] == faculty.id)
+    assert faculty_activity["campus_id"] == campus.id
+    assert faculty_activity["campus"] == campus.name
+    assert faculty_activity["program_id"] == program.id
+    assert faculty_activity["department_id"] == department.id
+    department_admin_activity = next(row for row in result if row["user_id"] == department_admin.id)
+    assert department_admin_activity["role"] == "department_admin"
+    assert department_admin_activity["department_id"] == department.id
 
 
 def test_campus_admin_updates_department_by_id_when_names_match_across_campuses(db_session):
@@ -1111,6 +1133,357 @@ def test_super_admin_overview_counts_only_campus_attributed_questions(db_session
     assert overview["bloom_distribution"] == {"Remember": 10, "Analyze": 10}
 
 
+def test_super_admin_overview_filters_by_department_program_and_instructor(db_session):
+    campus = models.Campus(name="Filtered Overview Campus", code="FOC")
+    db_session.add(campus)
+    db_session.flush()
+    department = models.Department(name="Filtered Overview Department", campus_id=campus.id)
+    other_department = models.Department(name="Other Overview Department", campus_id=campus.id)
+    db_session.add_all([department, other_department])
+    db_session.flush()
+    program = models.Program(name="Filtered Overview Program", department_id=department.id)
+    sibling_program = models.Program(name="Sibling Overview Program", department_id=department.id)
+    other_program = models.Program(name="Other Overview Program", department_id=other_department.id)
+    db_session.add_all([program, sibling_program, other_program])
+    db_session.flush()
+    instructor = models.User(
+        email="filtered_overview_instructor@example.com",
+        password="test-hash",
+        role="faculty",
+        campus_id=campus.id,
+        program_id=program.id,
+        archived=False,
+    )
+    colleague = models.User(
+        email="filtered_overview_colleague@example.com",
+        password="test-hash",
+        role="faculty",
+        campus_id=campus.id,
+        program_id=program.id,
+        archived=False,
+    )
+    sibling_instructor = models.User(
+        email="filtered_overview_sibling@example.com",
+        password="test-hash",
+        role="faculty",
+        campus_id=campus.id,
+        program_id=sibling_program.id,
+        archived=False,
+    )
+    other_department_instructor = models.User(
+        email="filtered_overview_other_department@example.com",
+        password="test-hash",
+        role="faculty",
+        campus_id=campus.id,
+        program_id=other_program.id,
+        archived=False,
+    )
+    db_session.add_all([instructor, colleague, sibling_instructor, other_department_instructor])
+    db_session.flush()
+    subject = models.Subject(name="Filtered Overview Subject", department_id=department.id, program_id=program.id)
+    sibling_subject = models.Subject(name="Sibling Overview Subject", department_id=department.id, program_id=sibling_program.id)
+    other_subject = models.Subject(name="Other Overview Subject", department_id=other_department.id, program_id=other_program.id)
+    db_session.add_all([subject, sibling_subject, other_subject])
+    db_session.flush()
+    db_session.add_all([
+        models.GeneratedQuestion(
+            subject_id=subject.id,
+            user_id=instructor.id,
+            bloom_level="Remember",
+            question="Selected instructor question",
+            archived=False,
+        ),
+        models.GeneratedQuestion(
+            subject_id=subject.id,
+            user_id=colleague.id,
+            bloom_level="Analyze",
+            question="Colleague question",
+            archived=False,
+        ),
+        models.GeneratedQuestion(
+            subject_id=sibling_subject.id,
+            user_id=sibling_instructor.id,
+            bloom_level="Create",
+            question="Sibling program question",
+            archived=False,
+        ),
+        models.GeneratedQuestion(
+            subject_id=other_subject.id,
+            user_id=other_department_instructor.id,
+            bloom_level="Evaluate",
+            question="Other department question",
+            archived=False,
+        ),
+    ])
+    admin = models.User(email="filtered_overview_admin@example.com", password="test-hash", role="super_admin")
+    db_session.add(admin)
+    db_session.commit()
+
+    department_overview = get_super_admin_overview(
+        db=db_session,
+        department_id=department.id,
+        _admin=admin,
+    )
+    assert department_overview["totals"]["departments"] == 1
+    assert department_overview["totals"]["programs"] == 2
+    assert department_overview["totals"]["questions"] == 3
+    assert department_overview["bloom_distribution"] == {"Remember": 1, "Analyze": 1, "Create": 1}
+
+    program_overview = get_super_admin_overview(
+        db=db_session,
+        department_id=department.id,
+        program_id=program.id,
+        _admin=admin,
+    )
+    assert program_overview["totals"]["departments"] == 1
+    assert program_overview["totals"]["programs"] == 1
+    assert program_overview["totals"]["faculty"] == 2
+    assert program_overview["totals"]["questions"] == 2
+    assert program_overview["bloom_distribution"] == {"Remember": 1, "Analyze": 1}
+
+    instructor_overview = get_super_admin_overview(
+        db=db_session,
+        department_id=department.id,
+        program_id=program.id,
+        instructor_id=instructor.id,
+        _admin=admin,
+    )
+    assert instructor_overview["totals"]["faculty"] == 1
+    assert instructor_overview["totals"]["users"] == 1
+    assert instructor_overview["totals"]["questions"] == 1
+    assert instructor_overview["bloom_distribution"] == {"Remember": 1}
+
+    with pytest.raises(HTTPException) as error:
+        get_super_admin_overview(
+            db=db_session,
+            department_id=other_department.id,
+            program_id=program.id,
+            _admin=admin,
+        )
+    assert error.value.status_code == 404
+
+    with pytest.raises(HTTPException) as error:
+        get_super_admin_overview(
+            db=db_session,
+            department_id=department.id,
+            instructor_id=instructor.id,
+            _admin=admin,
+        )
+    assert error.value.status_code == 400
+
+
+def test_create_campus_requires_current_super_admin_password(db_session, monkeypatch):
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+    admin = models.User(
+        email="campus_create_super_admin@example.com",
+        password=main.hash_password("ValidAdminPassword1!"),
+        role="super_admin",
+    )
+    db_session.add(admin)
+    db_session.commit()
+
+    with pytest.raises(HTTPException) as error:
+        create_campus(
+            CampusCreateRequest(name="New Campus", current_password="IncorrectPassword1!"),
+            db_session,
+            admin,
+        )
+    assert error.value.status_code == 403
+    assert db_session.query(models.Campus).count() == 0
+
+    result = create_campus(
+        CampusCreateRequest(name="New Campus", current_password="ValidAdminPassword1!"),
+        db_session,
+        admin,
+    )
+    assert result["name"] == "New Campus"
+    assert db_session.query(models.Campus).count() == 1
+
+
+def test_campus_status_change_requires_current_super_admin_password(db_session, monkeypatch):
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+    campus = models.Campus(name="Protected Campus", code="PROTECTED", is_active=True)
+    admin = models.User(
+        email="campus_status_super_admin@example.com",
+        password=main.hash_password("ValidAdminPassword1!"),
+        role="super_admin",
+    )
+    db_session.add_all([campus, admin])
+    db_session.commit()
+
+    with pytest.raises(HTTPException) as error:
+        set_campus_status(
+            campus.id,
+            CampusStatusRequest(is_active=False, current_password="IncorrectPassword1!"),
+            db_session,
+            admin,
+        )
+    assert error.value.status_code == 403
+    db_session.refresh(campus)
+    assert campus.is_active is True
+
+    result = set_campus_status(
+        campus.id,
+        CampusStatusRequest(is_active=False, current_password="ValidAdminPassword1!"),
+        db_session,
+        admin,
+    )
+    assert result["is_active"] is False
+
+
+def test_create_campus_admin_requires_current_super_admin_password(db_session, monkeypatch):
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+    campus = models.Campus(name="Admin Creation Campus", code="ADMIN-CREATE")
+    admin = models.User(
+        email="admin_creation_super_admin@example.com",
+        password=main.hash_password("ValidAdminPassword1!"),
+        role="super_admin",
+    )
+    db_session.add_all([campus, admin])
+    db_session.commit()
+    payload = main.CampusAdminCreateRequest(
+        name="Campus Admin",
+        email="new_campus_admin@example.com",
+        password="InitialPassword1!",
+        campus_id=campus.id,
+        current_password="IncorrectAdminPassword1!",
+    )
+
+    with pytest.raises(HTTPException) as error:
+        main.create_campus_admin(payload, BackgroundTasks(), db_session, admin)
+    assert error.value.status_code == 403
+    assert db_session.query(models.User).filter_by(email="new_campus_admin@example.com").count() == 0
+
+    payload.current_password = "ValidAdminPassword1!"
+    result = main.create_campus_admin(payload, BackgroundTasks(), db_session, admin)
+    assert result["campus_id"] == campus.id
+    assert db_session.query(models.User).filter_by(email="new_campus_admin@example.com").count() == 1
+
+
+def test_campus_admin_update_cannot_change_campus_or_reactivate(db_session, monkeypatch):
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+    assigned_campus = models.Campus(name="Assigned Campus", code="ASSIGNED")
+    other_campus = models.Campus(name="Other Campus", code="OTHER")
+    db_session.add_all([assigned_campus, other_campus])
+    db_session.flush()
+    admin = models.User(
+        email="assignment_super_admin@example.com",
+        password=main.hash_password("ValidAdminPassword1!"),
+        role="super_admin",
+    )
+    campus_admin = models.User(
+        email="assigned_campus_admin@example.com",
+        password="existing-password",
+        role="campus_admin",
+        campus_id=assigned_campus.id,
+        archived=False,
+    )
+    db_session.add_all([admin, campus_admin])
+    db_session.commit()
+
+    with pytest.raises(HTTPException) as error:
+        main.update_campus_admin(
+            campus_admin.id,
+            main.CampusAdminUpdateRequest(campus_id=other_campus.id, is_active=True),
+            db_session,
+            admin,
+        )
+    assert error.value.status_code == 400
+    db_session.refresh(campus_admin)
+    assert campus_admin.campus_id == assigned_campus.id
+
+    with pytest.raises(HTTPException) as missing_password_error:
+        main.update_campus_admin(
+            campus_admin.id,
+            main.CampusAdminUpdateRequest(is_active=False),
+            db_session,
+            admin,
+        )
+    assert missing_password_error.value.status_code == 403
+    db_session.refresh(campus_admin)
+    assert campus_admin.archived is False
+
+    with pytest.raises(HTTPException) as incorrect_password_error:
+        main.update_campus_admin(
+            campus_admin.id,
+            main.CampusAdminUpdateRequest(
+                is_active=False,
+                current_password="IncorrectAdminPassword1!",
+            ),
+            db_session,
+            admin,
+        )
+    assert incorrect_password_error.value.status_code == 403
+    db_session.refresh(campus_admin)
+    assert campus_admin.archived is False
+
+    main.update_campus_admin(
+        campus_admin.id,
+        main.CampusAdminUpdateRequest(
+            is_active=False,
+            current_password="ValidAdminPassword1!",
+        ),
+        db_session,
+        admin,
+    )
+    db_session.refresh(campus_admin)
+    assert campus_admin.archived is True
+
+    with pytest.raises(HTTPException) as reactivation_error:
+        main.update_campus_admin(
+            campus_admin.id,
+            main.CampusAdminUpdateRequest(is_active=True),
+            db_session,
+            admin,
+        )
+    assert reactivation_error.value.status_code == 400
+    db_session.refresh(campus_admin)
+    assert campus_admin.archived is True
+
+
+def test_campus_admin_activation_requires_current_super_admin_password(db_session, monkeypatch):
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+    campus = models.Campus(name="Activation Campus", code="ACTIVATE")
+    admin = models.User(
+        email="activation_super_admin@example.com",
+        password=main.hash_password("ValidAdminPassword1!"),
+        role="super_admin",
+    )
+    db_session.add_all([campus, admin])
+    db_session.flush()
+    campus_admin = models.User(
+        email="inactive_campus_admin@example.com",
+        password=main.hash_password("CampusAdminPassword1!"),
+        role="campus_admin",
+        campus_id=campus.id,
+        archived=True,
+    )
+    db_session.add(campus_admin)
+    db_session.commit()
+
+    with pytest.raises(HTTPException) as error:
+        main.activate_campus_admin(
+            campus_admin.id,
+            main.CampusAdminActivationRequest(current_password="IncorrectPassword1!"),
+            db_session,
+            admin,
+        )
+    assert error.value.status_code == 403
+    db_session.refresh(campus_admin)
+    assert campus_admin.archived is True
+
+    result = main.activate_campus_admin(
+        campus_admin.id,
+        main.CampusAdminActivationRequest(current_password="ValidAdminPassword1!"),
+        db_session,
+        admin,
+    )
+    db_session.refresh(campus_admin)
+    assert result["is_active"] is True
+    assert campus_admin.archived is False
+    assert campus_admin.campus_id == campus.id
+
+
 def test_campus_admin_overview_is_limited_to_assigned_campus(db_session):
     alpha = models.Campus(name="Campus Overview Alpha", code="COV-ALPHA")
     beta = models.Campus(name="Campus Overview Beta", code="COV-BETA")
@@ -1178,6 +1551,131 @@ def test_campus_admin_overview_is_limited_to_assigned_campus(db_session):
             db=db_session,
             department_id=beta_department.id,
             _admin=SimpleNamespace(role="campus_admin", campus_id=alpha.id),
+        )
+    assert error.value.status_code == 404
+
+
+def test_campus_admin_overview_filters_by_program_within_selected_department(db_session):
+    campus = models.Campus(name="Program Filter Campus", code="PF")
+    db_session.add(campus)
+    db_session.flush()
+    department = models.Department(name="Program Filter Department", campus_id=campus.id)
+    other_department = models.Department(name="Other Program Filter Department", campus_id=campus.id)
+    db_session.add_all([department, other_department])
+    db_session.flush()
+    selected_program = models.Program(name="Selected Program", department_id=department.id)
+    sibling_program = models.Program(name="Sibling Program", department_id=department.id)
+    other_program = models.Program(name="Other Department Program", department_id=other_department.id)
+    db_session.add_all([selected_program, sibling_program, other_program])
+    db_session.flush()
+    selected_faculty = models.User(
+        email="selected_program_faculty@example.com",
+        password="test-password",
+        role="faculty",
+        campus_id=campus.id,
+        program_id=selected_program.id,
+        archived=False,
+    )
+    sibling_faculty = models.User(
+        email="sibling_program_faculty@example.com",
+        password="test-password",
+        role="faculty",
+        campus_id=campus.id,
+        program_id=sibling_program.id,
+        archived=False,
+    )
+    db_session.add_all([selected_faculty, sibling_faculty])
+    db_session.flush()
+    selected_subject = models.Subject(
+        name="Selected Program Subject",
+        department_id=department.id,
+        program_id=selected_program.id,
+        user_id=selected_faculty.id,
+        archived=False,
+    )
+    sibling_subject = models.Subject(
+        name="Sibling Program Subject",
+        department_id=department.id,
+        program_id=sibling_program.id,
+        user_id=sibling_faculty.id,
+        archived=False,
+    )
+    db_session.add_all([selected_subject, sibling_subject])
+    db_session.flush()
+    db_session.add_all([
+        models.GeneratedQuestion(
+            subject_id=selected_subject.id,
+            user_id=selected_faculty.id,
+            bloom_level="Remember",
+            question="Selected program question",
+            archived=False,
+        ),
+        models.GeneratedQuestion(
+            subject_id=sibling_subject.id,
+            user_id=selected_faculty.id,
+            bloom_level="Analyze",
+            question="Sibling program question",
+            archived=False,
+        ),
+        models.GeneratedQuestion(
+            user_id=selected_faculty.id,
+            bloom_level="Create",
+            question="Unassigned selected faculty question",
+            archived=False,
+        ),
+    ])
+    db_session.commit()
+
+    filtered = get_admin_campus_overview(
+        db=db_session,
+        department_id=department.id,
+        program_id=selected_program.id,
+        _admin=SimpleNamespace(role="campus_admin", campus_id=campus.id),
+    )
+
+    assert filtered["totals"]["departments"] == 1
+    assert filtered["totals"]["programs"] == 1
+    assert filtered["totals"]["subjects"] == 1
+    assert filtered["totals"]["faculty"] == 1
+    assert filtered["totals"]["questions"] == 1
+    assert filtered["bloom_distribution"] == {"Remember": 1}
+
+    instructor_filtered = get_admin_campus_overview(
+        db=db_session,
+        department_id=department.id,
+        program_id=selected_program.id,
+        instructor_id=selected_faculty.id,
+        _admin=SimpleNamespace(role="campus_admin", campus_id=campus.id),
+    )
+    assert instructor_filtered["totals"]["faculty"] == 1
+    assert instructor_filtered["totals"]["questions"] == 1
+    assert instructor_filtered["bloom_distribution"] == {"Remember": 1}
+
+    with pytest.raises(HTTPException) as error:
+        get_admin_campus_overview(
+            db=db_session,
+            department_id=department.id,
+            program_id=selected_program.id,
+            instructor_id=sibling_faculty.id,
+            _admin=SimpleNamespace(role="campus_admin", campus_id=campus.id),
+        )
+    assert error.value.status_code == 404
+
+    empty_program = get_admin_campus_overview(
+        db=db_session,
+        department_id=other_department.id,
+        program_id=other_program.id,
+        _admin=SimpleNamespace(role="campus_admin", campus_id=campus.id),
+    )
+    assert empty_program["totals"]["questions"] == 0
+    assert empty_program["bloom_distribution"] == {}
+
+    with pytest.raises(HTTPException) as error:
+        get_admin_campus_overview(
+            db=db_session,
+            department_id=department.id,
+            program_id=other_program.id,
+            _admin=SimpleNamespace(role="campus_admin", campus_id=campus.id),
         )
     assert error.value.status_code == 404
 
@@ -1330,9 +1828,23 @@ def test_campus_admin_ai_usage_is_forced_to_assigned_campus(db_session):
     beta = models.Campus(name="Scoped Usage Beta", code="SCOPED-BETA")
     db_session.add_all([alpha, beta])
     db_session.flush()
+    alpha_department = models.Department(name="Alpha Department", code="ALPHA-DEPT", campus_id=alpha.id)
+    db_session.add(alpha_department)
+    db_session.flush()
+    alpha_program = models.Program(name="Alpha Program", code="ALPHA-PROG", department_id=alpha_department.id)
+    db_session.add(alpha_program)
+    db_session.flush()
     alpha_user = models.User(email="scoped_usage_alpha@example.com", password="test-password", role="faculty", campus_id=alpha.id)
     beta_user = models.User(email="scoped_usage_beta@example.com", password="test-password", role="faculty", campus_id=beta.id)
-    db_session.add_all([alpha_user, beta_user])
+    alpha_user.department = alpha_department.name
+    alpha_user.program_id = alpha_program.id
+    unassigned_alpha_user = models.User(
+        email="scoped_usage_unassigned@example.com",
+        password="test-password",
+        role="faculty",
+        campus_id=alpha.id,
+    )
+    db_session.add_all([alpha_user, unassigned_alpha_user, beta_user])
     db_session.flush()
     db_session.add_all([
         models.AIUsage(
@@ -1344,6 +1856,17 @@ def test_campus_admin_ai_usage_is_forced_to_assigned_campus(db_session):
             generated_question_count=2,
             gemini_model="alpha-model",
             gemini_api_call_count=1,
+            status="success",
+        ),
+        models.AIUsage(
+            user_id=unassigned_alpha_user.id,
+            campus_id=alpha.id,
+            generated_at=datetime(2026, 9, 8, 12),
+            request_type="question_generation",
+            requested_question_count=20,
+            generated_question_count=20,
+            gemini_model="unassigned-model",
+            gemini_api_call_count=8,
             status="success",
         ),
         models.AIUsage(
@@ -1374,6 +1897,125 @@ def test_campus_admin_ai_usage_is_forced_to_assigned_campus(db_session):
     with pytest.raises(HTTPException) as error:
         get_admin_ai_usage(db=db_session, campus_id=beta.id, _admin=campus_admin)
     assert error.value.status_code == 403
+
+
+def test_campus_admin_ai_usage_filters_by_department_program_and_instructor(db_session):
+    campus = models.Campus(name="AI Filter Campus", code="AI-FILTER")
+    db_session.add(campus)
+    db_session.flush()
+    department = models.Department(name="Engineering", code="ENG", campus_id=campus.id)
+    other_department = models.Department(name="Science", code="SCI", campus_id=campus.id)
+    empty_department = models.Department(name="Humanities", code="HUM", campus_id=campus.id)
+    db_session.add_all([department, other_department, empty_department])
+    db_session.flush()
+    computer_program = models.Program(name="Computer Science", code="CS", department_id=department.id)
+    civil_program = models.Program(name="Civil Engineering", code="CE", department_id=department.id)
+    science_program = models.Program(name="Biology", code="BIO", department_id=other_department.id)
+    db_session.add_all([computer_program, civil_program, science_program])
+    db_session.flush()
+    alice = models.User(
+        email="ai_filter_alice@example.com",
+        role="faculty",
+        campus_id=campus.id,
+        department=department.name,
+        program_id=computer_program.id,
+        name="Alice",
+    )
+    bob = models.User(
+        email="ai_filter_bob@example.com",
+        role="faculty",
+        campus_id=campus.id,
+        department=department.name,
+        program_id=civil_program.id,
+        name="Bob",
+    )
+    carol = models.User(
+        email="ai_filter_carol@example.com",
+        role="faculty",
+        campus_id=campus.id,
+        department=other_department.name,
+        program_id=science_program.id,
+        name="Carol",
+    )
+    unassigned_user = models.User(
+        email="ai_filter_unassigned@example.com",
+        role="faculty",
+        campus_id=campus.id,
+        name="Unassigned",
+    )
+    db_session.add_all([alice, bob, carol, unassigned_user])
+    db_session.flush()
+    db_session.add_all([
+        models.AIUsage(
+            user_id=user.id,
+            campus_id=campus.id,
+            generated_at=datetime(2026, 9, 8, 12),
+            request_type="question_generation",
+            requested_question_count=1,
+            generated_question_count=1,
+            gemini_model="gemini-test",
+            gemini_api_call_count=1,
+            input_tokens=10,
+            output_tokens=5,
+            total_tokens=15,
+            status="success",
+        )
+        for user in (alice, bob, carol, unassigned_user)
+    ])
+    db_session.commit()
+    campus_admin = SimpleNamespace(role="campus_admin", campus_id=campus.id)
+
+    campus_usage = get_admin_ai_usage(db=db_session, _admin=campus_admin)
+    assert campus_usage["totals"]["total_ai_requests"] == 3
+    assert {row["name"] for row in campus_usage["requests_by_user"]} == {"Alice", "Bob", "Carol"}
+    campus_users = {row["name"]: row for row in campus_usage["requests_by_user"]}
+    assert campus_users["Alice"]["department_id"] == department.id
+    assert campus_users["Alice"]["program_id"] == computer_program.id
+
+    department_usage = get_admin_ai_usage(
+        db=db_session,
+        _admin=campus_admin,
+        department_id=department.id,
+    )
+    assert department_usage["totals"]["total_ai_requests"] == 2
+    assert department_usage["totals"]["total_questions_generated"] == 2
+    assert department_usage["totals"]["gemini_api_calls"] == 2
+    assert {row["name"] for row in department_usage["requests_by_user"]} == {"Alice", "Bob"}
+    assert department_usage["model_usage"] == [{
+        "model": "gemini-test",
+        "requests": 2,
+        "api_calls": 2,
+        "questions": 2,
+    }]
+    assert department_usage["token_usage"]["total_tokens"] == 30
+
+    program_usage = get_admin_ai_usage(
+        db=db_session,
+        _admin=campus_admin,
+        department_id=department.id,
+        program_id=computer_program.id,
+    )
+    assert program_usage["totals"]["total_ai_requests"] == 1
+    assert [row["name"] for row in program_usage["requests_by_user"]] == ["Alice"]
+
+    instructor_usage = get_admin_ai_usage(
+        db=db_session,
+        _admin=campus_admin,
+        department_id=department.id,
+        program_id=computer_program.id,
+        instructor_id=bob.id,
+    )
+    assert instructor_usage["requests_by_user"] == []
+
+    empty_department_usage = get_admin_ai_usage(
+        db=db_session,
+        _admin=campus_admin,
+        department_id=empty_department.id,
+    )
+    assert empty_department_usage["totals"]["total_ai_requests"] == 0
+    assert empty_department_usage["requests_by_user"] == []
+    assert empty_department_usage["requests_by_month"] == []
+    assert empty_department_usage["model_usage"] == []
 
 
 def test_tos_leadership_uses_faculty_program_department_before_subject_department(db_session):
@@ -1586,3 +2228,199 @@ def test_department_creation_is_scoped_to_campus(db_session):
         )
 
     assert error.value.status_code == 400
+
+
+def test_super_admin_password_change_requires_email_otp(db_session, monkeypatch):
+    super_admin = models.User(
+        email="password-admin@example.edu",
+        password=main.hash_password("ValidAdminPassword1!"),
+        role="super_admin",
+        name="Password Admin",
+    )
+    db_session.add(super_admin)
+    db_session.commit()
+    sent_codes = []
+    monkeypatch.setattr(main, "enforce_rate_limit", lambda *_args: None)
+    monkeypatch.setattr(main, "require_email_delivery_configured", lambda: None)
+    monkeypatch.setattr(
+        main,
+        "send_password_change_otp_email",
+        lambda _email, code: sent_codes.append(code) or True,
+    )
+    monkeypatch.setattr(main, "log_activity", lambda *_args, **_kwargs: None)
+    main.change_password_otp_store.pop(super_admin.email, None)
+    new_password = "ChangedAdminPassword2!"
+
+    with pytest.raises(HTTPException) as otp_required:
+        main.update_user_password_with_otp(
+            main.CompleteChangePasswordRequest(
+                email=super_admin.email,
+                current_password="ValidAdminPassword1!",
+                new_password=new_password,
+            ),
+            db_session,
+        )
+    assert otp_required.value.status_code == 400
+    assert main.verify_password("ValidAdminPassword1!", super_admin.password)
+
+    result = main.request_user_change_password_otp(
+        main.ChangePasswordOtpRequest(
+            email=super_admin.email,
+            current_password="ValidAdminPassword1!",
+            new_password=new_password,
+        ),
+        db_session,
+    )
+    assert result["message"]
+    assert len(sent_codes) == 1
+
+    with pytest.raises(HTTPException) as mismatched_password:
+        main.update_user_password_with_otp(
+            main.CompleteChangePasswordRequest(
+                email=super_admin.email,
+                current_password="ValidAdminPassword1!",
+                new_password="AnotherAdminPassword3!",
+                otp=sent_codes[0],
+            ),
+            db_session,
+        )
+    assert mismatched_password.value.status_code == 400
+
+    with pytest.raises(HTTPException) as wrong_otp:
+        main.update_user_password_with_otp(
+            main.CompleteChangePasswordRequest(
+                email=super_admin.email,
+                current_password="ValidAdminPassword1!",
+                new_password=new_password,
+                otp="000000" if sent_codes[0] != "000000" else "000001",
+            ),
+            db_session,
+        )
+    assert wrong_otp.value.status_code == 400
+    assert main.verify_password("ValidAdminPassword1!", super_admin.password)
+
+    main.change_password_otp_store[super_admin.email]["expires_at"] = (
+        main.utc_now() - main.timedelta(seconds=1)
+    )
+    with pytest.raises(HTTPException) as expired_otp:
+        main.update_user_password_with_otp(
+            main.CompleteChangePasswordRequest(
+                email=super_admin.email,
+                current_password="ValidAdminPassword1!",
+                new_password=new_password,
+                otp=sent_codes[0],
+            ),
+            db_session,
+        )
+    assert expired_otp.value.status_code == 400
+
+    main.request_user_change_password_otp(
+        main.ChangePasswordOtpRequest(
+            email=super_admin.email,
+            current_password="ValidAdminPassword1!",
+            new_password=new_password,
+        ),
+        db_session,
+    )
+    result = main.update_user_password_with_otp(
+        main.CompleteChangePasswordRequest(
+            email=super_admin.email,
+            current_password="ValidAdminPassword1!",
+            new_password=new_password,
+            otp=sent_codes[1],
+        ),
+        db_session,
+    )
+    assert result["message"] == "Password updated successfully."
+    assert main.verify_password(new_password, super_admin.password)
+    assert super_admin.email not in main.change_password_otp_store
+
+
+def test_super_admin_email_change_requires_current_confirmation_then_new_email_verification(db_session, monkeypatch):
+    super_admin = models.User(
+        email="superadmin@example.edu",
+        password=main.hash_password("ValidAdminPassword1!"),
+        role="super_admin",
+        name="Alex Superadmin",
+    )
+    db_session.add(super_admin)
+    db_session.commit()
+    deliveries = []
+    monkeypatch.setattr(main, "enforce_rate_limit", lambda *_args: None)
+    monkeypatch.setattr(main, "require_email_delivery_configured", lambda: None)
+    monkeypatch.setattr(
+        main,
+        "send_email",
+        lambda recipient, subject, html: deliveries.append((recipient, subject, html)) or True,
+    )
+    monkeypatch.setattr(main, "log_activity", lambda *_args, **_kwargs: None)
+    main.super_admin_email_change_otp_store.pop(super_admin.id, None)
+
+    with pytest.raises(HTTPException) as password_error:
+        main.request_super_admin_email_change_otp(
+            main.SuperAdminEmailChangeRequest(
+                new_email="alex.new@example.edu",
+                current_password="WrongPassword1!",
+            ),
+            db_session,
+            super_admin,
+        )
+    assert password_error.value.status_code == 401
+    assert deliveries == []
+
+    request_result = main.request_super_admin_email_change_otp(
+        main.SuperAdminEmailChangeRequest(
+            new_email="alex.new@example.edu",
+            current_password="ValidAdminPassword1!",
+        ),
+        db_session,
+        super_admin,
+    )
+    assert len(deliveries) == 1
+    assert deliveries[0][0] == "superadmin@example.edu"
+    assert "confirm" in deliveries[0][1].lower()
+    assert request_result["message"]
+    current_confirmation_code = re.search(r"<strong>(\d{6})</strong>", deliveries[0][2]).group(1)
+    incorrect_confirmation_code = "000000" if current_confirmation_code != "000000" else "000001"
+
+    with pytest.raises(HTTPException) as invalid_code_error:
+        main.confirm_super_admin_email_change_request(
+            main.ConfirmSuperAdminEmailChangeRequest(
+                current_email_confirmation_code=incorrect_confirmation_code,
+            ),
+            db_session,
+            super_admin,
+        )
+    assert invalid_code_error.value.status_code == 400
+    assert len(deliveries) == 1
+    assert super_admin.email == "superadmin@example.edu"
+
+    main.confirm_super_admin_email_change_request(
+        main.ConfirmSuperAdminEmailChangeRequest(
+            current_email_confirmation_code=current_confirmation_code,
+        ),
+        db_session,
+        super_admin,
+    )
+    assert len(deliveries) == 2
+    assert deliveries[1][0] == "alex.new@example.edu"
+    new_email_code = re.search(r"<strong>(\d{6})</strong>", deliveries[1][2]).group(1)
+    incorrect_new_email_code = "000000" if new_email_code != "000000" else "000001"
+
+    with pytest.raises(HTTPException) as invalid_new_email_code:
+        main.confirm_super_admin_email_change(
+            main.VerifySuperAdminNewEmailRequest(new_email_otp=incorrect_new_email_code),
+            db_session,
+            super_admin,
+        )
+    assert invalid_new_email_code.value.status_code == 400
+    assert super_admin.email == "superadmin@example.edu"
+
+    result = main.confirm_super_admin_email_change(
+        main.VerifySuperAdminNewEmailRequest(new_email_otp=new_email_code),
+        db_session,
+        super_admin,
+    )
+    assert result["email"] == "alex.new@example.edu"
+    assert super_admin.email == "alex.new@example.edu"
+    assert super_admin.id not in main.super_admin_email_change_otp_store

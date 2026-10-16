@@ -38,14 +38,15 @@ async function requestJson(url, options = {}) {
 
 const formatNumber = (value) => Number(value || 0).toLocaleString();
 
-const SuperAdminDashboard = () => {
-  const location = useLocation();
-  const [activeTab, setActiveTab] = useState("dashboard");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [theme, setTheme] = useState(() => localStorage.getItem("bloomquest-admin-theme") || "dark");
+export const SuperAdminDashboardContent = ({ activeTab, setError, setNotice }) => {
   const [overview, setOverview] = useState(null);
   const [dashboardCampusFilter, setDashboardCampusFilter] = useState("");
+  const [dashboardDepartmentFilter, setDashboardDepartmentFilter] = useState("");
+  const [dashboardProgramFilter, setDashboardProgramFilter] = useState("");
+  const [dashboardInstructorFilter, setDashboardInstructorFilter] = useState("");
+  const [dashboardHierarchy, setDashboardHierarchy] = useState(null);
+  const [questionBreakdownRows, setQuestionBreakdownRows] = useState([]);
+  const [questionBreakdownLoading, setQuestionBreakdownLoading] = useState(false);
   const [campuses, setCampuses] = useState([]);
   const [campusForm, setCampusForm] = useState({ name: "", code: "" });
   const [editingCampus, setEditingCampus] = useState(null);
@@ -54,9 +55,20 @@ const SuperAdminDashboard = () => {
   const [deletingAdminId, setDeletingAdminId] = useState(null);
   const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [adminForm, setAdminForm] = useState({ name: "", email: "", password: "", campus_id: "" });
+  const [pendingAdminCreate, setPendingAdminCreate] = useState(false);
+  const [adminCreatePassword, setAdminCreatePassword] = useState("");
+  const [adminCreateError, setAdminCreateError] = useState("");
+  const [pendingAdminActivation, setPendingAdminActivation] = useState(null);
+  const [adminActivationPassword, setAdminActivationPassword] = useState("");
+  const [adminActivationError, setAdminActivationError] = useState("");
+  const [pendingAdminDeactivation, setPendingAdminDeactivation] = useState(null);
+  const [adminDeactivationPassword, setAdminDeactivationPassword] = useState("");
+  const [adminDeactivationError, setAdminDeactivationError] = useState("");
+  const [pendingCampusAction, setPendingCampusAction] = useState(null);
+  const [campusActionPassword, setCampusActionPassword] = useState("");
+  const [campusActionError, setCampusActionError] = useState("");
   const [departmentAdmins, setDepartmentAdmins] = useState([]);
-  const [academicDepartments, setAcademicDepartments] = useState([]);
-  const [departmentAdminForm, setDepartmentAdminForm] = useState({ name: "", email: "", password: "", department_id: "" });
+  const [departmentAdminCampusFilter, setDepartmentAdminCampusFilter] = useState("");
   const [users, setUsers] = useState([]);
   const [userFilters, setUserFilters] = useState({ campus_id: "", role: "", status_filter: "active", search: "" });
   const [aiUsage, setAIUsage] = useState(null);
@@ -64,18 +76,6 @@ const SuperAdminDashboard = () => {
   const [aiUsageLoading, setAIUsageLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-
-  const toggleSidebar = () => {
-    setSidebarCollapsed((previous) => !previous);
-    setMobileSidebarOpen((previous) => !previous);
-  };
-
-  useEffect(() => {
-    if (location.pathname.startsWith("/super-admin/academic")) setActiveTab("academic");
-    else if (location.pathname.startsWith("/super-admin/questions")) setActiveTab("questions");
-  }, [location.pathname]);
 
   const loadOverview = async () => {
     const [summary, campusRows] = await Promise.all([
@@ -87,8 +87,31 @@ const SuperAdminDashboard = () => {
   };
 
   useEffect(() => {
+    if (activeTab !== "dashboard" || dashboardHierarchy) return undefined;
     let active = true;
-    requestJson("/super-admin/overview").then((summary) => {
+    requestJson("/academic-hierarchy").then((hierarchy) => {
+      if (active) setDashboardHierarchy(hierarchy);
+    }).catch((reason) => {
+      if (active) setError(reason.message);
+    });
+    return () => { active = false; };
+  }, [activeTab, dashboardHierarchy, setError]);
+
+  useEffect(() => {
+    if (activeTab !== "dashboard") return undefined;
+    let active = true;
+    const params = new URLSearchParams();
+    [
+      ["campus_id", dashboardCampusFilter],
+      ["department_id", dashboardDepartmentFilter],
+      ["program_id", dashboardProgramFilter],
+      ["instructor_id", dashboardInstructorFilter],
+    ].forEach(([key, value]) => {
+      if (value) params.set(key, value);
+    });
+    setLoading(true);
+    const query = params.toString();
+    requestJson(`/super-admin/overview${query ? `?${query}` : ""}`).then((summary) => {
       if (active) setOverview(summary);
     }).catch((reason) => {
       if (active) setError(reason.message);
@@ -96,36 +119,111 @@ const SuperAdminDashboard = () => {
       if (active) setLoading(false);
     });
     return () => { active = false; };
-  }, []);
+  }, [
+    activeTab,
+    dashboardCampusFilter,
+    dashboardDepartmentFilter,
+    dashboardProgramFilter,
+    dashboardInstructorFilter,
+    setError,
+  ]);
+
+  useEffect(() => {
+    if (activeTab !== "dashboard" || !dashboardCampusFilter || !dashboardHierarchy) {
+      setQuestionBreakdownRows([]);
+      setQuestionBreakdownLoading(false);
+      return undefined;
+    }
+
+    const selectedCampus = (dashboardHierarchy.campuses || []).find(
+      (campus) => String(campus.id) === dashboardCampusFilter,
+    );
+    const departments = (selectedCampus?.departments || []).map((department) => ({
+      ...department,
+      campus_id: selectedCampus.id,
+    }));
+    const programs = departments
+      .filter((department) => !dashboardDepartmentFilter || String(department.id) === dashboardDepartmentFilter)
+      .flatMap((department) => (department.programs || []).map((program) => ({
+        ...program,
+        department_id: department.id,
+      })));
+    const instructors = programs.flatMap((program) =>
+      (program.faculty || []).map((instructor) => ({
+        ...instructor,
+        program_id: program.id,
+      })),
+    );
+    const targets = dashboardInstructorFilter
+      ? instructors.filter((item) => String(item.id) === dashboardInstructorFilter)
+      : dashboardProgramFilter
+        ? instructors
+        : dashboardDepartmentFilter
+          ? programs
+          : departments;
+    if (!targets.length) {
+      setQuestionBreakdownRows([]);
+      setQuestionBreakdownLoading(false);
+      return undefined;
+    }
+
+    let active = true;
+    setQuestionBreakdownLoading(true);
+    setQuestionBreakdownRows([]);
+    const loadBreakdown = async () => {
+      try {
+        const rows = await Promise.all(targets.map(async (target) => {
+          const params = new URLSearchParams();
+          params.set("campus_id", String(dashboardCampusFilter));
+          if (dashboardDepartmentFilter) params.set("department_id", dashboardDepartmentFilter);
+          if (dashboardProgramFilter) params.set("program_id", dashboardProgramFilter);
+          if (dashboardInstructorFilter) params.set("instructor_id", dashboardInstructorFilter);
+          if (!dashboardDepartmentFilter) params.set("department_id", String(target.id));
+          else if (!dashboardProgramFilter) params.set("program_id", String(target.id));
+          else if (!dashboardInstructorFilter) params.set("instructor_id", String(target.id));
+          const data = await requestJson(`/super-admin/overview?${params}`);
+          return {
+            id: target.id,
+            name: target.name,
+            questions: Number(data?.totals?.questions) || 0,
+          };
+        }));
+        if (active) setQuestionBreakdownRows(rows);
+      } catch (reason) {
+        if (active) setError(reason.message);
+      } finally {
+        if (active) setQuestionBreakdownLoading(false);
+      }
+    };
+    loadBreakdown();
+    return () => { active = false; };
+  }, [
+    activeTab,
+    dashboardCampusFilter,
+    dashboardDepartmentFilter,
+    dashboardProgramFilter,
+    dashboardInstructorFilter,
+    dashboardHierarchy,
+    setError,
+  ]);
 
   useEffect(() => {
     if (activeTab !== "campuses" && activeTab !== "admins") return;
     loadOverview().catch((reason) => setError(reason.message));
-  }, [activeTab]);
+  }, [activeTab, setError]);
 
   useEffect(() => {
     if (activeTab !== "admins") return;
     requestJson("/super-admin/admins").then(setAdmins).catch((reason) => setError(reason.message));
-    Promise.all([
-      requestJson("/super-admin/department-admins"),
-      requestJson("/academic-hierarchy"),
-    ]).then(([departmentAdminRows, hierarchy]) => {
-      setDepartmentAdmins(departmentAdminRows);
-      setAcademicDepartments((hierarchy.campuses || []).flatMap((campus) =>
-        (campus.departments || []).map((department) => ({
-          ...department,
-          campus_name: campus.name,
-        })),
-      ));
-    }).catch((reason) => setError(reason.message));
-  }, [activeTab]);
+    requestJson("/super-admin/department-admins").then(setDepartmentAdmins).catch((reason) => setError(reason.message));
+  }, [activeTab, setError]);
 
   useEffect(() => {
     if (activeTab !== "users") return;
     const params = new URLSearchParams();
     Object.entries(userFilters).forEach(([key, value]) => value && params.set(key, value));
     requestJson(`/super-admin/users?${params}`).then(setUsers).catch((reason) => setError(reason.message));
-  }, [activeTab, userFilters]);
+  }, [activeTab, userFilters, setError]);
 
   useEffect(() => {
     if (activeTab !== "ai_usage") return;
@@ -141,29 +239,28 @@ const SuperAdminDashboard = () => {
       if (active) setAIUsageLoading(false);
     });
     return () => { active = false; };
-  }, [activeTab, aiUsageFilters]);
-
-  const switchTheme = () => {
-    const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    localStorage.setItem("bloomquest-admin-theme", next);
-    localStorage.setItem("bloomquest-theme", next);
-    window.dispatchEvent(new CustomEvent("theme-updated", { detail: { theme: next } }));
-  };
+  }, [activeTab, aiUsageFilters, setError]);
 
   const saveCampus = async (event) => {
     event.preventDefault();
+    if (!editingCampus) {
+      setCampusActionPassword("");
+      setCampusActionError("");
+      setPendingCampusAction({ type: "create" });
+      return;
+    }
+
     setSaving(true);
     setError("");
     try {
-      await requestJson(`/campuses${editingCampus ? `/${editingCampus.id}` : ""}`, {
-        method: editingCampus ? "PUT" : "POST",
+      await requestJson(`/campuses/${editingCampus.id}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(campusForm),
       });
       setCampusForm({ name: "", code: "" });
       setEditingCampus(null);
-      setNotice(editingCampus ? "Campus updated." : "Campus created.");
+      setNotice("Campus updated.");
       await loadOverview();
     } catch (reason) {
       setError(reason.message);
@@ -173,47 +270,77 @@ const SuperAdminDashboard = () => {
   };
 
   const toggleCampus = async (campus) => {
-    setError("");
+    setCampusActionPassword("");
+    setCampusActionError("");
+    setPendingCampusAction({
+      type: "status",
+      campus,
+      is_active: !campus.is_active,
+    });
+  };
+
+  const confirmCampusAction = async (event) => {
+    event.preventDefault();
+    if (!pendingCampusAction) return;
+
+    setSaving(true);
+    setCampusActionError("");
     try {
-      await requestJson(`/campuses/${campus.id}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ is_active: !campus.is_active }),
-      });
+      if (pendingCampusAction.type === "create") {
+        await requestJson("/campuses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...campusForm, current_password: campusActionPassword }),
+        });
+        setCampusForm({ name: "", code: "" });
+        setNotice("Campus created.");
+      } else {
+        await requestJson(`/campuses/${pendingCampusAction.campus.id}/status`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            is_active: pendingCampusAction.is_active,
+            current_password: campusActionPassword,
+          }),
+        });
+        setNotice(`Campus ${pendingCampusAction.is_active ? "activated" : "deactivated"}.`);
+      }
+      setPendingCampusAction(null);
+      setCampusActionPassword("");
       await loadOverview();
     } catch (reason) {
-      setError(reason.message);
+      setCampusActionError(reason.message);
+      setCampusActionPassword("");
+    } finally {
+      setSaving(false);
     }
   };
 
   const createCampusAdmin = async (event) => {
     event.preventDefault();
+    if (!editingAdmin) {
+      setAdminCreatePassword("");
+      setAdminCreateError("");
+      setPendingAdminCreate(true);
+      return;
+    }
+
     setSaving(true);
     setError("");
     try {
-      if (editingAdmin) {
-        await requestJson(`/super-admin/admins/${editingAdmin.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: adminForm.name,
-            email: adminForm.email,
-            campus_id: Number(adminForm.campus_id),
-            is_active: editingAdmin.is_active,
-          }),
-        });
-      } else {
-        await requestJson("/super-admin/admins", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...adminForm, campus_id: Number(adminForm.campus_id) }),
-        });
-      }
-      const wasEditing = Boolean(editingAdmin);
+      await requestJson(`/super-admin/admins/${editingAdmin.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: adminForm.name,
+          email: adminForm.email,
+          is_active: editingAdmin.is_active,
+        }),
+      });
       setEditingAdmin(null);
       setShowAdminPassword(false);
       setAdminForm({ name: "", email: "", password: "", campus_id: "" });
-      setNotice(wasEditing ? "Campus Admin updated." : "Campus Admin account created.");
+      setNotice("Campus Admin updated.");
       setAdmins(await requestJson("/super-admin/admins"));
       await loadOverview();
     } catch (reason) {
@@ -223,59 +350,84 @@ const SuperAdminDashboard = () => {
     }
   };
 
-  const createDepartmentAdmin = async (event) => {
+  const confirmCampusAdminCreate = async (event) => {
     event.preventDefault();
     setSaving(true);
-    setError("");
+    setAdminCreateError("");
     try {
-      await requestJson("/super-admin/department-admins", {
+      await requestJson("/super-admin/admins", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...departmentAdminForm,
-          department_id: Number(departmentAdminForm.department_id),
+          ...adminForm,
+          campus_id: Number(adminForm.campus_id),
+          current_password: adminCreatePassword,
         }),
       });
-      setDepartmentAdminForm({ name: "", email: "", password: "", department_id: "" });
-      setNotice("Department Admin account created.");
-      setDepartmentAdmins(await requestJson("/super-admin/department-admins"));
+      setPendingAdminCreate(false);
+      setAdminCreatePassword("");
+      setAdminForm({ name: "", email: "", password: "", campus_id: "" });
+      setNotice("Campus Admin account created.");
+      setAdmins(await requestJson("/super-admin/admins"));
+      await loadOverview();
     } catch (reason) {
-      setError(reason.message);
+      setAdminCreateError(reason.message);
+      setAdminCreatePassword("");
     } finally {
       setSaving(false);
     }
   };
 
-  const updateDepartmentAdmin = async (departmentAdmin, changes) => {
-    setError("");
-    try {
-      await requestJson(`/super-admin/department-admins/${departmentAdmin.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          department_id: changes.department_id ?? departmentAdmin.department_id,
-          is_active: changes.is_active ?? departmentAdmin.is_active,
-        }),
-      });
-      setDepartmentAdmins(await requestJson("/super-admin/department-admins"));
-      setNotice("Department Admin updated.");
-    } catch (reason) {
-      setError(reason.message);
-    }
-  };
+  const confirmCampusAdminActivation = async (event) => {
+    event.preventDefault();
+    if (!pendingAdminActivation) return;
 
-  const updateCampusAdmin = async (admin, updates) => {
-    setError("");
+    setSaving(true);
+    setAdminActivationError("");
     try {
-      await requestJson(`/super-admin/admins/${admin.id}`, {
-        method: "PUT",
+      await requestJson(`/super-admin/admins/${pendingAdminActivation.id}/activate`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ campus_id: Number(updates.campus_id || admin.campus_id), is_active: updates.is_active ?? admin.is_active }),
+        body: JSON.stringify({ current_password: adminActivationPassword }),
       });
+      setPendingAdminActivation(null);
+      setAdminActivationPassword("");
+      setNotice(`Campus Admin ${pendingAdminActivation.email} activated.`);
       setAdmins(await requestJson("/super-admin/admins"));
       await loadOverview();
     } catch (reason) {
-      setError(reason.message);
+      setAdminActivationError(reason.message);
+      setAdminActivationPassword("");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmCampusAdminDeactivation = async (event) => {
+    event.preventDefault();
+    if (!pendingAdminDeactivation) return;
+
+    setSaving(true);
+    setAdminDeactivationError("");
+    try {
+      await requestJson(`/super-admin/admins/${pendingAdminDeactivation.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          is_active: false,
+          current_password: adminDeactivationPassword,
+        }),
+      });
+      setPendingAdminDeactivation(null);
+      setAdminDeactivationPassword("");
+      setNotice(`Campus Admin ${pendingAdminDeactivation.email} deactivated.`);
+      setAdmins(await requestJson("/super-admin/admins"));
+      await loadOverview();
+    } catch (reason) {
+      setAdminDeactivationError(reason.message);
+      setAdminDeactivationPassword("");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -304,41 +456,154 @@ const SuperAdminDashboard = () => {
   const dashboardCampusRows = selectedDashboardCampus
     ? [selectedDashboardCampus]
     : overview?.campuses || [];
-  const dashboardStats = selectedDashboardCampus
-    ? {
-        campuses: 1,
-        active_campuses: selectedDashboardCampus.is_active ? 1 : 0,
-        departments: selectedDashboardCampus.departments,
-        programs: selectedDashboardCampus.programs,
-        subjects: selectedDashboardCampus.subjects,
-        faculty: selectedDashboardCampus.faculty,
-        users: selectedDashboardCampus.users,
-        questions: selectedDashboardCampus.questions,
-      }
-    : stats;
-  const metadata = NAV_ITEMS.find(([id]) => id === activeTab);
-
+  const dashboardStats = stats;
+  const dashboardCampuses = dashboardHierarchy?.campuses || [];
+  const dashboardDepartments = dashboardCampuses
+    .filter((campus) => !dashboardCampusFilter || String(campus.id) === dashboardCampusFilter)
+    .flatMap((campus) => (campus.departments || []).map((department) => ({
+      ...department,
+      campus_id: campus.id,
+      campus_name: campus.name,
+    })));
+  const dashboardPrograms = dashboardDepartments
+    .filter((department) => !dashboardDepartmentFilter || String(department.id) === dashboardDepartmentFilter)
+    .flatMap((department) => (department.programs || []).map((program) => ({
+      ...program,
+      campus_id: department.campus_id,
+      campus_name: department.campus_name,
+      department_id: department.id,
+      department_name: department.name,
+    })));
+  const dashboardInstructors = dashboardPrograms.flatMap((program) =>
+    (program.faculty || []).map((instructor) => ({
+      ...instructor,
+      campus_id: program.campus_id,
+      campus_name: program.campus_name,
+      department_id: program.department_id,
+      department_name: program.department_name,
+      program_id: program.id,
+      program_name: program.name,
+    })),
+  ).filter((instructor, index, instructors) => (
+    instructors.findIndex((item) => String(item.id) === String(instructor.id)) === index
+  ));
+  const questionBreakdownTitle = dashboardInstructorFilter
+    ? "Questions for Instructor"
+    : dashboardProgramFilter
+      ? "Questions by Instructor"
+      : dashboardDepartmentFilter
+        ? "Questions by Program"
+        : dashboardCampusFilter
+          ? "Questions by Department"
+          : "Questions by Campus";
+  const questionChartRows = dashboardCampusFilter
+    ? questionBreakdownRows
+    : dashboardCampusRows;
   const renderDashboard = () => (
     <div className="space-y-4">
-      <section className="bq-admin-panel flex flex-wrap items-center justify-between gap-4">
-        <div>
+      <section className="bq-admin-panel grid gap-3 sm:grid-cols-2 xl:grid-cols-5 xl:items-end">
+        <div className="sm:col-span-2 xl:col-span-5">
           <h2>Dashboard filters</h2>
-          <p className="bq-admin-muted mt-1 text-sm">Scope summary cards and analytics by campus.</p>
+          <p className="bq-admin-muted mt-1 text-sm">Scope summary cards and analytics by academic structure.</p>
         </div>
-        <label className="min-w-52 text-sm font-medium">
+        <label className="text-sm font-medium">
           Campus
           <select
             aria-label="Filter dashboard by campus"
             value={dashboardCampusFilter}
-            onChange={(event) => setDashboardCampusFilter(event.target.value)}
+            onChange={(event) => {
+              setDashboardCampusFilter(event.target.value);
+              setDashboardDepartmentFilter("");
+              setDashboardProgramFilter("");
+              setDashboardInstructorFilter("");
+            }}
             className="bq-field mt-1 w-full"
           >
             <option value="">All campuses</option>
-            {(overview?.campuses || []).map((campus) => (
+            {dashboardCampuses.map((campus) => (
               <option key={campus.id} value={campus.id}>{campus.name}</option>
             ))}
           </select>
         </label>
+        <label className="text-sm font-medium">
+          Department
+          <select
+            aria-label="Filter dashboard by department"
+            value={dashboardDepartmentFilter}
+            disabled={!dashboardCampusFilter}
+            onChange={(event) => {
+              const department = dashboardDepartments.find((item) => String(item.id) === event.target.value);
+              setDashboardDepartmentFilter(event.target.value);
+              if (department) setDashboardCampusFilter(String(department.campus_id));
+              setDashboardProgramFilter("");
+              setDashboardInstructorFilter("");
+            }}
+            className="bq-field mt-1 w-full"
+          >
+            <option value="">All departments</option>
+            {dashboardDepartments.map((department) => (
+              <option key={department.id} value={department.id}>{department.name} — {department.campus_name}</option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm font-medium">
+          Program
+          <select
+            aria-label="Filter dashboard by program"
+            value={dashboardProgramFilter}
+            disabled={!dashboardDepartmentFilter}
+            onChange={(event) => {
+              const program = dashboardPrograms.find((item) => String(item.id) === event.target.value);
+              setDashboardProgramFilter(event.target.value);
+              setDashboardInstructorFilter("");
+              if (program) {
+                setDashboardCampusFilter(String(program.campus_id));
+                setDashboardDepartmentFilter(String(program.department_id));
+              }
+            }}
+            className="bq-field mt-1 w-full"
+          >
+            <option value="">All programs</option>
+            {dashboardPrograms.map((program) => (
+              <option key={program.id} value={program.id}>{program.name}</option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm font-medium">
+          Instructor
+          <select
+            aria-label="Filter dashboard by instructor"
+            value={dashboardInstructorFilter}
+            disabled={!dashboardProgramFilter}
+            onChange={(event) => {
+              const instructor = dashboardInstructors.find((item) => String(item.id) === event.target.value);
+              setDashboardInstructorFilter(event.target.value);
+              if (instructor) {
+                setDashboardCampusFilter(String(instructor.campus_id));
+                setDashboardDepartmentFilter(String(instructor.department_id));
+                setDashboardProgramFilter(String(instructor.program_id));
+              }
+            }}
+            className="bq-field mt-1 w-full"
+          >
+            <option value="">All instructors</option>
+            {dashboardInstructors.map((instructor) => (
+              <option key={instructor.id} value={instructor.id}>{instructor.name}</option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          className="bq-admin-action"
+          onClick={() => {
+            setDashboardCampusFilter("");
+            setDashboardDepartmentFilter("");
+            setDashboardProgramFilter("");
+            setDashboardInstructorFilter("");
+          }}
+        >
+          Clear filters
+        </button>
       </section>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
@@ -389,6 +654,56 @@ const SuperAdminDashboard = () => {
       <section className="bq-admin-panel overflow-x-auto"><table className="w-full min-w-[540px] text-left text-sm"><thead><tr className="border-b border-slate-700"><th className="py-2 pr-3">Campus</th><th className="py-2 pr-3">Code</th><th className="py-2 pr-3">Status</th><th className="py-2">Actions</th></tr></thead><tbody>
         {campuses.map((campus) => <tr key={campus.id} className="border-b border-slate-800"><td className="py-3 pr-3 font-medium">{campus.name}</td><td className="py-3 pr-3">{campus.code || "-"}</td><td className="py-3 pr-3"><span className="bq-admin-tag">{campus.is_active ? "Active" : "Inactive"}</span></td><td className="py-3"><div className="flex gap-2"><button type="button" className="bq-admin-action" onClick={() => { setEditingCampus(campus); setCampusForm({ name: campus.name, code: campus.code || "" }); }}>Edit</button><button type="button" className="bq-admin-action" onClick={() => toggleCampus(campus)}>{campus.is_active ? "Deactivate" : "Activate"}</button></div></td></tr>)}
       </tbody></table>{!campuses.length && <p className="bq-admin-muted py-5">No campuses found.</p>}</section>
+      {pendingCampusAction && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-4">
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="campus-action-auth-title"
+            onSubmit={confirmCampusAction}
+            className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl"
+          >
+            <h2 id="campus-action-auth-title" className="text-lg font-semibold">Confirm your identity</h2>
+            <p className="bq-admin-muted mt-2 text-sm">
+              {pendingCampusAction.type === "create"
+                ? "Re-enter your Super Admin password to add this campus."
+                : `Re-enter your Super Admin password to ${pendingCampusAction.is_active ? "activate" : "deactivate"} ${pendingCampusAction.campus.name}.`}
+            </p>
+            <label className="mt-4 block text-sm font-medium">
+              Current password
+              <input
+                autoComplete="current-password"
+                aria-label="Current Super Admin password"
+                type="password"
+                required
+                minLength={8}
+                maxLength={128}
+                value={campusActionPassword}
+                onChange={(event) => setCampusActionPassword(event.target.value)}
+                className="bq-field mt-1 w-full"
+              />
+            </label>
+            {campusActionError && <p role="alert" className="mt-3 text-sm text-red-300">{campusActionError}</p>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="bq-admin-action"
+                disabled={saving}
+                onClick={() => {
+                  setPendingCampusAction(null);
+                  setCampusActionPassword("");
+                  setCampusActionError("");
+                }}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="bq-admin-action" disabled={saving || !campusActionPassword}>
+                {saving ? "Verifying..." : "Confirm"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 
@@ -398,37 +713,188 @@ const SuperAdminDashboard = () => {
         <label className="text-sm">Name<input required value={adminForm.name} onChange={(event) => setAdminForm({ ...adminForm, name: event.target.value })} className="bq-field mt-1 w-full" /></label>
         <label className="text-sm">Email<input required type="email" value={adminForm.email} onChange={(event) => setAdminForm({ ...adminForm, email: event.target.value })} className="bq-field mt-1 w-full" /></label>
         {!editingAdmin && <label className="text-sm">Initial password<div className="relative mt-1"><input required minLength={8} type={showAdminPassword ? "text" : "password"} value={adminForm.password} onChange={(event) => setAdminForm({ ...adminForm, password: event.target.value })} className="bq-field w-full pr-10" /><button type="button" aria-label={showAdminPassword ? "Hide initial password" : "Show initial password"} title={showAdminPassword ? "Hide initial password" : "Show initial password"} onClick={() => setShowAdminPassword((visible) => !visible)} className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 hover:text-slate-200">{showAdminPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>}
-        <label className="text-sm">Campus<select required value={adminForm.campus_id} onChange={(event) => setAdminForm({ ...adminForm, campus_id: event.target.value })} className="bq-field mt-1 w-full"><option value="">Select campus</option>{campuses.filter((campus) => campus.is_active).map((campus) => <option key={campus.id} value={campus.id}>{campus.name}</option>)}</select></label>
+        {editingAdmin ? (
+          <div className="text-sm"><span className="font-medium">Campus</span><p className="bq-admin-muted mt-2">{editingAdmin.campus || "Unassigned"}</p></div>
+        ) : (
+          <label className="text-sm">Campus<select required value={adminForm.campus_id} onChange={(event) => setAdminForm({ ...adminForm, campus_id: event.target.value })} className="bq-field mt-1 w-full"><option value="">Select campus</option>{campuses.filter((campus) => campus.is_active).map((campus) => <option key={campus.id} value={campus.id}>{campus.name}</option>)}</select></label>
+        )}
         <div className="flex gap-2"><button disabled={saving} className="bq-admin-action">{editingAdmin ? "Save Changes" : "Create Campus Admin"}</button>{editingAdmin && <button type="button" className="bq-admin-action" onClick={() => { setEditingAdmin(null); setAdminForm({ name: "", email: "", password: "", campus_id: "" }); }}>Cancel</button>}</div>
       </form>
-      <section className="bq-admin-panel overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead><tr className="border-b border-slate-700"><th className="py-2 pr-3">Administrator</th><th className="py-2 pr-3">Email</th><th className="py-2 pr-3">Campus</th><th className="py-2 pr-3">Status</th><th className="py-2">Action</th></tr></thead><tbody>
-        {admins.map((admin) => <tr key={admin.id} className="border-b border-slate-800"><td className="py-3 pr-3">{admin.name}</td><td className="py-3 pr-3">{admin.email}</td><td className="py-3 pr-3"><select aria-label={`Campus for ${admin.name}`} value={admin.campus_id || ""} onChange={(event) => updateCampusAdmin(admin, { campus_id: event.target.value })} className="bq-field"><option value="">Select campus</option>{campuses.map((campus) => <option key={campus.id} value={campus.id}>{campus.name}</option>)}</select></td><td className="py-3 pr-3">{admin.is_active ? "Active" : "Inactive"}</td><td className="py-3"><div className="flex gap-2"><button type="button" className="bq-admin-action" onClick={() => { setEditingAdmin(admin); setShowAdminPassword(false); setAdminForm({ name: admin.name, email: admin.email, password: "", campus_id: String(admin.campus_id || "") }); }}>Edit</button><button type="button" className="bq-admin-action" onClick={() => updateCampusAdmin(admin, { is_active: !admin.is_active })}>{admin.is_active ? "Deactivate" : "Activate"}</button>{!admin.is_active && <button type="button" className="bq-admin-action" disabled={deletingAdminId === admin.id} onClick={() => deleteCampusAdmin(admin)}>{deletingAdminId === admin.id ? "Deleting..." : "Delete"}</button>}</div></td></tr>)}
+      <section className="bq-admin-panel overflow-x-auto"><table className="w-full min-w-[820px] text-left text-sm"><thead><tr className="border-b border-slate-700"><th className="py-2 pr-3">Administrator</th><th className="py-2 pr-3">Role</th><th className="py-2 pr-3">Email</th><th className="py-2 pr-3">Campus</th><th className="py-2 pr-3">Status</th><th className="py-2">Actions</th></tr></thead><tbody>
+        {admins.map((admin) => <tr key={admin.id} className="border-b border-slate-800"><td className="py-3 pr-3">{admin.name}</td><td className="py-3 pr-3"><span className="bq-admin-tag">Campus Admin</span></td><td className="py-3 pr-3">{admin.email}</td><td className="py-3 pr-3">{admin.campus || "Unassigned"}</td><td className="py-3 pr-3">{admin.is_active ? "Active" : "Inactive"}</td><td className="py-3"><div className="flex gap-2"><button type="button" className="bq-admin-action" onClick={() => { setEditingAdmin(admin); setShowAdminPassword(false); setAdminForm({ name: admin.name, email: admin.email, password: "", campus_id: String(admin.campus_id || "") }); }}>Edit</button>{admin.is_active && <button type="button" className="bq-admin-action" onClick={() => { setPendingAdminDeactivation(admin); setAdminDeactivationPassword(""); setAdminDeactivationError(""); }}>Deactivate</button>}{!admin.is_active && <>{admin.is_deactivated && <button type="button" className="bq-admin-action" disabled={saving || deletingAdminId === admin.id} onClick={() => { setPendingAdminActivation(admin); setAdminActivationPassword(""); setAdminActivationError(""); }}>Activate</button>}<button type="button" className="bq-admin-action" disabled={deletingAdminId === admin.id} onClick={() => deleteCampusAdmin(admin)}>{deletingAdminId === admin.id ? "Deleting..." : "Delete"}</button></>}</div></td></tr>)}
       </tbody></table>{!admins.length && <p className="bq-admin-muted py-5">No Campus Admin accounts found.</p>}</section>
+      {pendingAdminCreate && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-4">
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="campus-admin-auth-title"
+            onSubmit={confirmCampusAdminCreate}
+            className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl"
+          >
+            <h2 id="campus-admin-auth-title" className="text-lg font-semibold">Confirm your identity</h2>
+            <p className="bq-admin-muted mt-2 text-sm">Re-enter your Super Admin password to add this Campus Admin.</p>
+            <label className="mt-4 block text-sm font-medium">
+              Current password
+              <input
+                autoComplete="current-password"
+                aria-label="Current Super Admin password"
+                type="password"
+                required
+                minLength={8}
+                maxLength={128}
+                value={adminCreatePassword}
+                onChange={(event) => setAdminCreatePassword(event.target.value)}
+                className="bq-field mt-1 w-full"
+              />
+            </label>
+            {adminCreateError && <p role="alert" className="mt-3 text-sm text-red-300">{adminCreateError}</p>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="bq-admin-action"
+                disabled={saving}
+                onClick={() => {
+                  setPendingAdminCreate(false);
+                  setAdminCreatePassword("");
+                  setAdminCreateError("");
+                }}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="bq-admin-action" disabled={saving || !adminCreatePassword}>
+                {saving ? "Verifying..." : "Confirm"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+      {pendingAdminActivation && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-4">
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="campus-admin-activation-auth-title"
+            onSubmit={confirmCampusAdminActivation}
+            className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl"
+          >
+            <h2 id="campus-admin-activation-auth-title" className="text-lg font-semibold">Confirm your identity</h2>
+            <p className="bq-admin-muted mt-2 text-sm">
+              Re-enter your Super Admin password to activate {pendingAdminActivation.name}.
+            </p>
+            <label className="mt-4 block text-sm font-medium">
+              Current password
+              <input
+                autoComplete="current-password"
+                aria-label="Current Super Admin password"
+                type="password"
+                required
+                minLength={8}
+                maxLength={128}
+                value={adminActivationPassword}
+                onChange={(event) => setAdminActivationPassword(event.target.value)}
+                className="bq-field mt-1 w-full"
+              />
+            </label>
+            {adminActivationError && <p role="alert" className="mt-3 text-sm text-red-300">{adminActivationError}</p>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="bq-admin-action"
+                disabled={saving}
+                onClick={() => {
+                  setPendingAdminActivation(null);
+                  setAdminActivationPassword("");
+                  setAdminActivationError("");
+                }}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="bq-admin-action" disabled={saving || !adminActivationPassword}>
+                {saving ? "Verifying..." : "Confirm"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+      {pendingAdminDeactivation && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-4">
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="campus-admin-deactivation-auth-title"
+            onSubmit={confirmCampusAdminDeactivation}
+            className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl"
+          >
+            <h2 id="campus-admin-deactivation-auth-title" className="text-lg font-semibold">Confirm your identity</h2>
+            <p className="bq-admin-muted mt-2 text-sm">
+              Re-enter your Super Admin password to deactivate {pendingAdminDeactivation.name}.
+            </p>
+            <label className="mt-4 block text-sm font-medium">
+              Current password
+              <input
+                autoComplete="current-password"
+                aria-label="Current Super Admin password"
+                type="password"
+                required
+                minLength={8}
+                maxLength={128}
+                value={adminDeactivationPassword}
+                onChange={(event) => setAdminDeactivationPassword(event.target.value)}
+                className="bq-field mt-1 w-full"
+              />
+            </label>
+            {adminDeactivationError && <p role="alert" className="mt-3 text-sm text-red-300">{adminDeactivationError}</p>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="bq-admin-action"
+                disabled={saving}
+                onClick={() => {
+                  setPendingAdminDeactivation(null);
+                  setAdminDeactivationPassword("");
+                  setAdminDeactivationError("");
+                }}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="bq-admin-action" disabled={saving || !adminDeactivationPassword}>
+                {saving ? "Verifying..." : "Confirm"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
       <section className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold">Department Administrators</h2>
-          <p className="bq-admin-muted mt-1 text-sm">Each account can manage the dean, programs, and subjects for one assigned department.</p>
+          <p className="bq-admin-muted mt-1 text-sm">Read-only directory of Department Admin accounts and their assigned campus.</p>
         </div>
-        <form onSubmit={createDepartmentAdmin} className="bq-admin-panel grid gap-3 md:grid-cols-2 xl:grid-cols-5 xl:items-end">
-          <label className="text-sm">Name<input required minLength={2} maxLength={255} value={departmentAdminForm.name} onChange={(event) => setDepartmentAdminForm({ ...departmentAdminForm, name: event.target.value })} className="bq-field mt-1 w-full" /></label>
-          <label className="text-sm">Email<input required type="email" value={departmentAdminForm.email} onChange={(event) => setDepartmentAdminForm({ ...departmentAdminForm, email: event.target.value })} className="bq-field mt-1 w-full" /></label>
-          <label className="text-sm">Initial password<input required minLength={8} maxLength={128} type="password" value={departmentAdminForm.password} onChange={(event) => setDepartmentAdminForm({ ...departmentAdminForm, password: event.target.value })} className="bq-field mt-1 w-full" /></label>
-          <label className="text-sm">Department<select required value={departmentAdminForm.department_id} onChange={(event) => setDepartmentAdminForm({ ...departmentAdminForm, department_id: event.target.value })} className="bq-field mt-1 w-full"><option value="">Select department</option>{academicDepartments.map((department) => <option key={department.id} value={department.id}>{department.campus_name} / {department.name}</option>)}</select></label>
-          <button type="submit" disabled={saving || !academicDepartments.length} className="bq-admin-action">{saving ? "Creating..." : "Create Department Admin"}</button>
-        </form>
         <section className="bq-admin-panel overflow-x-auto">
+          <label className="mb-4 block max-w-sm text-sm font-medium">
+            Filter by campus
+            <select
+              aria-label="Filter Department Admins by campus"
+              value={departmentAdminCampusFilter}
+              onChange={(event) => setDepartmentAdminCampusFilter(event.target.value)}
+              className="bq-field mt-1 w-full"
+            >
+              <option value="">All campuses</option>
+              {campuses.map((campus) => <option key={campus.id} value={campus.id}>{campus.name}</option>)}
+            </select>
+          </label>
           <table className="w-full min-w-[720px] text-left text-sm">
-            <thead><tr className="border-b border-slate-700"><th className="py-2 pr-3">Administrator</th><th className="py-2 pr-3">Email</th><th className="py-2 pr-3">Campus</th><th className="py-2 pr-3">Department</th><th className="py-2 pr-3">Status</th><th className="py-2">Actions</th></tr></thead>
-            <tbody>{departmentAdmins.map((departmentAdmin) => <tr key={departmentAdmin.id} className="border-b border-slate-800">
+            <thead><tr className="border-b border-slate-700"><th className="py-2 pr-3">Administrator</th><th className="py-2 pr-3">Role</th><th className="py-2 pr-3">Email</th><th className="py-2 pr-3">Campus</th><th className="py-2 pr-3">Department</th><th className="py-2 pr-3">Status</th></tr></thead>
+            <tbody>{departmentAdmins.filter((item) => !departmentAdminCampusFilter || String(item.campus_id) === departmentAdminCampusFilter).map((departmentAdmin) => <tr key={departmentAdmin.id} className="border-b border-slate-800">
               <td className="py-3 pr-3">{departmentAdmin.name}</td>
+              <td className="py-3 pr-3"><span className="bq-admin-tag">Department Admin</span></td>
               <td className="py-3 pr-3">{departmentAdmin.email}</td>
               <td className="py-3 pr-3">{departmentAdmin.campus || "Unassigned"}</td>
-              <td className="py-3 pr-3"><select aria-label={`Department for ${departmentAdmin.name}`} value={departmentAdmin.department_id} onChange={(event) => updateDepartmentAdmin(departmentAdmin, { department_id: Number(event.target.value) })} className="bq-field">{academicDepartments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></td>
+              <td className="py-3 pr-3">{departmentAdmin.department}</td>
               <td className="py-3 pr-3">{departmentAdmin.is_active ? "Active" : "Inactive"}</td>
-              <td className="py-3"><button type="button" className="bq-admin-action" onClick={() => updateDepartmentAdmin(departmentAdmin, { is_active: !departmentAdmin.is_active })}>{departmentAdmin.is_active ? "Deactivate" : "Activate"}</button></td>
             </tr>)}</tbody>
           </table>
-          {!departmentAdmins.length && <p className="bq-admin-muted py-5">No Department Admin accounts found.</p>}
+          {!departmentAdmins.filter((item) => !departmentAdminCampusFilter || String(item.campus_id) === departmentAdminCampusFilter).length && <p className="bq-admin-muted py-5">No Department Admin accounts found for this campus.</p>}
         </section>
       </section>
     </div>
@@ -523,12 +989,11 @@ const SuperAdminDashboard = () => {
   };
 
   const renderAnalytics = () => {
-    const campusRows = dashboardCampusRows;
-    const bloomDistribution = selectedDashboardCampus?.bloom_distribution || overview?.bloom_distribution || {};
+    const bloomDistribution = overview?.bloom_distribution || {};
     const bloomEntries = Object.entries(bloomDistribution);
     const bloomPalette = ["#C4485A", "#E0A458", "#378A87", "#5587B8", "#758B54", "#8C6AA8", "#9B7465"];
     return <div className="grid gap-4 xl:grid-cols-2">
-      <section className="bq-admin-panel"><h2>Questions by Campus</h2><div className="mt-4 h-72"><Bar data={{ labels: campusRows.map((campus) => campus.name), datasets: [{ label: "Questions", data: campusRows.map((campus) => campus.questions), backgroundColor: "#C4485A", borderRadius: 3 }] }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }} /></div></section>
+      <section className="bq-admin-panel"><h2>{questionBreakdownTitle}</h2><div className="mt-4 h-72">{questionChartRows.length ? <Bar data={{ labels: questionChartRows.map((row) => row.name), datasets: [{ label: "Questions", data: questionChartRows.map((row) => row.questions), backgroundColor: "#C4485A", borderRadius: 3 }] }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }} /> : <p className="bq-admin-muted pt-8">{questionBreakdownLoading || loading ? "Loading question analytics..." : "No question data for this selection."}</p>}</div></section>
       <section className="bq-admin-panel"><h2>Bloom Level Distribution</h2><div className="mt-4 h-72">{bloomEntries.length ? <Doughnut data={{ labels: bloomEntries.map(([label]) => label), datasets: [{ data: bloomEntries.map(([, count]) => count), backgroundColor: bloomPalette, borderWidth: 1 }] }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }} /> : <p className="bq-admin-muted pt-8">No question classification data yet.</p>}</div></section>
     </div>;
   };
@@ -542,6 +1007,37 @@ const SuperAdminDashboard = () => {
     if (activeTab === "ai_usage") return renderAIUsage();
     if (activeTab === "activity") return <ReportsContent showCampusFilter />;
     return renderDashboard();
+  };
+
+  return renderContent();
+};
+
+const SuperAdminDashboard = () => {
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem("bloomquest-admin-theme") || "dark");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const metadata = NAV_ITEMS.find(([id]) => id === activeTab);
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((previous) => !previous);
+    setMobileSidebarOpen((previous) => !previous);
+  };
+
+  useEffect(() => {
+    if (location.pathname.startsWith("/super-admin/academic")) setActiveTab("academic");
+    else if (location.pathname.startsWith("/super-admin/questions")) setActiveTab("questions");
+  }, [location.pathname]);
+
+  const switchTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    localStorage.setItem("bloomquest-admin-theme", next);
+    localStorage.setItem("bloomquest-theme", next);
+    window.dispatchEvent(new CustomEvent("theme-updated", { detail: { theme: next } }));
   };
 
   return (
@@ -569,7 +1065,7 @@ const SuperAdminDashboard = () => {
         <div className={`bq-page flex-1 ${activeTab === "academic" ? "bq-page-academic" : ""}`}><div className="bq-page-inner space-y-4">
           {error && <div role="alert" className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
           {notice && <div role="status" className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>}
-          {renderContent()}
+          <SuperAdminDashboardContent activeTab={activeTab} setError={setError} setNotice={setNotice} />
         </div></div>
       </main>
     </div>

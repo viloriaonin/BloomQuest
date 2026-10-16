@@ -9,10 +9,22 @@ ChartJS.register(ArcElement, BarElement, CategoryScale, Legend, LinearScale, Too
 const COLORS = ["#C4485A", "#E0A458", "#378A87", "#5587B8", "#758B54", "#8C6AA8", "#9B7465"];
 const formatNumber = (value) => new Intl.NumberFormat().format(Number(value) || 0);
 
-const CampusAdminOverview = ({ departmentId, selectedDepartment }) => {
+const CampusAdminOverview = ({ departments, departmentId, programId, selectedDepartment, selectedProgram }) => {
   const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [questionBreakdownRows, setQuestionBreakdownRows] = useState([]);
+  const [questionBreakdownLoading, setQuestionBreakdownLoading] = useState(true);
+  const selectedDepartmentRecord = departments.find((department) => Number(department.id) === Number(departmentId));
+  const selectedProgramRecord = selectedDepartmentRecord?.programs?.find(
+    (program) => Number(program.id) === Number(programId),
+  );
+  const breakdownType = programId ? "instructor" : departmentId ? "program" : "department";
+  const breakdownTitle = {
+    department: "Questions by Department",
+    program: "Questions by Program",
+    instructor: "Questions by Instructor",
+  }[breakdownType];
 
   useEffect(() => {
     const controller = new AbortController();
@@ -22,6 +34,7 @@ const CampusAdminOverview = ({ departmentId, selectedDepartment }) => {
       try {
         const params = new URLSearchParams();
         if (departmentId) params.set("department_id", departmentId);
+        if (programId) params.set("program_id", programId);
         const query = params.toString();
         const response = await fetch(`${API_URL}/admin/campus-overview${query ? `?${query}` : ""}`, {
           headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
@@ -40,7 +53,78 @@ const CampusAdminOverview = ({ departmentId, selectedDepartment }) => {
     };
     loadOverview();
     return () => controller.abort();
-  }, [departmentId]);
+  }, [departmentId, programId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const targets = breakdownType === "instructor"
+      ? (selectedProgramRecord?.faculty || [])
+        .filter((instructor) => instructor.name?.trim())
+        .map((instructor) => ({
+          id: instructor.id,
+          name: instructor.name.trim(),
+          departmentId,
+          programId,
+          instructorId: instructor.id,
+        }))
+      : breakdownType === "program"
+        ? (selectedDepartmentRecord?.programs || []).map((program) => ({
+          id: program.id,
+          name: program.name,
+          departmentId,
+          programId: program.id,
+        }))
+        : departments.map((department) => ({
+          id: department.id,
+          name: department.name,
+          departmentId: department.id,
+        }));
+    setQuestionBreakdownLoading(true);
+
+    const loadQuestionBreakdown = async () => {
+      try {
+        const rows = await Promise.all(targets.map(async (target) => {
+          const params = new URLSearchParams();
+          if (target.departmentId) params.set("department_id", target.departmentId);
+          if (target.programId) params.set("program_id", target.programId);
+          if (target.instructorId) params.set("instructor_id", target.instructorId);
+          const response = await fetch(
+            `${API_URL}/admin/campus-overview?${params}`,
+            {
+              headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+              signal: controller.signal,
+            },
+          );
+          if (!response.ok) {
+            const payload = await response.json().catch(() => ({}));
+            throw new Error(payload.detail || `Could not load questions for ${target.name}.`);
+          }
+          const data = await response.json();
+          return {
+            id: target.id,
+            name: target.name,
+            questions: Number(data?.totals?.questions) || 0,
+          };
+        }));
+        setQuestionBreakdownRows(rows);
+      } catch (loadError) {
+        if (loadError.name !== "AbortError") {
+          setError(loadError.message || "Could not load question breakdown.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setQuestionBreakdownLoading(false);
+      }
+    };
+
+    if (targets.length) {
+      loadQuestionBreakdown();
+    } else {
+      setQuestionBreakdownRows([]);
+      setQuestionBreakdownLoading(false);
+    }
+
+    return () => controller.abort();
+  }, [breakdownType, departmentId, departments, programId, selectedDepartmentRecord, selectedProgramRecord]);
 
   const totals = overview?.totals || {};
   const campus = overview?.campuses?.[0];
@@ -59,8 +143,8 @@ const CampusAdminOverview = ({ departmentId, selectedDepartment }) => {
     <div className="space-y-4">
       {error && <div role="alert" className="bq-admin-panel border border-red-500/40 text-sm text-red-300">{error}</div>}
       <div className="bq-admin-panel flex flex-wrap items-center justify-between gap-3">
-        <div><h2>Campus Overview</h2><p className="bq-admin-muted mt-1">Campus-scoped totals and analytics{selectedDepartment !== "All Departments" ? ` for ${selectedDepartment}` : ""}.</p></div>
-        <span className="bq-admin-mono">{selectedDepartment}</span>
+        <div><h2>Campus Overview</h2><p className="bq-admin-muted mt-1">Campus-scoped totals and analytics{selectedProgram ? ` for ${selectedProgram}` : selectedDepartment !== "All Departments" ? ` for ${selectedDepartment}` : ""}.</p></div>
+        <span className="bq-admin-mono">{selectedProgram || selectedDepartment}</span>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {statCards.map(({ label, value, detail, icon: Icon, color }) => (
@@ -83,7 +167,7 @@ const CampusAdminOverview = ({ departmentId, selectedDepartment }) => {
 
       <section className="bq-admin-panel">
         <div className="flex items-center justify-between gap-3">
-          <div><h2>{selectedDepartment === "All Departments" ? "Campus Summary" : `${selectedDepartment} Summary`}</h2><p className="bq-admin-muted mt-1">Counts reflect records attributed to your assigned campus and selected department.</p></div>
+          <div><h2>{selectedProgram ? `${selectedProgram} Summary` : selectedDepartment === "All Departments" ? "Campus Summary" : `${selectedDepartment} Summary`}</h2><p className="bq-admin-muted mt-1">Counts reflect records attributed to your assigned campus{selectedProgram ? ` and selected program (${selectedProgram})` : selectedDepartment !== "All Departments" ? ` and selected department (${selectedDepartment})` : ""}.</p></div>
         </div>
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[620px] text-left text-sm">
@@ -96,9 +180,9 @@ const CampusAdminOverview = ({ departmentId, selectedDepartment }) => {
 
       <div className="grid gap-4 xl:grid-cols-2">
         <section className="bq-admin-panel">
-          <h2>Questions by {selectedDepartment === "All Departments" ? "Campus" : "Department"}</h2>
+          <h2>{breakdownTitle}</h2>
           <div className="mt-4 h-72">
-            {campus ? <Bar data={{ labels: [selectedDepartment === "All Departments" ? campus.name : selectedDepartment], datasets: [{ label: "Questions", data: [campus.questions], backgroundColor: COLORS[0], borderRadius: 3 }] }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }} /> : <p className="bq-admin-muted pt-8">{loading ? "Loading campus analytics..." : "No campus question data yet."}</p>}
+            {questionBreakdownRows.length ? <Bar data={{ labels: questionBreakdownRows.map((row) => row.name), datasets: [{ label: "Questions", data: questionBreakdownRows.map((row) => row.questions), backgroundColor: COLORS[0], borderRadius: 3 }] }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }} /> : <p className="bq-admin-muted pt-8">{questionBreakdownLoading || loading ? "Loading question analytics..." : `No ${breakdownType} question data yet.`}</p>}
           </div>
         </section>
         <section className="bq-admin-panel">

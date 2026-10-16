@@ -91,7 +91,13 @@ test("Campus Admin user management only shows active and archived account views"
   expect(screen.queryByText("Pending review")).not.toBeInTheDocument();
   expect(tabs).toBeInTheDocument();
   expect(screen.getByText("Manage active and archived user accounts.")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Add faculty member" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Add faculty member" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Add dean" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Filter" })).not.toBeInTheDocument();
+  expect(screen.queryByPlaceholderText("Search users, email, department, or program...")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Clear filters" })).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Filter users by role")).toBeInTheDocument();
+  expect(screen.getByLabelText("Filter users by department")).toBeInTheDocument();
 
   await waitFor(() => {
     expect(global.fetch).not.toHaveBeenCalledWith(expect.stringContaining("/contact-admin/pending"), expect.anything());
@@ -102,39 +108,66 @@ test("Campus Admin user management only shows active and archived account views"
   expect(await screen.findByText("Archived Faculty")).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("tab", { name: "Active users (1)" }));
-  fireEvent.click(screen.getByRole("button", { name: "Add faculty member" }));
-  fireEvent.change(screen.getByLabelText("Number for faculty member 1"), { target: { value: "000542" } });
-  fireEvent.change(screen.getByLabelText("Full name for faculty member 1"), { target: { value: "New Faculty" } });
-  fireEvent.change(screen.getByLabelText("Email for faculty member 1"), { target: { value: "new.faculty@example.edu" } });
-  fireEvent.change(screen.getByLabelText("Department for faculty member 1"), { target: { value: "7" } });
-  fireEvent.change(screen.getByLabelText("Program for faculty member 1"), { target: { value: "12" } });
-  fireEvent.click(screen.getByRole("button", { name: "Add another" }));
-  const secondNumber = screen.getByLabelText("Number for faculty member 2");
-  fireEvent.change(secondNumber, { target: { value: "000543" } });
-  fireEvent.change(screen.getByLabelText("Full name for faculty member 2"), { target: { value: "Second Faculty" } });
-  fireEvent.change(screen.getByLabelText("Email for faculty member 2"), { target: { value: "second.faculty@example.edu" } });
-  fireEvent.change(screen.getByLabelText("Department for faculty member 2"), { target: { value: "7" } });
-  fireEvent.change(screen.getByLabelText("Program for faculty member 2"), { target: { value: "11" } });
-  fireEvent.click(screen.getByRole("button", { name: "Create faculty accounts" }));
+  expect(screen.queryByRole("button", { name: "Add faculty member" })).not.toBeInTheDocument();
+});
 
-  await waitFor(() => {
-    const creationCalls = global.fetch.mock.calls.filter(
-      ([url, options]) => String(url).endsWith("/campus-admin/faculty-accounts") && options?.method === "POST",
-    );
-    expect(creationCalls).toHaveLength(2);
-    expect(JSON.parse(creationCalls[0][1].body)).toEqual({
-      full_name: "New Faculty",
-      email: "new.faculty@example.edu",
-      faculty_number: "000542",
-      program_id: 12,
-    });
-    expect(JSON.parse(creationCalls[1][1].body)).toEqual({
-      full_name: "Second Faculty",
-      email: "second.faculty@example.edu",
-      faculty_number: "000543",
-      program_id: 11,
-    });
+test("Campus Admin role filter shows Program only for faculty and scopes matching users", async () => {
+  const defaultFetch = global.fetch.getMockImplementation();
+  global.fetch.mockImplementation(async (url, options) => {
+    if (String(url).endsWith("/contact-admin/users")) {
+      return {
+        ok: true,
+        json: async () => [
+          {
+            id: 10,
+            full_name: "Faculty Example",
+            email: "faculty@example.edu",
+            role: "faculty",
+            department: "Computing",
+            program: "Information Technology",
+            is_active: true,
+          },
+          {
+            id: 11,
+            full_name: "Dean Example",
+            email: "dean@example.edu",
+            role: "department_dean",
+            department: "Computing",
+            program: "N/A",
+            is_active: true,
+          },
+        ],
+      };
+    }
+    return defaultFetch(url, options);
   });
+
+  render(
+    <MemoryRouter>
+      <PopupProvider>
+        <UserMgmtContent />
+      </PopupProvider>
+    </MemoryRouter>,
+  );
+
+  expect(screen.queryByRole("button", { name: "Filter" })).not.toBeInTheDocument();
+  expect(screen.queryByPlaceholderText("Search users, email, department, or program...")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Clear filters" })).not.toBeInTheDocument();
+  const roleFilter = screen.getByRole("combobox", { name: "Filter users by role" });
+  expect(screen.getByLabelText("Filter users by department")).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "Faculty" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "Department dean" })).toBeInTheDocument();
+  expect(screen.queryByLabelText("Program")).not.toBeInTheDocument();
+
+  fireEvent.change(roleFilter, { target: { value: "faculty" } });
+  expect(screen.getByLabelText("Program")).toBeInTheDocument();
+  expect(await screen.findByText("Faculty Example")).toBeInTheDocument();
+  expect(screen.queryByText("Dean Example")).not.toBeInTheDocument();
+
+  fireEvent.change(roleFilter, { target: { value: "department_dean" } });
+  expect(screen.queryByLabelText("Program")).not.toBeInTheDocument();
+  expect(await screen.findByText("Dean Example")).toBeInTheDocument();
+  expect(screen.queryByText("Faculty Example")).not.toBeInTheDocument();
 });
 
 test("Campus Admin can create a Department Admin dean account for a department", async () => {
@@ -150,7 +183,7 @@ test("Campus Admin can create a Department Admin dean account for a department",
   expect(await screen.findByRole("heading", { name: "Add a department dean" })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Dean Example" } });
   fireEvent.change(screen.getByLabelText("Email"), { target: { value: "dean@example.edu" } });
-  fireEvent.change(screen.getByLabelText("Department"), { target: { value: "7" } });
+  fireEvent.change(screen.getByLabelText("Department for dean"), { target: { value: "7" } });
   fireEvent.click(screen.getByRole("button", { name: "Create dean account" }));
 
   expect(await screen.findByRole("heading", { name: "Dean sign-in details" })).toBeInTheDocument();
@@ -222,7 +255,7 @@ test("newly created dean appears in the active user list", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "Add dean" }));
   fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Dean Example" } });
   fireEvent.change(screen.getByLabelText("Email"), { target: { value: "dean@example.edu" } });
-  fireEvent.change(screen.getByLabelText("Department"), { target: { value: "7" } });
+  fireEvent.change(screen.getByLabelText("Department for dean"), { target: { value: "7" } });
   fireEvent.click(screen.getByRole("button", { name: "Create dean account" }));
 
   expect(await screen.findByText("Dean Example")).toBeInTheDocument();
@@ -230,21 +263,47 @@ test("newly created dean appears in the active user list", async () => {
   expect(screen.getByText("Active", { selector: "span" })).toBeInTheDocument();
 });
 
-test("Campus Admin receives faculty setup credentials in demo mode", async () => {
-  const defaultFetch = global.fetch.getMockImplementation();
-  global.fetch.mockImplementation(async (url, options) => {
-    if (String(url).endsWith("/campus-admin/faculty-accounts")) {
+test("Campus Admin does not see the add faculty action", async () => {
+  render(
+    <MemoryRouter>
+      <PopupProvider>
+        <UserMgmtContent />
+      </PopupProvider>
+    </MemoryRouter>,
+  );
+
+  expect(await screen.findByRole("button", { name: "Add dean" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Add faculty member" })).not.toBeInTheDocument();
+});
+
+test("Campus Admin can delete archived dean accounts only after entering their password", async () => {
+  global.fetch.mockImplementation(async (url) => {
+    if (String(url).endsWith("/contact-admin/users")) {
       return {
         ok: true,
         json: async () => ({
-          email: "demo.faculty@example.edu",
-          email_status: "demo",
-          demo_temporary_password: "DemoFacultyPassword1!",
-          demo_setup_url: "https://demo.example.edu/set-password?token=faculty-demo-token",
+          active: [],
+          archived: [
+            {
+              id: 3,
+              full_name: "Archived Dean",
+              email: "dean@example.edu",
+              role: "department_admin",
+              is_department_dean: true,
+              archived: true,
+            },
+            {
+              id: 4,
+              full_name: "Archived Faculty",
+              email: "faculty@example.edu",
+              role: "faculty",
+              archived: true,
+            },
+          ],
         }),
       };
     }
-    return defaultFetch(url, options);
+    return { ok: true, json: async () => ({}) };
   });
 
   render(
@@ -255,15 +314,25 @@ test("Campus Admin receives faculty setup credentials in demo mode", async () =>
     </MemoryRouter>,
   );
 
-  fireEvent.click(await screen.findByRole("button", { name: "Add faculty member" }));
-  fireEvent.change(screen.getByLabelText("Number for faculty member 1"), { target: { value: "000721" } });
-  fireEvent.change(screen.getByLabelText("Full name for faculty member 1"), { target: { value: "Demo Faculty" } });
-  fireEvent.change(screen.getByLabelText("Email for faculty member 1"), { target: { value: "demo.faculty@example.edu" } });
-  fireEvent.change(screen.getByLabelText("Department for faculty member 1"), { target: { value: "7" } });
-  fireEvent.change(screen.getByLabelText("Program for faculty member 1"), { target: { value: "12" } });
-  fireEvent.click(screen.getByRole("button", { name: "Create faculty accounts" }));
+  fireEvent.click(await screen.findByRole("tab", { name: "Archived users (2)" }));
+  expect(await screen.findByText("Archived Dean")).toBeInTheDocument();
+  expect(screen.getByText("Archived Faculty")).toBeInTheDocument();
+  expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
-  expect(await screen.findByRole("heading", { name: "Demo faculty accounts created" })).toBeInTheDocument();
-  expect(screen.getByText(/Temporary password: DemoFacultyPassword1!/)).toBeInTheDocument();
-  expect(screen.getByText(/https:\/\/demo\.example\.edu\/set-password\?token=faculty-demo-token/)).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Delete department dean" })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Admin password"), { target: { value: "AdminPassword1!" } });
+  fireEvent.click(screen.getByRole("button", { name: "Verify and delete" }));
+
+  await waitFor(() => {
+    const deleteCall = global.fetch.mock.calls.find(
+      ([url, options]) => String(url).endsWith("/users/dean%40example.edu/permanent") && options?.method === "DELETE",
+    );
+    expect(deleteCall).toBeDefined();
+    expect(JSON.parse(deleteCall[1].body)).toEqual({
+      email: "dean@example.edu",
+      admin_password: "AdminPassword1!",
+    });
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "OK" }));
 });

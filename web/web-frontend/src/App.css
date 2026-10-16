@@ -266,6 +266,22 @@
   visibility: visible;
 }
 
+.bq-admin-shell-campus .bq-admin-main {
+  overflow: hidden;
+}
+
+.bq-admin-shell-campus .bq-admin-main > .bq-page,
+.bq-admin-shell-campus .bq-admin-main > .bq-page.bq-page-academic {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.bq-admin-footer {
+  border-color: var(--admin-border);
+  background-color: var(--admin-bg);
+}
+
 .bq-admin-main > .bq-page.bq-page-academic {
   flex: 0 0 auto;
   min-height: 0;
