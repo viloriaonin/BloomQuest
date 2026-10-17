@@ -103,6 +103,16 @@ textarea:focus-visible,
     font-size: 0.875rem;
   }
 
+  .bq-hide-number-spinner {
+    -moz-appearance: textfield;
+  }
+
+  .bq-hide-number-spinner::-webkit-inner-spin-button,
+  .bq-hide-number-spinner::-webkit-outer-spin-button {
+    margin: 0;
+    -webkit-appearance: none;
+  }
+
   .bq-muted-action {
     color: var(--bq-muted);
     font-size: 0.8125rem;

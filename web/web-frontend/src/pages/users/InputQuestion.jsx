@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { UploadCloud, FileText, FileSpreadsheet, Presentation, X, CheckCircle2, AlertCircle, Sparkles, PencilLine, FolderUp, RotateCcw, RefreshCw, Tags, Loader2, Eye } from 'lucide-react';
+import { UploadCloud, FileText, FileSpreadsheet, Presentation, X, CheckCircle2, AlertCircle, Sparkles, PencilLine, FolderUp, RotateCcw, RefreshCw, Tags, Loader2 } from 'lucide-react';
 import { usePopup } from '../../components/PopupProvider';
 import DownloadPreviewModal from '../../components/DownloadPreviewModal';
 import { API_URL } from '../../config/api';
@@ -7,6 +7,11 @@ import { API_URL } from '../../config/api';
 const MAX_QUESTIONS_PER_GENERATION = 100;
 const EXAM_TYPE_OPTIONS = ['Midterm Exam', 'Preliminary Exam', 'Final Exam', 'Quiz', 'Long Quiz'];
 const SEMESTER_OPTIONS = ['First Semester', 'Second Semester', 'Midterm Class'];
+const currentAcademicYear = new Date().getFullYear();
+const ACADEMIC_YEAR_OPTIONS = Array.from({ length: 11 }, (_, index) => {
+  const startYear = currentAcademicYear - 5 + index;
+  return `${startYear}-${startYear + 1}`;
+});
 const PRIMARY = '#8F1424';
 const pageBg = '#F6F7F9';
 
@@ -23,6 +28,51 @@ const QUESTION_TYPE_OPTIONS = [
   { label: 'Essay', value: 'Essay' },
   { label: 'Situational', value: 'Situational' },
 ];
+const MANUAL_ANSWER_KEY_CONFIG = {
+  MCQ: {
+    maxLength: 1,
+    placeholder: 'Correct option letter',
+    guide: 'Enter one option letter (A–H). It must match an option listed in the question.',
+  },
+  'True or False': {
+    maxLength: 5,
+    placeholder: 'True or False',
+    guide: 'Enter only True or False.',
+  },
+  Identification: {
+    maxLength: 150,
+    placeholder: 'Short correct answer',
+    guide: 'Enter the expected word, term, or short phrase (up to 150 characters).',
+  },
+  'Matching Type': {
+    maxLength: 22,
+    placeholder: 'e.g. A, C, B, D',
+    guide: 'Enter one answer letter per item, separated by commas (up to 8 items).',
+  },
+  Enumeration: {
+    maxLength: 500,
+    placeholder: 'Enter the expected items',
+    guide: 'Enter the expected list of answers (up to 500 characters).',
+  },
+  Essay: {
+    maxLength: 1000,
+    placeholder: 'Enter key points or a sample answer',
+    guide: 'Enter the key points or sample answer used to evaluate the essay (up to 1,000 characters).',
+  },
+  Situational: {
+    maxLength: 1000,
+    placeholder: 'Enter the expected response or key points',
+    guide: 'Enter the expected response or key points for this situation (up to 1,000 characters).',
+  },
+};
+
+const getManualMcqChoices = (value) => {
+  const choices = [];
+  const choicePattern = /(?:^|\s)([A-H])[.)]\s+(.+?)(?=\s+[A-H][.)]\s+|$)/g;
+  let match;
+  while ((match = choicePattern.exec(value)) !== null) choices.push(match[2].trim());
+  return choices;
+};
 
 // File-type policies for each upload slot. Extension is checked rather than
 // relying purely on MIME type, since browsers/OS report MIME inconsistently
@@ -55,7 +105,7 @@ const FILE_POLICIES = {
 };
 
 const INPUT_QUESTION_SESSION_KEY = 'bloomquest_input_question_session';
-const INPUT_QUESTION_VALIDATION_VERSION = 2;
+const INPUT_QUESTION_VALIDATION_VERSION = 3;
 
 const serializeFile = (file) => {
   if (!file) return null;
@@ -319,15 +369,11 @@ const InputQuestion = () => {
   const [selectedSubject, setSelectedSubject] = useState('');
   const [subjectCodeQuery, setSubjectCodeQuery] = useState('');
   const [subjectSearchOpen, setSubjectSearchOpen] = useState(false);
-  const [isAddingNewSubject, setIsAddingNewSubject] = useState(false);
-  const [newSubjectName, setNewSubjectName] = useState('');
-  const [newSubjectCode, setNewSubjectCode] = useState('');
 
   // Manual Tab States
   const [manualQuestion, setManualQuestion] = useState('');
   const [manualAnswerKey, setManualAnswerKey] = useState('');
   const [manualQuestionType, setManualQuestionType] = useState('MCQ');
-  const [manualQuestionPoints, setManualQuestionPoints] = useState('');
   const [classifying, setClassifying] = useState(false);
 
   // Upload & Auto-Gen Tab States
@@ -346,7 +392,6 @@ const InputQuestion = () => {
   // Interactive Step Variables for TOS
   const [selectedTopics, setSelectedTopics] = useState([]);
   const [totalPoints, setTotalPoints] = useState('');
-  const [subcolumnAValues, setSubcolumnAValues] = useState({});
   const [totalItems, setTotalItems] = useState('');
   const [examType, setExamType] = useState('Final Exam');
   const [semester, setSemester] = useState('First Semester');
@@ -365,6 +410,13 @@ const InputQuestion = () => {
   const uploadAbortControllerRef = useRef(null);
   const generationRequestInFlightRef = useRef(false);
   const maxQuestionsPerGeneration = Number(uploadResult?.max_questions_per_generation) || MAX_QUESTIONS_PER_GENERATION;
+  const allTopicsHaveCisHours = !!uploadResult?.topics?.length && uploadResult.topics.every((topic) => {
+    const hours = Number(topic.hours);
+    return Number.isFinite(hours) && hours > 0 && hours <= 999;
+  });
+  const academicYearOptions = academicYear && !ACADEMIC_YEAR_OPTIONS.includes(academicYear)
+    ? [academicYear, ...ACADEMIC_YEAR_OPTIONS]
+    : ACADEMIC_YEAR_OPTIONS;
   const isFacultyUser = localStorage.getItem('role')?.toLowerCase() === 'faculty';
   const selectedUploadSubject = subjects.find((subject) => String(subject.id) === String(selectedSubject));
   const facultySubjectMatches = subjects.filter((subject) => (
@@ -374,13 +426,13 @@ const InputQuestion = () => {
 
   useEffect(() => {
     const calculatedTotalItems = selectedQuestionTypes.reduce(
-      (sum, type) => sum + (Number.parseInt(questionTypeItems[type], 10) || 0),
+      (sum, type) => sum + (Number(questionTypeItems[type]) || 0),
       0,
     );
     const calculatedTotalPoints = selectedQuestionTypes.reduce(
       (sum, type) => {
         const points = Number(questionTypePoints[type]);
-        const items = Number.parseInt(questionTypeItems[type], 10);
+        const items = Number(questionTypeItems[type]);
         return sum + (Number.isFinite(points) && Number.isInteger(items) ? points * items : 0);
       },
       0,
@@ -427,7 +479,6 @@ const InputQuestion = () => {
       if (parsed.generationResult) setGenerationResult(parsed.generationResult);
       if (Array.isArray(parsed.excludedQuestionIds)) setExcludedQuestionIds(parsed.excludedQuestionIds);
       if (Array.isArray(parsed.selectedTopics)) setSelectedTopics(parsed.selectedTopics);
-      if (parsed.subcolumnAValues) setSubcolumnAValues(parsed.subcolumnAValues);
       if (Array.isArray(parsed.selectedQuestionTypes)) setSelectedQuestionTypes(parsed.selectedQuestionTypes);
       if (parsed.totalPoints !== undefined) setTotalPoints(parsed.totalPoints);
       if (parsed.totalItems !== undefined) setTotalItems(parsed.totalItems);
@@ -463,7 +514,6 @@ const InputQuestion = () => {
       generationResult,
       excludedQuestionIds,
       selectedTopics,
-      subcolumnAValues,
       selectedQuestionTypes,
       totalPoints,
       totalItems,
@@ -492,7 +542,6 @@ const InputQuestion = () => {
     generationResult,
     excludedQuestionIds,
     selectedTopics,
-    subcolumnAValues,
     selectedQuestionTypes,
     totalPoints,
     totalItems,
@@ -520,7 +569,6 @@ const InputQuestion = () => {
     uploadResult,
     generationResult,
     selectedTopics,
-    subcolumnAValues,
     selectedQuestionTypes,
     totalPoints,
     totalItems,
@@ -554,55 +602,12 @@ const InputQuestion = () => {
     }
   };
 
-  const handleSubjectDropdownChange = (e) => {
-    const val = e.target.value;
-    if (val === 'add_new') {
-      setIsAddingNewSubject(true);
-      setSelectedSubject('');
-    } else {
-      setIsAddingNewSubject(false);
-      setSelectedSubject(val);
-      setSubjectCodeQuery(subjects.find((subject) => String(subject.id) === String(val))?.code || '');
-    }
-  };
-
   const selectFacultySubject = (subject) => {
     if (!subject.has_cis) return;
     setSelectedSubject(String(subject.id));
     setSubjectCodeQuery(subject.code);
     setSubjectSearchOpen(false);
     setError('');
-  };
-
-  const handleCreateCustomSubject = async (e) => {
-    e.preventDefault();
-    if (!newSubjectName.trim()) return;
-
-    setError('');
-    setSuccessMessage('');
-    try {
-      const response = await fetch(`${API_URL}/subjects`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newSubjectName.trim(),
-          code: newSubjectCode.trim() || null,
-        }),
-      });
-
-      const data = await parseApiResponse(response);
-      if (!response.ok) throw new Error(getErrorMessage(data) || 'Failed to register subject.');
-
-      setSubjects(prev => [...prev, data]);
-      setSelectedSubject(data.id);
-      setSubjectCodeQuery(data.code || '');
-      setIsAddingNewSubject(false);
-      setNewSubjectName('');
-      setNewSubjectCode('');
-      setSuccessMessage('🎉 Course area injected into registry framework layout records successfully!');
-    } catch (err) {
-      setError(err.message);
-    }
   };
 
   const handleManualClassification = async () => {
@@ -620,38 +625,49 @@ const InputQuestion = () => {
       setError('Please enter an answer key before classifying and saving the question.');
       return;
     }
-    const manualPoints = Number(manualQuestionPoints);
-    if (!Number.isFinite(manualPoints) || manualPoints <= 0 || manualPoints > 1000) {
-      setError('Enter a valid points value between 0.01 and 1000 for this question type.');
+    const answerKeyConfig = MANUAL_ANSWER_KEY_CONFIG[manualQuestionType];
+    if (normalizedManualAnswerKey.length > answerKeyConfig.maxLength) {
+      setError(`The answer key for ${manualQuestionType} must be ${answerKeyConfig.maxLength} characters or fewer.`);
       return;
     }
-    const choicesFromQuestion = (value) => {
-      const choices = [];
-      const choicePattern = /(?:^|\s)([A-H])[.)]\s+(.+?)(?=\s+[A-H][.)]\s+|$)/g;
-      let match;
-      while ((match = choicePattern.exec(value)) !== null) choices.push(match[2].trim());
-      return choices;
-    };
     let manualOptions = null;
     let answerKeyToSave = normalizedManualAnswerKey;
     let questionToSave = normalizedManualQuestion;
     if (manualQuestionType === 'MCQ') {
-      const detectedChoices = choicesFromQuestion(normalizedManualQuestion);
+      const detectedChoices = getManualMcqChoices(normalizedManualQuestion);
       if (detectedChoices.length < 2) {
         setError('Include the multiple-choice options in the question using A. Choice, B. Choice, and so on. The answer key should be one letter.');
         return;
       }
+      if (!/^[A-H]$/i.test(normalizedManualAnswerKey)) {
+        setError('For Multiple Choice, enter one option letter only, such as A.');
+        return;
+      }
+      const answerIndex = normalizedManualAnswerKey.toUpperCase().charCodeAt(0) - 65;
+      if (answerIndex >= detectedChoices.length) {
+        setError(`The answer key must match one of the ${detectedChoices.length} listed choices.`);
+        return;
+      }
+      answerKeyToSave = normalizedManualAnswerKey.toUpperCase();
       const firstChoiceMarker = normalizedManualQuestion.search(/(?:^|\s)[A-H][.)]\s+/i);
       if (firstChoiceMarker !== -1) {
         questionToSave = normalizedManualQuestion.slice(0, firstChoiceMarker).trim();
       }
       manualOptions = detectedChoices;
     }
-    if (manualQuestionType === 'Matching Type') {
-      if (!/^[A-Za-z](?:\s*,\s*[A-Za-z])*\s*$/.test(normalizedManualAnswerKey)) {
-        setError('For Matching Type, enter answer letters only, such as A, C, B, D.');
+    if (manualQuestionType === 'True or False') {
+      if (!/^(true|false)$/i.test(normalizedManualAnswerKey)) {
+        setError('For True or False, enter only True or False.');
         return;
       }
+      answerKeyToSave = normalizedManualAnswerKey.toLowerCase() === 'true' ? 'True' : 'False';
+    }
+    if (manualQuestionType === 'Matching Type') {
+      if (!/^[A-H](?:\s*,\s*[A-H]){0,7}$/i.test(normalizedManualAnswerKey)) {
+        setError('For Matching Type, enter up to 8 answer letters separated by commas, such as A, C, B, D.');
+        return;
+      }
+      answerKeyToSave = normalizedManualAnswerKey.toUpperCase().replace(/\s*,\s*/g, ', ');
     }
     setError('');
     setSuccessMessage('');
@@ -666,10 +682,7 @@ const InputQuestion = () => {
           correct_answer: answerKeyToSave,
           question_type: manualQuestionType,
           options: manualOptions,
-          points: manualPoints,
-          exam_type: examType,
-          semester,
-          academic_year: academicYear.trim(),
+          points: 1,
           subject_id: parseInt(selectedSubject),
           user_id: Number(localStorage.getItem('user_id')) || null,
         }),
@@ -708,7 +721,6 @@ const InputQuestion = () => {
     setGenerationResult(null);
     setExcludedQuestionIds([]);
     setSelectedTopics([]);
-    setSubcolumnAValues({});
     setWizardStep(1);
     setError('Analysis cancelled. You can remove the uploaded files and try again.');
     persistInputQuestionSession({
@@ -720,7 +732,6 @@ const InputQuestion = () => {
       excludedQuestionIds: [],
       wizardStep: 1,
       selectedTopics: [],
-      subcolumnAValues: {},
       error: 'Analysis cancelled. You can remove the uploaded files and try again.',
     });
   };
@@ -730,7 +741,6 @@ const InputQuestion = () => {
     setGenerationResult(null);
     setExcludedQuestionIds([]);
     setSelectedTopics([]);
-    setSubcolumnAValues({});
     setWizardStep(1);
     persistInputQuestionSession({
       uploadResult: null,
@@ -738,7 +748,6 @@ const InputQuestion = () => {
       excludedQuestionIds: [],
       wizardStep: 1,
       selectedTopics: [],
-      subcolumnAValues: {},
     });
   };
 
@@ -754,18 +763,13 @@ const InputQuestion = () => {
     setModuleFile(null);
     setSyllabusFile(null);
     setSelectedSubject('');
-    setIsAddingNewSubject(false);
-    setNewSubjectName('');
-    setNewSubjectCode('');
     setManualQuestion('');
     setManualAnswerKey('');
     setManualQuestionType('MCQ');
-    setManualQuestionPoints('');
     setUploadResult(null);
     setGenerationResult(null);
     setExcludedQuestionIds([]);
     setSelectedTopics([]);
-    setSubcolumnAValues({});
     setTotalPoints('');
     setTotalItems('');
     setExamType('Final Exam');
@@ -781,6 +785,16 @@ const InputQuestion = () => {
     setError('');
     setSuccessMessage('');
     sessionStorage.removeItem(INPUT_QUESTION_SESSION_KEY);
+  };
+
+  const handleUploadStepContinue = () => {
+    if (uploadResult) {
+      setError('');
+      setWizardStep(2);
+      return;
+    }
+
+    void handleUpload();
   };
 
   const handleFileRemove = (policyKey) => {
@@ -843,7 +857,6 @@ const InputQuestion = () => {
       generationResult: null,
       excludedQuestionIds: [],
       selectedTopics: [],
-      subcolumnAValues: {},
     });
 
     let resetFilesOnMismatch = false;
@@ -875,10 +888,7 @@ const InputQuestion = () => {
       setUploadResult(data);
       if (data.topics) {
         const nextSelectedTopics = data.topics.map((_, idx) => idx);
-        const initialHours = {};
-        data.topics.forEach((_, idx) => { initialHours[idx] = '3.0'; });
         setSelectedTopics(nextSelectedTopics);
-        setSubcolumnAValues(initialHours);
       }
       setWizardStep(2);
       persistInputQuestionSession({
@@ -889,7 +899,6 @@ const InputQuestion = () => {
         generationResult: null,
         wizardStep: 2,
         selectedTopics: data.topics ? data.topics.map((_, idx) => idx) : [],
-        subcolumnAValues: data.topics ? Object.fromEntries(data.topics.map((_, idx) => [idx, '3.0'])) : {},
       });
     } catch (err) {
       if (err.name === 'AbortError') {
@@ -910,7 +919,6 @@ const InputQuestion = () => {
         setGenerationResult(null);
         setExcludedQuestionIds([]);
         setSelectedTopics([]);
-        setSubcolumnAValues({});
         setWizardStep(1);
       }
       uploadFailureMessage = err.message;
@@ -926,7 +934,6 @@ const InputQuestion = () => {
           generationResult: null,
           excludedQuestionIds: [],
           selectedTopics: [],
-          subcolumnAValues: {},
           wizardStep: 1,
         } : {}),
         error: uploadFailureMessage,
@@ -947,7 +954,6 @@ const InputQuestion = () => {
           generationResult: null,
           excludedQuestionIds: [],
           selectedTopics: [],
-          subcolumnAValues: {},
           wizardStep: 1,
           error: uploadFailureMessage,
         } : {}),
@@ -961,8 +967,48 @@ const InputQuestion = () => {
     );
   };
 
-  const handleSubcolumnAChange = (index, value) => {
-    setSubcolumnAValues(prev => ({ ...prev, [index]: value }));
+  const handleContinueToAssessment = () => {
+    if (selectedQuestionTypes.length === 0) {
+      setError('Please select at least one question type to include in the generated assessment.');
+      return;
+    }
+
+    const invalidQuestionCounts = selectedQuestionTypes.some((type) => {
+      const items = Number(questionTypeItems[type]);
+      return !Number.isInteger(items) || items < 1 || items > maxQuestionsPerGeneration;
+    });
+    if (invalidQuestionCounts) {
+      setError(`Please enter a valid number of questions between 1 and ${maxQuestionsPerGeneration} for each selected question type.`);
+      return;
+    }
+
+    const invalidQuestionTypePoints = selectedQuestionTypes.some((type) => {
+      const points = Number(questionTypePoints[type]);
+      return !Number.isInteger(points) || points < 1 || points > 1000;
+    });
+    if (invalidQuestionTypePoints) {
+      setError('Please enter a whole-number points value between 1 and 1000 for each selected question type.');
+      return;
+    }
+
+    setError('');
+    setWizardStep(3);
+  };
+
+  const toggleAllTopics = () => {
+    if (!uploadResult?.topics?.length) return;
+    const allTopicsSelected = uploadResult.topics.every((_, index) => selectedTopics.includes(index));
+    setSelectedTopics(allTopicsSelected ? [] : uploadResult.topics.map((_, index) => index));
+  };
+
+  const handleContinueToTopics = () => {
+    if (!academicYear.trim()) {
+      setError('Please select an academic year before continuing.');
+      return;
+    }
+    if (!totalItems || !totalPoints) return;
+    setError('');
+    setWizardStep(4);
   };
 
   const handleGenerate = async () => {
@@ -971,8 +1017,12 @@ const InputQuestion = () => {
       setError('Please upload and analyze the module and syllabus before generating questions.');
       return;
     }
-    const intTotalItems = parseInt(totalItems, 10);
-    const intTotalPoints = parseInt(totalPoints, 10);
+    if (!academicYear.trim()) {
+      setError('Please select an academic year before generating questions.');
+      return;
+    }
+    const intTotalItems = Number(totalItems);
+    const intTotalPoints = Number(totalPoints);
 
     if (!Number.isInteger(intTotalItems) || intTotalItems < 1) {
       setError('Please enter a valid number of items.');
@@ -982,7 +1032,7 @@ const InputQuestion = () => {
       setError(`A generation can contain at most ${maxQuestionsPerGeneration} questions.`);
       return;
     }
-    if (!Number.isInteger(intTotalPoints) || intTotalPoints < 1 || intTotalPoints > 1000) {
+    if (!Number.isFinite(intTotalPoints) || intTotalPoints < 1 || intTotalPoints > 1000) {
       setError('Please enter a valid total points value between 1 and 1000.');
       return;
     }
@@ -996,14 +1046,14 @@ const InputQuestion = () => {
     }
     const invalidQuestionTypePoints = selectedQuestionTypes.some((type) => {
       const points = Number(questionTypePoints[type]);
-      return !Number.isFinite(points) || points <= 0 || points > 1000;
+      return !Number.isInteger(points) || points < 1 || points > 1000;
     });
     if (invalidQuestionTypePoints) {
-      setError('Please enter a valid points value between 0.01 and 1000 for each selected question type.');
+      setError('Please enter a whole-number points value between 1 and 1000 for each selected question type.');
       return;
     }
     const questionTypeItemCounts = Object.fromEntries(
-      selectedQuestionTypes.map((type) => [type, parseInt(questionTypeItems[type], 10)])
+      selectedQuestionTypes.map((type) => [type, Number(questionTypeItems[type])])
     );
     const invalidQuestionTypeItems = selectedQuestionTypes.some((type) => {
       const items = questionTypeItemCounts[type];
@@ -1022,12 +1072,12 @@ const InputQuestion = () => {
       setError('One or more selected question types are invalid.');
       return;
     }
-    const invalidHours = Object.entries(subcolumnAValues).some(([, value]) => {
-      const num = parseFloat(value);
-      return Number.isNaN(num) || num <= 0;
+    const topicsMissingCisHours = selectedTopics.filter((index) => {
+      const hours = Number(uploadResult.topics[index]?.hours);
+      return !Number.isFinite(hours) || hours <= 0 || hours > 999;
     });
-    if (invalidHours) {
-      setError('Please enter a valid positive number of hours for each selected topic.');
+    if (topicsMissingCisHours.length) {
+      setError(`The CIS does not specify valid hours for: ${topicsMissingCisHours.map((index) => safeRenderValue(uploadResult.topics[index]?.name) || `Topic ${index + 1}`).join(', ')}. Ask your Department Admin to update the Course Information Sheet.`);
       return;
     }
 
@@ -1050,9 +1100,6 @@ const InputQuestion = () => {
         whole_total_points: intTotalPoints,
         question_types: selectedQuestionTypes,
         selected_topic_indices: selectedTopics,
-        subcolumn_a_hours: Object.fromEntries(
-          Object.entries(subcolumnAValues).map(([key, value]) => [String(key), String(value)])
-        ),
         exam_type: examType,
         semester,
         academic_year: academicYear.trim(),
@@ -1085,7 +1132,6 @@ const InputQuestion = () => {
           setGenerationResult(null);
           setExcludedQuestionIds([]);
           setSelectedTopics([]);
-          setSubcolumnAValues({});
           setWizardStep(1);
           setError('');
           persistInputQuestionSession({
@@ -1096,7 +1142,6 @@ const InputQuestion = () => {
             generationResult: null,
             excludedQuestionIds: [],
             selectedTopics: [],
-            subcolumnAValues: {},
             wizardStep: 1,
             error: '',
           });
@@ -1143,7 +1188,6 @@ const InputQuestion = () => {
           generationResult: null,
           excludedQuestionIds: [],
           selectedTopics: [],
-          subcolumnAValues: {},
           wizardStep: 1,
           error: '',
         } : {}),
@@ -1257,13 +1301,6 @@ const InputQuestion = () => {
     }
   };
 
-  const startDownload = (endpoint, filename) => {
-    if (downloadingFile) return;
-    setError('');
-    setDownloadingFile(endpoint);
-    void downloadFile(endpoint, filename);
-  };
-
   const startFilePreview = (endpoint, filename) => {
     if (downloadingFile) return;
     setError('');
@@ -1273,6 +1310,23 @@ const InputQuestion = () => {
 
   const downloadSubjectCode = (uploadResult?.subject?.code || uploadResult?.subject?.name || 'assessment').trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
   const downloadExamType = examType.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
+  const manualAnswerKeyConfig = MANUAL_ANSWER_KEY_CONFIG[manualQuestionType];
+  const manualMcqChoiceCount = manualQuestionType === 'MCQ' ? getManualMcqChoices(manualQuestion).length : 0;
+  const handleManualAnswerKeyChange = (value) => {
+    if (manualQuestionType === 'MCQ') {
+      setManualAnswerKey(value.replace(/[^A-H]/gi, '').slice(0, 1).toUpperCase());
+      return;
+    }
+    if (manualQuestionType === 'True or False') {
+      setManualAnswerKey(value.replace(/[^a-z]/gi, '').slice(0, 5));
+      return;
+    }
+    if (manualQuestionType === 'Matching Type') {
+      setManualAnswerKey(value.replace(/[^A-H,\s]/gi, '').slice(0, manualAnswerKeyConfig.maxLength));
+      return;
+    }
+    setManualAnswerKey(value.slice(0, manualAnswerKeyConfig.maxLength));
+  };
 
   return (
     <>
@@ -1371,57 +1425,25 @@ const InputQuestion = () => {
                 <select
                   className="w-full border border-gray-200 rounded-md p-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-400 cursor-pointer"
                   value={selectedSubject}
-                  onChange={handleSubjectDropdownChange}
+                  onChange={(event) => {
+                    const subjectId = event.target.value;
+                    setSelectedSubject(subjectId);
+                    setSubjectCodeQuery(subjects.find((subject) => String(subject.id) === subjectId)?.code || '');
+                  }}
                 >
                   <option value="">— Select Associated Subject —</option>
                   {subjects.map(s => (
                     <option key={s.id} value={s.id}>{s.name} {s.code ? `(${s.code})` : ''}</option>
                   ))}
-                  <option value="add_new" className="text-red-600 font-semibold">+ Add New Subject Option...</option>
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Question Type</label>
-                <select value={manualQuestionType} onChange={(e) => setManualQuestionType(e.target.value)} className="w-full border border-gray-200 rounded-md p-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-400 cursor-pointer">
+                <select value={manualQuestionType} onChange={(e) => { setManualQuestionType(e.target.value); setManualAnswerKey(''); }} className="w-full border border-gray-200 rounded-md p-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-400 cursor-pointer">
                   {QUESTION_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Points for Question Type</label>
-                <input type="number" min="0.01" step="0.01" max="1000" value={manualQuestionPoints} onChange={(e) => setManualQuestionPoints(e.target.value)} placeholder="e.g. 2" className="w-full border border-gray-200 rounded-md p-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-400" />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Kind of Exam</label>
-                <select value={examType} onChange={(e) => setExamType(e.target.value)} className="w-full border border-gray-200 rounded-md p-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-400">
-                  {EXAM_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Semester</label>
-                <select value={semester} onChange={(e) => setSemester(e.target.value)} className="w-full border border-gray-200 rounded-md p-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-400">
-                  {SEMESTER_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Academic Year</label>
-                <input type="text" value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} placeholder="e.g. 2026-2027" className="w-full border border-gray-200 rounded-md p-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-400" />
-              </div>
-
             </div>
-
-            {isAddingNewSubject && (
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
-                <h4 className="text-xs font-bold text-gray-700 uppercase">Register New Curricular Course Component</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <input type="text" placeholder="Subject Title (e.g., Software Engineering)" className="border rounded px-3 py-2 text-sm focus:border-red-400 outline-none" value={newSubjectName} onChange={(e) => setNewSubjectName(e.target.value)} />
-                  <input type="text" placeholder="Subject Key Code (e.g., COMSCI302)" className="border rounded px-3 py-2 text-sm focus:border-red-400 outline-none" value={newSubjectCode} onChange={(e) => setNewSubjectCode(e.target.value)} />
-                </div>
-                <div className="flex justify-end gap-2">
-                  <button onClick={() => setIsAddingNewSubject(false)} className="text-xs bg-gray-200 text-gray-700 px-3 py-1.5 rounded-md font-medium">Cancel</button>
-                  <button onClick={handleCreateCustomSubject} className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-md font-medium">Save Subject</button>
-                </div>
-              </div>
-            )}
 
             <div className="relative">
               <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Question Input Content Area</label>
@@ -1438,15 +1460,37 @@ const InputQuestion = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Answer Key</label>
-              <textarea
-                className="w-full min-h-20 p-3 border border-gray-200 rounded-md focus:ring-1 focus:border-red-500 outline-none resize-y text-gray-700 text-sm"
-                placeholder="Enter the correct answer or answer key..."
-                maxLength={2000}
-                value={manualAnswerKey}
-                onChange={(e) => setManualAnswerKey(e.target.value)}
-              />
-              <p className="mt-1 text-xs text-gray-400">For MCQ, enter one letter such as A or B. For Matching Type, enter answer letters only, such as A, C, B, D.</p>
+              <label htmlFor="manual-answer-key" className="block text-xs font-bold text-gray-600 uppercase mb-2">Answer Key</label>
+              {['MCQ', 'True or False', 'Identification', 'Matching Type'].includes(manualQuestionType) ? (
+                <input
+                  id="manual-answer-key"
+                  type="text"
+                  required
+                  maxLength={manualAnswerKeyConfig.maxLength}
+                  aria-describedby="manual-answer-key-guide"
+                  className="w-full border border-gray-200 rounded-md p-3 focus:ring-1 focus:border-red-500 outline-none text-gray-700 text-sm"
+                  placeholder={manualAnswerKeyConfig.placeholder}
+                  value={manualAnswerKey}
+                  onChange={(e) => handleManualAnswerKeyChange(e.target.value)}
+                />
+              ) : (
+                <textarea
+                  id="manual-answer-key"
+                  required
+                  maxLength={manualAnswerKeyConfig.maxLength}
+                  aria-describedby="manual-answer-key-guide"
+                  className="w-full min-h-20 p-3 border border-gray-200 rounded-md focus:ring-1 focus:border-red-500 outline-none resize-y text-gray-700 text-sm"
+                  placeholder={manualAnswerKeyConfig.placeholder}
+                  value={manualAnswerKey}
+                  onChange={(e) => handleManualAnswerKeyChange(e.target.value)}
+                />
+              )}
+              <div id="manual-answer-key-guide" className="mt-1 flex flex-wrap justify-between gap-x-3 text-xs text-gray-400">
+                <span>{manualQuestionType === 'MCQ' && manualMcqChoiceCount
+                  ? `${manualAnswerKeyConfig.guide} ${manualMcqChoiceCount} option${manualMcqChoiceCount === 1 ? '' : 's'} detected.`
+                  : manualAnswerKeyConfig.guide}</span>
+                <span className="ml-auto">{manualAnswerKey.length}/{manualAnswerKeyConfig.maxLength}</span>
+              </div>
             </div>
 
             <div className="flex justify-end">
@@ -1582,12 +1626,12 @@ const InputQuestion = () => {
 
                 <div className="mt-6 flex justify-end border-t pt-4" style={{ borderColor: border }}>
                   <button
-                    onClick={handleUpload}
-                    disabled={uploading || !moduleFile || (!isFacultyUser && !syllabusFile) || !!uploadResult || (isFacultyUser && (!selectedSubject || !selectedSubjectHasCis))}
+                    onClick={handleUploadStepContinue}
+                    disabled={uploading || (!uploadResult && (!moduleFile || (!isFacultyUser && !syllabusFile) || (isFacultyUser && (!selectedSubject || !selectedSubjectHasCis))))}
                     className="rounded-lg px-5 py-2.5 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
                     style={{ backgroundColor: PRIMARY }}
                   >
-                    {uploading ? 'Analyzing…' : 'Analyze Files'}
+                    {uploading ? 'Analyzing…' : uploadResult ? 'Next' : 'Analyze Files'}
                   </button>
                 </div>
               </div>
@@ -1625,8 +1669,8 @@ const InputQuestion = () => {
                             </label>
                             {isChecked && (
                               <div className="mt-2 space-y-2">
-                                <input type="number" min="0.01" step="0.01" max="1000" value={questionTypePoints[option.value] || ''} onChange={(e) => setQuestionTypePoints((current) => ({ ...current, [option.value]: e.target.value }))} placeholder="Points per question" className="w-full rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-red-400" />
-                                {questionTypePoints[option.value] && <input type="number" min="1" step="1" max={maxQuestionsPerGeneration} value={questionTypeItems[option.value] || ''} onChange={(e) => setQuestionTypeItems((current) => ({ ...current, [option.value]: e.target.value }))} placeholder="Number of questions" className="w-full rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-red-400" />}
+                                <input type="number" min="1" step="1" max={maxQuestionsPerGeneration} required value={questionTypeItems[option.value] ?? ''} onChange={(e) => setQuestionTypeItems((current) => ({ ...current, [option.value]: e.target.value }))} placeholder="Number of questions" aria-label={`Number of questions for ${option.label}`} className="bq-hide-number-spinner w-full rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-red-400" />
+                                <input type="number" min="1" step="1" max="1000" required value={questionTypePoints[option.value] ?? ''} onChange={(e) => { if (/^\d*$/.test(e.target.value)) setQuestionTypePoints((current) => ({ ...current, [option.value]: e.target.value })); }} placeholder="Points per question" aria-label={`Points per question for ${option.label}`} className="bq-hide-number-spinner w-full rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-red-400" />
                               </div>
                             )}
                           </div>
@@ -1647,7 +1691,7 @@ const InputQuestion = () => {
 
                     <div className="mt-8 flex items-center justify-between border-t border-slate-200 pt-5">
                       <button type="button" onClick={() => setWizardStep(1)} className="bq-secondary-button">Back</button>
-                      <button type="button" onClick={() => setWizardStep(3)} disabled={selectedQuestionTypes.length === 0} className="bq-primary-button disabled:cursor-not-allowed disabled:bg-gray-300">Next: Assessment Details</button>
+                      <button type="button" onClick={handleContinueToAssessment} disabled={selectedQuestionTypes.length === 0} className="bq-primary-button disabled:cursor-not-allowed disabled:bg-gray-300">Next: Assessment Details</button>
                     </div>
                   </div>
                 )}
@@ -1675,13 +1719,16 @@ const InputQuestion = () => {
                       </div>
                       <div>
                         <label className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">Academic Year</label>
-                        <input type="text" value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} placeholder="e.g. 2026-2027" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:bg-white" />
+                        <select required aria-required="true" value={academicYear} onChange={(e) => { setAcademicYear(e.target.value); setError(''); }} className="w-full cursor-pointer rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:bg-white">
+                          <option value="">Select Academic Year</option>
+                          {academicYearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
+                        </select>
                       </div>
                     </div>
 
                     <div className="mt-8 flex items-center justify-between border-t border-slate-200 pt-5">
                       <button type="button" onClick={() => setWizardStep(2)} className="bq-secondary-button">Back</button>
-                      <button type="button" onClick={() => setWizardStep(4)} disabled={!totalItems || !totalPoints} className="bq-primary-button disabled:cursor-not-allowed disabled:bg-gray-300">Next: Topics &amp; Generate</button>
+                      <button type="button" onClick={handleContinueToTopics} disabled={!totalItems || !totalPoints} className="bq-primary-button disabled:cursor-not-allowed disabled:bg-gray-300">Next: Topics &amp; Generate</button>
                     </div>
                   </div>
                 )}
@@ -1697,7 +1744,7 @@ const InputQuestion = () => {
                         <div>
                           <p className="text-[11px] font-bold uppercase tracking-[0.14em]" style={{ color: PRIMARY }}>Create Assessment</p>
                           <h3 className="mt-1 text-xl font-bold text-slate-900">Detected Subject &amp; Main Topics</h3>
-                          <p className="mt-1 text-sm text-slate-500">Review the detected topics and assign the hours that will shape your assessment matrix.</p>
+                          <p className="mt-1 text-sm text-slate-500">Review the topics and hours extracted from the Course Information Sheet.</p>
                         </div>
                       </div>
 
@@ -1710,7 +1757,12 @@ const InputQuestion = () => {
                       )}
 
                       <div>
-                        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-400">Topics Detected &amp; Hours Covered ({uploadResult.topics.length})</p>
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-400">Topics Detected &amp; Hours Covered ({uploadResult.topics.length})</p>
+                          <button type="button" onClick={toggleAllTopics} disabled={!!generationResult || !uploadResult.topics.length} aria-pressed={uploadResult.topics.length > 0 && uploadResult.topics.every((_, index) => selectedTopics.includes(index))} className="text-xs font-semibold text-rose-700 hover:text-rose-900 disabled:cursor-not-allowed disabled:opacity-50">
+                            {uploadResult.topics.length > 0 && uploadResult.topics.every((_, index) => selectedTopics.includes(index)) ? 'Clear selection' : 'Select all'}
+                          </button>
+                        </div>
                         <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200">
                           {uploadResult.topics.map((topic, i) => (
                             <div key={i} className="flex flex-col items-start gap-3 px-4 py-3.5 transition-colors hover:bg-slate-50 sm:flex-row sm:items-center sm:gap-4">
@@ -1719,13 +1771,12 @@ const InputQuestion = () => {
                                 <p className="truncate text-sm font-semibold text-slate-800">{safeRenderValue(topic.name)}</p>
                                 <p className="truncate text-xs italic text-slate-400">{safeRenderValue(topic.ilo) || 'No ILO provided'}</p>
                               </div>
-                              {selectedTopics.includes(i) && (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">Hours</span>
-                                  <input type="number" step="0.5" value={subcolumnAValues[i] || ''} onChange={(e) => handleSubcolumnAChange(i, e.target.value)} className="w-16 rounded-md border border-slate-300 px-2 py-1 text-center text-sm text-slate-800 outline-none focus:border-slate-500" disabled={!!generationResult} />
-                                </div>
-                              )}
-                              <span className="w-12 shrink-0 text-right text-sm font-bold" style={{ color: PRIMARY }}>{Math.round((topic.weight || 0) * 100)}%</span>
+                              <span className="text-xs font-medium text-slate-600">
+                                {Number.isFinite(Number(topic.hours)) && Number(topic.hours) > 0
+                                  ? `${Number(topic.hours)} ${Number(topic.hours) === 1 ? 'hour' : 'hours'}`
+                                  : 'Hours not specified in CIS'}
+                              </span>
+                              <span className="w-12 shrink-0 text-right text-sm font-bold" style={{ color: PRIMARY }}>{allTopicsHaveCisHours ? `${Math.round((topic.weight || 0) * 100)}%` : '—'}</span>
                             </div>
                           ))}
                         </div>
@@ -1785,34 +1836,22 @@ const InputQuestion = () => {
                   </div>
                   {generationResult.saved && <div className="flex flex-wrap items-center justify-end gap-3">
                     <div className="flex flex-wrap gap-1.5">
-                      <button type="button" onClick={() => startFilePreview('tos', `${downloadSubjectCode}-${downloadExamType}-TOS.xlsx`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 border border-blue-200 bg-white text-blue-800 hover:bg-blue-50 text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
-                        {downloadingFile === 'tos' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Preparing…</> : <><Eye className="h-3.5 w-3.5" /> Preview TOS</>}
-                      </button>
-                      <button type="button" onClick={() => startDownload('tos', `${downloadSubjectCode}-${downloadExamType}-TOS.xlsx`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
-                        {downloadingFile === 'tos' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Downloading TOS…</> : 'Download TOS (.xlsx)'}
+                      <button type="button" onClick={() => startFilePreview('tos', `${downloadSubjectCode}-${downloadExamType}-TOS.xlsx`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
+                        {downloadingFile === 'tos' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Preparing preview…</> : 'Download TOS (.xlsx)'}
                       </button>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
-                      <button type="button" onClick={() => startFilePreview('tos/pdf', `${downloadSubjectCode}-${downloadExamType}-TOS.pdf`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 border border-blue-200 bg-white text-blue-900 hover:bg-blue-50 text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
-                        {downloadingFile === 'tos/pdf' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Preparing…</> : <><Eye className="h-3.5 w-3.5" /> Preview PDF</>}
-                      </button>
-                      <button type="button" onClick={() => startDownload('tos/pdf', `${downloadSubjectCode}-${downloadExamType}-TOS.pdf`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 bg-blue-800 hover:bg-blue-900 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
-                        {downloadingFile === 'tos/pdf' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Downloading TOS…</> : 'Download TOS (.pdf)'}
+                      <button type="button" onClick={() => startFilePreview('tos/pdf', `${downloadSubjectCode}-${downloadExamType}-TOS.pdf`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 bg-blue-800 hover:bg-blue-900 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
+                        {downloadingFile === 'tos/pdf' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Preparing preview…</> : 'Download TOS (.pdf)'}
                       </button>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 border-l border-slate-200 pl-3">
                       <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">Assessment</span>
-                      <button type="button" onClick={() => startFilePreview('assessment/docx', `${downloadSubjectCode}-${downloadExamType}-Test.docx`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 border border-purple-200 bg-white text-purple-800 hover:bg-purple-50 text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
-                        {downloadingFile === 'assessment/docx' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Preparing…</> : <><Eye className="h-3.5 w-3.5" /> Preview DOCX</>}
+                      <button type="button" onClick={() => startFilePreview('assessment/docx', `${downloadSubjectCode}-${downloadExamType}-Test.docx`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
+                        {downloadingFile === 'assessment/docx' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Preparing preview…</> : 'Download Test (.docx)'}
                       </button>
-                      <button type="button" onClick={() => startDownload('assessment/docx', `${downloadSubjectCode}-${downloadExamType}-Test.docx`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
-                        {downloadingFile === 'assessment/docx' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Downloading Test…</> : 'Download Test (.docx)'}
-                      </button>
-                      <button type="button" onClick={() => startFilePreview('assessment/pdf', `${downloadSubjectCode}-${downloadExamType}-Test.pdf`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 border border-red-200 bg-white text-red-800 hover:bg-red-50 text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
-                        {downloadingFile === 'assessment/pdf' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Preparing…</> : <><Eye className="h-3.5 w-3.5" /> Preview PDF</>}
-                      </button>
-                      <button type="button" onClick={() => startDownload('assessment/pdf', `${downloadSubjectCode}-${downloadExamType}-Test.pdf`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
-                        {downloadingFile === 'assessment/pdf' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Downloading Test…</> : 'Download Test (.pdf)'}
+                      <button type="button" onClick={() => startFilePreview('assessment/pdf', `${downloadSubjectCode}-${downloadExamType}-Test.pdf`)} disabled={!!downloadingFile} className="inline-flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-medium shadow-sm transition-colors disabled:cursor-wait disabled:opacity-70">
+                        {downloadingFile === 'assessment/pdf' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Preparing preview…</> : 'Download Test (.pdf)'}
                       </button>
                     </div>
                   </div>}

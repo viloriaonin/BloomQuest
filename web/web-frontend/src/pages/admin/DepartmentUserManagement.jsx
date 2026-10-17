@@ -49,8 +49,8 @@ const formatDate = (value, includeTime = false) => {
 const initialsFor = (name) =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "F";
 
-const DepartmentUserManagement = ({ initialUserId = null, onClose }) => {
-  const { showConfirm } = usePopup();
+const DepartmentUserManagement = ({ initialUserId = null, onClose, onDeleted }) => {
+  const { showAlert, showConfirm } = usePopup();
   const [users, setUsers] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [department, setDepartment] = useState("");
@@ -265,11 +265,16 @@ const DepartmentUserManagement = ({ initialUserId = null, onClose }) => {
     setNotice("");
     try {
       await request(`/department-admin/users/${detail.id}`, { method: "DELETE" });
-      setSelectedUserId(null);
-      setDetail(null);
-      if (!onClose) await loadUsers();
-      setNotice("Faculty account permanently deleted.");
-      if (onClose) onClose();
+      if (onDeleted) {
+        await onDeleted(detail);
+      } else {
+        setSelectedUserId(null);
+        setDetail(null);
+        if (!onClose) await loadUsers();
+        setNotice("Faculty account permanently deleted.");
+        if (onClose) onClose();
+      }
+      await showAlert("Faculty account permanently deleted.", "Account Deleted");
     } catch (actionError) {
       setError(actionError.message || "Could not delete the faculty account.");
     } finally {

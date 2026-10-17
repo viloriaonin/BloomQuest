@@ -13,6 +13,43 @@ beforeEach(() => {
 
 afterEach(() => {
   delete global.fetch;
+  localStorage.removeItem("token");
+  localStorage.removeItem("must_change_password");
+});
+
+test("faculty must change the temporary password immediately after first login", async () => {
+  window.history.replaceState({}, "", "/set-password?force=1");
+  localStorage.setItem("token", "faculty-session-token");
+  localStorage.setItem("must_change_password", "true");
+
+  render(
+    <MemoryRouter initialEntries={["/set-password?force=1"]}>
+      <Routes>
+        <Route path="/set-password" element={<SetPassword />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  expect(screen.getByRole("heading", { name: "Change your temporary password now" })).toBeInTheDocument();
+  expect(screen.getByText(/must complete this change before you can access BloomQuest/i)).toBeInTheDocument();
+  expect(screen.queryByLabelText("Temporary password")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("New password"), { target: { value: "PermanentPassword2!" } });
+  fireEvent.change(screen.getByLabelText("Confirm new password"), { target: { value: "PermanentPassword2!" } });
+  fireEvent.click(screen.getByRole("button", { name: "Set password" }));
+
+  await waitFor(() => {
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/user/initial-password/change"),
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "Bearer faculty-session-token" }),
+        body: JSON.stringify({ new_password: "PermanentPassword2!" }),
+      }),
+    );
+  });
+  expect(await screen.findByRole("heading", { name: "Password set successfully" })).toBeInTheDocument();
+  expect(localStorage.getItem("must_change_password")).toBeNull();
+  expect(screen.getByRole("link", { name: "Continue to BloomQuest" })).toHaveAttribute("href", "/dashboard");
 });
 
 test("faculty can set a permanent password using the email token and temporary password", async () => {

@@ -43,13 +43,6 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
   const [passwordError, setPasswordError] = useState("");
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [showPasswordValues, setShowPasswordValues] = useState(false);
-  const [departments, setDepartments] = useState([]);
-  const [requestedDepartment, setRequestedDepartment] = useState("");
-  const [requestedProgram, setRequestedProgram] = useState("");
-  const [changeRequestMessage, setChangeRequestMessage] = useState("");
-  const [changeRequestSubmitting, setChangeRequestSubmitting] = useState(false);
-  const userId = localStorage.getItem("user_id");
-
   const [settings, setSettings] = useState(() => {
     try {
       return {
@@ -117,44 +110,6 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
 
   const handleSaveClick = () => {
     setConfirmSaveOpen(true);
-  };
-
-  useEffect(() => {
-    if (section !== "settings") return;
-    fetch(`${API_URL}/departments`).then((response) => response.ok ? response.json() : []).then((data) => setDepartments(Array.isArray(data) ? data : [])).catch(() => setDepartments([]));
-  }, [section]);
-
-  const requestDepartmentChange = async () => {
-    if (!userId) {
-      setChangeRequestMessage("Your session is missing a user id. Please sign in again.");
-      return;
-    }
-
-    if (!requestedDepartment && !requestedProgram) {
-      setChangeRequestMessage("Choose a department or program to request a change.");
-      return;
-    }
-
-    const selectedProgram = departments
-      .flatMap((department) => (department.programs || []).map((program) => ({ ...program, department: department.name })))
-      .find((program) => String(program.id) === requestedProgram);
-
-    const payload = requestedProgram && selectedProgram
-      ? { user_id: Number(userId), request_type: "program", requested_value: String(selectedProgram.id) }
-      : { user_id: Number(userId), request_type: "department", requested_value: requestedDepartment };
-
-    setChangeRequestSubmitting(true);
-    setChangeRequestMessage("");
-    try {
-      const response = await fetch(`${API_URL}/user-change-requests`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.detail || "Could not submit the request.");
-      setChangeRequestMessage(`Request submitted for administrator review (${payload.request_type}).`);
-    } catch (error) {
-      setChangeRequestMessage(error.message || "Could not submit the request.");
-    } finally {
-      setChangeRequestSubmitting(false);
-    }
   };
 
   const confirmSaveSettings = async () => {
@@ -482,24 +437,6 @@ const UserWorkspacePage = ({ section, theme = "dark", onThemeChange }) => {
                     {saveMessage}
                   </div>
                 )}
-                {isFaculty && <div className="border-t pt-4" style={{ borderColor: "rgba(15,23,42,0.08)" }}>
-                  <p className="text-sm font-semibold" style={{ color: "#0F172A" }}>Request a department or program change</p>
-                  <p className="mt-1 text-xs" style={{ color: "#64748B" }}>Your current assignment stays in place until an administrator approves the request.</p>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    <select aria-label="Requested department" value={requestedDepartment} onChange={(event) => { setRequestedDepartment(event.target.value); if (event.target.value) setRequestedProgram(""); setChangeRequestMessage(""); }} className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "rgba(15,23,42,0.12)" }}>
-                      <option value="">Select a department</option>
-                      {departments.map((department) => <option key={department.id} value={department.name}>{department.name}</option>)}
-                    </select>
-                    <select aria-label="Requested program" value={requestedProgram} onChange={(event) => { setRequestedProgram(event.target.value); if (event.target.value) setRequestedDepartment(""); setChangeRequestMessage(""); }} className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "rgba(15,23,42,0.12)" }}>
-                      <option value="">Select a program</option>
-                      {departments.flatMap((department) => (department.programs || []).map((program) => (
-                        <option key={program.id} value={String(program.id)}>{department.name} / {program.name}</option>
-                      )))}
-                    </select>
-                  </div>
-                  <div className="mt-3"><button type="button" onClick={requestDepartmentChange} disabled={changeRequestSubmitting} className="bq-secondary-button disabled:cursor-not-allowed disabled:opacity-60">{changeRequestSubmitting ? "Submitting..." : "Submit request"}</button></div>
-                  {changeRequestMessage && <p role="status" className="mt-2 text-xs" style={{ color: changeRequestMessage.startsWith("Request submitted") ? "#166534" : "#B91C1C" }}>{changeRequestMessage}</p>}
-                </div>}
               </div>
             </div>
 

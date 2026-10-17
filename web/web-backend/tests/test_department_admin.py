@@ -17,7 +17,11 @@ import models
 import main
 from database import Base, get_db
 from main import app, hash_password, verify_password
-from security import assert_user_subject_campus_access, get_current_user
+from security import (
+    assert_user_subject_campus_access,
+    get_current_user,
+    get_current_user_for_initial_password_change,
+)
 
 
 @pytest.fixture
@@ -1429,6 +1433,7 @@ def test_department_admin_can_correct_email_and_resend_invitation_until_first_lo
                 },
             )
             assert login.status_code == 200, login.text
+            assert login.json()["must_change_password"] is True
             db_session.refresh(faculty)
             assert faculty.first_login_at is not None
             locked_email = client.patch(
@@ -1442,6 +1447,61 @@ def test_department_admin_can_correct_email_and_resend_invitation_until_first_lo
         assert locked_email.status_code == 409
         assert locked_resend.status_code == 409
         assert faculty.email == "corrected@example.edu"
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous)
+
+
+def test_first_login_faculty_can_only_clear_temporary_password_with_new_password(db_session, monkeypatch):
+    faculty = models.User(
+        email="first-login-faculty@example.edu",
+        password=hash_password("TemporaryPassword1!"),
+        role="faculty",
+        name="First Login Faculty",
+        password_setup_token_hash="pending-setup-token-hash",
+        password_setup_token_expires_at=main.utc_now() + main.timedelta(hours=24),
+        archived=False,
+    )
+    db_session.add(faculty)
+    db_session.commit()
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+
+    session_token = "faculty-first-login-session-token"
+    db_session.add(models.UserSession(
+        user_id=faculty.id,
+        token_hash=main.hashlib.sha256(session_token.encode()).hexdigest(),
+        expires_at=main.utc_now() + main.timedelta(hours=12),
+    ))
+    db_session.commit()
+    with pytest.raises(HTTPException) as blocked:
+        get_current_user(authorization=f"Bearer {session_token}", db=db_session)
+    assert blocked.value.status_code == 403
+
+    previous = with_test_dependencies(db_session, faculty)
+    app.dependency_overrides[get_current_user_for_initial_password_change] = lambda: faculty
+    try:
+        with TestClient(app) as client:
+            same_password = client.post(
+                "/api/user/initial-password/change",
+                json={"new_password": "TemporaryPassword1!"},
+            )
+            changed = client.post(
+                "/api/user/initial-password/change",
+                json={"new_password": "PermanentPassword2!"},
+            )
+            repeated = client.post(
+                "/api/user/initial-password/change",
+                json={"new_password": "PermanentPassword3!"},
+            )
+
+        assert same_password.status_code == 400
+        assert changed.status_code == 200, changed.text
+        assert repeated.status_code == 409
+        db_session.refresh(faculty)
+        assert verify_password("PermanentPassword2!", faculty.password)
+        assert faculty.password_setup_token_hash is None
+        assert faculty.password_setup_token_expires_at is None
+        assert faculty.first_login_at is not None
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(previous)

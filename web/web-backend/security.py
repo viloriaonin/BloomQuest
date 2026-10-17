@@ -9,6 +9,21 @@ import models
 
 
 def get_current_user(authorization: str = Header(None), db: Session = Depends(get_db)):
+    return _get_current_user(authorization, db, allow_initial_password_change=False)
+
+
+def get_current_user_for_initial_password_change(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db),
+):
+    return _get_current_user(authorization, db, allow_initial_password_change=True)
+
+
+def _get_current_user(
+    authorization: str,
+    db: Session,
+    allow_initial_password_change: bool,
+):
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Authentication required")
 
@@ -27,6 +42,16 @@ def get_current_user(authorization: str = Header(None), db: Session = Depends(ge
     ).first()
     if not user:
         raise HTTPException(status_code=401, detail="Account is inactive")
+
+    if (
+        not allow_initial_password_change
+        and str(user.role).lower() == "faculty"
+        and user.password_setup_token_hash
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="You must change your temporary password before continuing.",
+        )
 
     campus_id = user_campus_id(db, user)
     if campus_id is not None:

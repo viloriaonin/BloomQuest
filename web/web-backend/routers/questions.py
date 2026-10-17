@@ -1,10 +1,12 @@
 import io
+import math
 import os
 import re
 import json
 import logging
 import time
 import uuid
+import tempfile
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
@@ -35,6 +37,7 @@ from ai_service import (
     prepare_database_rows,
     statistics,
     parse_syllabus_text_with_ai,
+    _normalize_ai_hours,
     _extract_ilo_label,
     GroqDailyQuotaExceeded,
 )
@@ -50,6 +53,7 @@ from routers.assessment import (
     build_assessment_docx as build_shared_assessment_docx,
     cleanup_file,
     convert_docx_to_pdf,
+    convert_xlsx_to_pdf,
 )
 
 router = APIRouter(prefix="/api/questions", tags=["Questions"], dependencies=[Depends(get_current_user)])
@@ -559,6 +563,14 @@ def _find_tla_header_row(ws, max_row=400):
         topic_col = next((c for c, v in row_text.items() if "topics" in v.lower() and "reading" in v.lower()), None)
         if ch_col is not None and topic_col is not None:
             outcome_col = next((c for c, v in row_text.items() if "topic outcomes" in v.lower()), None)
+            hours_col = next((
+                c for c, v in row_text.items()
+                if re.search(r"\b(?:contact\s+hours?|hours?|hrs?)\b", v.lower())
+            ), None)
+            delivery_method_col = next((
+                c for c, v in row_text.items()
+                if "delivery method" in v.lower()
+            ), None)
             # Separate "ILO" header column -- distinct from "Topic
             # Outcomes". This CIS template maps each row to a short ILO
             # label (e.g. "ILO1") in its own column, apart from the
@@ -572,6 +584,8 @@ def _find_tla_header_row(ws, max_row=400):
                 "topic_col": topic_col,
                 "outcome_col": outcome_col,
                 "ilo_col": ilo_col,
+                "hours_col": hours_col,
+                "delivery_method_col": delivery_method_col,
             }
     return None
 
@@ -580,6 +594,7 @@ def _try_parse_number(val):
     if isinstance(val, (int, float)): return float(val)
     try: return float(str(val).strip())
     except ValueError: return None
+
 
 def parse_syllabus_excel(contents: bytes):
     import openpyxl
@@ -609,6 +624,8 @@ def parse_syllabus_excel(contents: bytes):
     topic_col = header_info["topic_col"]
     outcome_col = header_info["outcome_col"]
     ilo_col = header_info.get("ilo_col")
+    hours_col = header_info.get("hours_col")
+    delivery_method_col = header_info.get("delivery_method_col")
     start_row = header_info["header_row"] + 1
 
     detected_topics = []
@@ -620,12 +637,16 @@ def parse_syllabus_excel(contents: bytes):
         if ch_num is not None and topic_val and str(topic_val).strip():
             outcome_val = ws.cell(row=r, column=outcome_col).value if outcome_col else None
             ilo_val = ws.cell(row=r, column=ilo_col).value if ilo_col else None
+            hours_val = ws.cell(row=r, column=hours_col).value if hours_col else None
+            delivery_method_val = ws.cell(row=r, column=delivery_method_col).value if delivery_method_col else None
 
             detected_topics.append({
                 "name": _main_topic_from_cell(topic_val) or str(topic_val).strip(),
                 "weight": 1.0,
                 "ilo": _extract_ilo_label(str(ilo_val)) if ilo_val else "Not specified in CIS -- please review.",
                 "ilo_description": _ilo_from_cell(outcome_val) if outcome_val else "",
+                "delivery_method": str(delivery_method_val).strip() if delivery_method_val else "",
+                "hours": _normalize_ai_hours(hours_val, delivery_method_val),
             })
             continue
         if ch_val is not None and str(ch_val).strip() and ch_num is None:
@@ -948,6 +969,22 @@ async def upload_and_analyze_syllabus(
                 },
             )
 
+        topic_hours = [topic.get("hours") for topic in detected_topics]
+        has_complete_topic_hours = bool(topic_hours) and all(
+            isinstance(hours, (int, float))
+            and not isinstance(hours, bool)
+            and math.isfinite(float(hours))
+            and 0 < float(hours) <= 999
+            for hours in topic_hours
+        )
+        total_cis_hours = sum(float(hours) for hours in topic_hours) if has_complete_topic_hours else 0
+        for topic in detected_topics:
+            topic["weight"] = (
+                float(topic["hours"]) / total_cis_hours
+                if has_complete_topic_hours
+                else 0
+            )
+
         detected_subject = {
             "name": selected_subject.name if selected_subject else course_title,
             "code": selected_subject.code if selected_subject else course_code,
@@ -1142,10 +1179,38 @@ async def generate_preview(
             detail="Upload session expired. Please upload the module and syllabus again before generating questions.",
         )
 
+    topics = meta["topics"]
+    if any(index >= len(topics) for index in payload.selected_topic_indices):
+        raise HTTPException(status_code=422, detail="One or more selected topics are not present in the analyzed CIS.")
+    topics_without_hours = [
+        topics[index].get("name") or topics[index].get("topic_name") or f"Topic {index + 1}"
+        for index in payload.selected_topic_indices
+        if not isinstance(topics[index].get("hours"), (int, float))
+        or isinstance(topics[index].get("hours"), bool)
+        or not math.isfinite(float(topics[index]["hours"]))
+        or not 0 < float(topics[index]["hours"]) <= 999
+    ]
+    if topics_without_hours:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "CIS_TOPIC_HOURS_MISSING",
+                "message": (
+                    "The CIS does not provide a valid hours value for every selected topic. "
+                    "Ask your Department Admin to update the Course Information Sheet."
+                ),
+                "topics": topics_without_hours,
+            },
+        )
+
+    cis_hours = {
+        str(index): str(topics[index]["hours"])
+        for index in payload.selected_topic_indices
+    }
     selected_topics_data = compute_tos(
-        topics=meta["topics"],
+        topics=topics,
         selected_topic_indices=payload.selected_topic_indices,
-        hours_dict=payload.subcolumn_a_hours,
+        hours_dict=cis_hours,
         total_items=payload.total_items,
         question_types=payload.question_types,
         question_type_items=payload.question_type_items,
@@ -1787,126 +1852,15 @@ async def export_institutional_tos(
     )
 
 
-def _build_tos_pdf(tos_data, course_code, course_title, total_items, exam_type, semester, academic_year, instructor_name, department):
-    from reportlab.lib import colors
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT
-    from reportlab.lib.pagesizes import landscape, letter
-    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.lib.units import inch
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-    from xml.sax.saxutils import escape
-
-    stream = io.BytesIO()
-    document = SimpleDocTemplate(
-        stream,
-        pagesize=landscape(letter),
-        leftMargin=0.35 * inch,
-        rightMargin=0.35 * inch,
-        topMargin=0.35 * inch,
-        bottomMargin=0.35 * inch,
-        title=f"{course_code} Table of Specifications",
-    )
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        "TOSPDFTitle",
-        parent=styles["Title"],
-        alignment=TA_CENTER,
-        fontSize=15,
-        leading=18,
-        spaceAfter=5,
-    )
-    info_style = ParagraphStyle(
-        "TOSPDFInfo",
-        parent=styles["Normal"],
-        fontSize=8,
-        leading=11,
-        alignment=TA_LEFT,
-    )
-    cell_style = ParagraphStyle(
-        "TOSPDFCell",
-        parent=styles["Normal"],
-        fontSize=7,
-        leading=9,
-    )
-    header_style = ParagraphStyle(
-        "TOSPDFHeader",
-        parent=cell_style,
-        textColor=colors.white,
-        alignment=TA_CENTER,
-        fontName="Helvetica-Bold",
-    )
-
-    story = [
-        Paragraph("TABLE OF SPECIFICATIONS", title_style),
-        Paragraph(
-            f"<b>Subject:</b> {escape(course_code or '')} - {escape(course_title or '')}"
-            f"&nbsp;&nbsp; <b>Exam:</b> {escape(exam_type or '')}"
-            f"&nbsp;&nbsp; <b>Semester:</b> {escape(semester or '')}"
-            f"&nbsp;&nbsp; <b>Academic Year:</b> {escape(academic_year or '')}",
-            info_style,
-        ),
-        Paragraph(
-            f"<b>Instructor:</b> {escape(instructor_name or '')}"
-            f"&nbsp;&nbsp; <b>Department:</b> {escape(department or '')}"
-            f"&nbsp;&nbsp; <b>Total Items:</b> {int(total_items or 0)}",
-            info_style,
-        ),
-        Spacer(1, 10),
-    ]
-
-    levels = ("Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create")
-    headers = ["Main Topic", "Learning Outcome", "Hours", "Weight"]
-    headers.extend(levels)
-    headers.append("Total")
-    data = [[Paragraph(escape(header), header_style) for header in headers]]
-    totals = {level: 0 for level in levels}
-    total_topic_items = 0
-
-    for topic in tos_data:
-        counts = topic.get("bloom_counts") or {}
-        items = int(topic.get("items") or 0)
-        total_topic_items += items
-        for level in levels:
-            totals[level] += int(counts.get(level, 0) or 0)
-        row = [
-            Paragraph(escape(str(topic.get("topic_name") or "")), cell_style),
-            Paragraph(escape(str(topic.get("ilo") or topic.get("ilo_description") or "")), cell_style),
-            f"{float(topic.get('hours_a') or 0):g}",
-            f"{float(topic.get('weight') or 0):g}%",
-        ]
-        row.extend(str(int(counts.get(level, 0) or 0)) for level in levels)
-        row.append(str(items))
-        data.append(row)
-
-    total_row = [
-        Paragraph("<b>TOTAL</b>", cell_style),
-        "",
-        "",
-        "",
-        *(str(totals[level]) for level in levels),
-        str(total_topic_items),
-    ]
-    data.append(total_row)
-    column_widths = [1.35 * inch, 2.1 * inch, 0.48 * inch, 0.58 * inch]
-    column_widths.extend([0.62 * inch] * len(levels))
-    column_widths.append(0.52 * inch)
-    table = Table(data, colWidths=column_widths, repeatRows=1, hAlign="LEFT")
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#8F1424")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#F1F5F9")),
-        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#CBD5E1")),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN", (2, 1), (-1, -1), "CENTER"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-    ]))
-    story.append(table)
-    document.build(story)
-    return stream.getvalue()
+def _build_tos_pdf(tos_xlsx_data):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        xlsx_path = os.path.join(temp_dir, "tos.xlsx")
+        pdf_path = os.path.join(temp_dir, "tos.pdf")
+        with open(xlsx_path, "wb") as workbook_file:
+            workbook_file.write(tos_xlsx_data)
+        convert_xlsx_to_pdf(xlsx_path, pdf_path)
+        with open(pdf_path, "rb") as pdf_file:
+            return pdf_file.read()
 
 
 @router.get("/export/tos/pdf")
@@ -1957,17 +1911,24 @@ async def export_institutional_tos_pdf(
     download_exam_type = exam_type or tos_record.exam_type or "Final Exam"
     download_semester = semester or tos_record.semester or "First Semester"
     download_academic_year = academic_year or tos_record.academic_year or ""
-    pdf_data = _build_tos_pdf(
-        tos_data=tos_data,
+    workbook = generate_tos_from_excel_template(
+        selected_topics_data=tos_data,
         course_code=subject.code,
         course_title=subject.name,
-        total_items=tos_record.total_items or 0,
+        whole_total_items=tos_record.total_items or 0,
         exam_type=download_exam_type,
         semester=download_semester,
         academic_year=download_academic_year,
         instructor_name=tos_record.instructor_name or ((creator.name or creator.email) if creator else ""),
         department=leadership["department_name"],
+        dean_name=leadership["dean_name"],
+        program_chair_name=leadership["program_chair_name"],
+        department_code=leadership["department_code"],
+        program_code=leadership["program_code"],
     )
+    workbook_stream = io.BytesIO()
+    workbook.save(workbook_stream)
+    pdf_data = _build_tos_pdf(workbook_stream.getvalue())
     subject_code = re.sub(r"[^A-Za-z0-9]+", "-", subject.code or subject.name or "assessment").strip("-")
     exam_filename = re.sub(r"[^A-Za-z0-9]+", "-", download_exam_type).strip("-")
     filename = f"{subject_code}-{exam_filename}-TOS.pdf"

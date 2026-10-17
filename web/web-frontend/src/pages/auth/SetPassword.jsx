@@ -6,6 +6,7 @@ import { API_URL } from "../../config/api";
 
 const SetPassword = () => {
   const [token] = useState(() => new URLSearchParams(window.location.search).get("token") || "");
+  const [forceChange] = useState(() => new URLSearchParams(window.location.search).get("force") === "1");
   const [temporaryPassword, setTemporaryPassword] = useState("");
   const [showTemporaryPassword, setShowTemporaryPassword] = useState(false);
   const [password, setPassword] = useState("");
@@ -24,7 +25,7 @@ const SetPassword = () => {
     event.preventDefault();
     setError("");
 
-    if (!token) {
+    if (!forceChange && !token) {
       setError("This password setup link is missing or invalid. Ask your department administrator to create a new account invitation.");
       return;
     }
@@ -39,17 +40,28 @@ const SetPassword = () => {
 
     setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/set-initial-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          token,
-          temporary_password: temporaryPassword,
-          new_password: password,
-        }),
-      });
+      const response = await fetch(
+        `${API_URL}${forceChange ? "/user/initial-password/change" : "/set-initial-password"}`,
+        {
+          method: "POST",
+          headers: forceChange
+            ? {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+              }
+            : { "Content-Type": "application/json" },
+          body: JSON.stringify(forceChange
+            ? { new_password: password }
+            : {
+                token,
+                temporary_password: temporaryPassword,
+                new_password: password,
+              }),
+        },
+      );
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.detail || "Could not set your password. Please try again.");
+      if (forceChange) localStorage.removeItem("must_change_password");
       setComplete(true);
     } catch (requestError) {
       setError(requestError.message || "Unable to connect to BloomQuest. Please try again.");
@@ -70,26 +82,31 @@ const SetPassword = () => {
             <div role="status">
               <h1 className="text-2xl font-bold tracking-tight">Password set successfully</h1>
               <p className="mt-3 text-sm leading-6 text-slate-600">
-                Your temporary password has been replaced. You can now sign in with your new password.
+                {forceChange
+                  ? "Your temporary password has been replaced. Continue to BloomQuest using your new password."
+                  : "Your temporary password has been replaced. You can now sign in with your new password."}
               </p>
               <Link
                 className="mt-7 inline-flex w-full items-center justify-center rounded-xl bg-[#7b1113] px-5 py-3 font-semibold text-white transition hover:bg-[#641012]"
-                to="/login"
+                to={forceChange ? "/dashboard" : "/login"}
               >
-                Go to sign in
+                {forceChange ? "Continue to BloomQuest" : "Go to sign in"}
               </Link>
             </div>
           ) : (
             <>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7b1113]">Secure account setup</p>
-              <h1 className="mt-2 text-2xl font-bold tracking-tight">Set your permanent password</h1>
+              <h1 className="mt-2 text-2xl font-bold tracking-tight">
+                {forceChange ? "Change your temporary password now" : "Set your permanent password"}
+              </h1>
               <p className="mt-3 text-sm leading-6 text-slate-600">
-                Enter the temporary password from your BloomQuest email, then choose a new password for your account.
-                This one-time setup link expires after 24 hours.
+                {forceChange
+                  ? "Required action: Set a new password immediately. You must complete this change before you can access BloomQuest."
+                  : "Enter the temporary password from your BloomQuest email, then choose a new password for your account. This one-time setup link expires after 24 hours."}
               </p>
               {error && <p className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</p>}
               <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
-                <label className="block text-sm font-medium text-slate-700">
+                {!forceChange && <label className="block text-sm font-medium text-slate-700">
                   Temporary password
                   <span className="relative mt-2 block">
                     <input
@@ -109,7 +126,7 @@ const SetPassword = () => {
                       {showTemporaryPassword ? <EyeOff aria-hidden="true" size={18} /> : <Eye aria-hidden="true" size={18} />}
                     </button>
                   </span>
-                </label>
+                </label>}
                 <label className="block text-sm font-medium text-slate-700">
                   New password
                   <span className="relative mt-2 block">

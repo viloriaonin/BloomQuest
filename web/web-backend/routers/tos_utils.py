@@ -96,10 +96,21 @@ def _load_tos_template_workbook():
     _load_spreadsheet_library()
     if TEMPLATE_PATH.exists():
         try:
-            return openpyxl.load_workbook(TEMPLATE_PATH)
+            workbook = openpyxl.load_workbook(TEMPLATE_PATH)
         except Exception:
-            pass
-    return openpyxl.Workbook()
+            workbook = openpyxl.Workbook()
+    else:
+        workbook = openpyxl.Workbook()
+
+    tos_sheet = next(
+        (sheet for sheet in workbook.worksheets if sheet.title.strip().casefold() == "tos"),
+        workbook.active,
+    )
+    for sheet in list(workbook.worksheets):
+        if sheet is not tos_sheet:
+            workbook.remove(sheet)
+    workbook.active = 0
+    return workbook
 
 
 def _find_header_row(ws):
@@ -920,4 +931,15 @@ def generate_tos_from_excel_template(
             ws.column_dimensions[_gcl(col)].width = max(ws.column_dimensions[_gcl(col)].width or 0, 10)
 
     _apply_consistent_tos_font(ws)
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.paperSize = "14"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.print_area = f"B1:S{ws.max_row}"
+    ws.print_title_rows = "21:22"
+    ws.page_margins.left = 0.25
+    ws.page_margins.right = 0.25
+    ws.page_margins.top = 0.3
+    ws.page_margins.bottom = 0.3
     return wb

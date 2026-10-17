@@ -37,7 +37,23 @@ from routers import questions
 from routers.questions import _resolve_department_leadership
 from routers.assessment import build_assessment_docx, cleanup_file, convert_docx_to_pdf
 from routers import activity
-from security import get_current_user, get_optional_current_user, require_admin, require_academic_admin, require_admin_workspace, require_campus_admin, require_campus_admin_user, require_super_admin, assert_campus_access, assert_department_access, visible_campus_id, user_campus_id, subject_campus_id, assert_user_subject_campus_access
+from security import (
+    get_current_user,
+    get_current_user_for_initial_password_change,
+    get_optional_current_user,
+    require_admin,
+    require_academic_admin,
+    require_admin_workspace,
+    require_campus_admin,
+    require_campus_admin_user,
+    require_super_admin,
+    assert_campus_access,
+    assert_department_access,
+    visible_campus_id,
+    user_campus_id,
+    subject_campus_id,
+    assert_user_subject_campus_access,
+)
 from routers import analytics
 import smtplib
 import string
@@ -890,6 +906,18 @@ class ResetPasswordRequest(BaseModel):
 class InitialPasswordSetupRequest(BaseModel):
     token: str = Field(..., min_length=40, max_length=64)
     temporary_password: str = Field(..., min_length=8, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        error = validate_password_strength(value)
+        if error:
+            raise ValueError(error)
+        return value
+
+
+class ForcedFacultyPasswordChangeRequest(BaseModel):
     new_password: str = Field(..., min_length=8, max_length=128)
 
     @field_validator("new_password")
@@ -2205,6 +2233,10 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid email or password.")
 
     now = utc_now()
+    must_change_password = (
+        str(user.role).lower() == "faculty"
+        and bool(user.password_setup_token_hash)
+    )
     if str(user.role).lower() == "faculty" and not user.first_login_at:
         user.first_login_at = now
     db.query(models.UserSession).filter(models.UserSession.user_id == user.id, models.UserSession.revoked_at.is_(None)).update({"revoked_at": now})
@@ -2224,6 +2256,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         "email": user.email,
         "name": user.name or "",
         "department": user.department,
+        "must_change_password": must_change_password,
         "message": "Login successful"
     }
 
@@ -3829,6 +3862,37 @@ def set_initial_password(data: InitialPasswordSetupRequest, db: Session = Depend
         target_user_id=user.id,
     )
     return {"message": "Your password has been set. You can now sign in."}
+
+
+@app.post("/api/user/initial-password/change")
+def change_forced_faculty_password(
+    data: ForcedFacultyPasswordChangeRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user_for_initial_password_change),
+):
+    if str(current_user.role).lower() != "faculty":
+        raise HTTPException(status_code=403, detail="This password setup is only available to faculty accounts.")
+    if not current_user.password_setup_token_hash:
+        raise HTTPException(status_code=409, detail="Your temporary password has already been replaced.")
+    if verify_password(data.new_password, current_user.password):
+        raise HTTPException(status_code=400, detail="Choose a new password different from your temporary password.")
+
+    current_user.password = hash_password(data.new_password)
+    current_user.password_setup_token_hash = None
+    current_user.password_setup_token_expires_at = None
+    if not current_user.first_login_at:
+        current_user.first_login_at = utc_now()
+    db.commit()
+    forget_demo_dean_password(current_user.id)
+    log_activity(
+        db,
+        "Initial Password Set",
+        f"Faculty member {current_user.id} changed their temporary password after first login.",
+        "security",
+        actor_id=current_user.id,
+        target_user_id=current_user.id,
+    )
+    return {"message": "Your temporary password has been replaced."}
 
 
 @app.post("/api/department-admin/faculty-accounts/approve")

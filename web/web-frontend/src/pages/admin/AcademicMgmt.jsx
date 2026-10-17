@@ -24,6 +24,7 @@ import { API_URL } from "../../config/api";
 import DepartmentUserManagement from "./DepartmentUserManagement";
 
 const ACADEMIC_API = API_URL;
+const DEPARTMENT_FACULTY_EMAIL_DOMAIN = "@g.batstate-u.edu.ph";
 const CIS_MAX_SIZE_BYTES = 10 * 1024 * 1024;
 const CIS_ALLOWED_EXTENSIONS = new Set([".pdf", ".docx", ".xlsx"]);
 const CIS_PREVIEW_ROW_LIMIT = 150;
@@ -361,7 +362,7 @@ const DepartmentLeadershipSection = ({ department, faculty = [], onSave, onCreat
             </span>
             <div>
               <h4 className="text-sm font-semibold text-slate-800">Department Dean</h4>
-              <p className="mt-0.5 text-xs text-slate-500">Enter a name or select a faculty member.</p>
+              <p className="mt-0.5 text-xs text-slate-500">{showDeanFacultyPicker ? "Enter a name or select a faculty member." : "Enter the dean's name."}</p>
             </div>
           </div>
           {!(readOnly && !hasAssignedDean) && (
@@ -1126,13 +1127,14 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
     const creationFailures = [];
 
     for (const [index, facultyForm] of facultyForms.entries()) {
+      const email = `${facultyForm.email.trim()}${DEPARTMENT_FACULTY_EMAIL_DOMAIN}`;
       try {
         const response = await fetch(`${ACADEMIC_API}/department-admin/faculty-accounts`, {
           method: "POST",
           headers: { ...authHeaders(), "Content-Type": "application/json" },
           body: JSON.stringify({
             full_name: facultyForm.full_name,
-            email: facultyForm.email,
+            email,
             faculty_number: facultyForm.faculty_number,
             program_id: Number(facultyForm.program_id),
           }),
@@ -1145,21 +1147,21 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
             error: result.detail || "Could not create this faculty account.",
           });
         } else if (result.email_status === "sent") {
-          sentEmails.push(result.email || facultyForm.email);
+          sentEmails.push(result.email || email);
         } else if (result.email_status === "demo") {
           if (result.demo_temporary_password && result.demo_setup_url) {
             demoAccounts.push({
-              email: result.email || facultyForm.email,
+              email: result.email || email,
               temporaryPassword: result.demo_temporary_password,
               setupUrl: result.demo_setup_url,
             });
           } else {
-            missingDemoCredentials.push(result.email || facultyForm.email);
+            missingDemoCredentials.push(result.email || email);
           }
         } else if (result.email_status === "recipient_not_found") {
-          missingEmails.push(result.email || facultyForm.email);
+          missingEmails.push(result.email || email);
         } else {
-          emailFailures.push(result.email || facultyForm.email);
+          emailFailures.push(result.email || email);
         }
       } catch (err) {
         creationFailures.push({
@@ -1233,6 +1235,12 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
     }
   };
 
+  const handleFacultyAccountDeleted = async () => {
+    setSelectedFacultyProfileId(null);
+    setNotice("Faculty account permanently deleted.");
+    await loadFacultyAccounts();
+  };
+
   const createDepartmentDeanAccount = async ({ full_name, email }) => {
     if (isSuperAdmin || !selectedDepartment?.id) return;
     try {
@@ -1256,6 +1264,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
       <DepartmentUserManagement
         initialUserId={selectedFacultyProfileId}
         onClose={() => setSelectedFacultyProfileId(null)}
+        onDeleted={handleFacultyAccountDeleted}
       />
     );
   }
@@ -1530,7 +1539,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                                 <label className="text-xs font-semibold text-slate-600">
                                   Number
-                                  <input required aria-label={`Number for faculty member ${index + 1}`} type="text" inputMode="numeric" pattern="[0-9]+" maxLength={50} value={facultyForm.faculty_number} onChange={(event) => setFacultyForms((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, faculty_number: event.target.value, error: "" } : row))} className="bq-field mt-1 w-full px-3 py-2.5 text-sm" placeholder="Enter faculty number" />
+                                  <input required aria-label={`Number for faculty member ${index + 1}`} type="text" inputMode="numeric" pattern="[0-9]+" maxLength={50} value={facultyForm.faculty_number} onChange={(event) => setFacultyForms((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, faculty_number: event.target.value.replace(/\D/g, ""), error: "" } : row))} className="bq-field mt-1 w-full px-3 py-2.5 text-sm" placeholder="Enter faculty number" />
                                 </label>
                                 <label className="text-xs font-semibold text-slate-600">
                                   Full name
@@ -1538,7 +1547,12 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                                 </label>
                                 <label className="text-xs font-semibold text-slate-600">
                                   Email
-                                  <input required type="email" maxLength={255} value={facultyForm.email} onChange={(event) => setFacultyForms((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, email: event.target.value, error: "" } : row))} className="bq-field mt-1 w-full px-3 py-2.5 text-sm" placeholder="name@institution.edu" />
+                                  <span className="mt-1 flex min-w-0 items-center">
+                                    <input required aria-label="Email" type="text" maxLength={64} pattern="[A-Za-z0-9._%+-]+" title="Enter only the part before the @ symbol." value={facultyForm.email} onChange={(event) => setFacultyForms((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, email: event.target.value.split("@", 1)[0].replace(/[^A-Za-z0-9._%+-]/g, ""), error: "" } : row))} className="bq-field min-w-0 flex-1 rounded-r-none px-3 py-2.5 text-sm" placeholder="username" />
+                                    <span className="inline-flex h-[42px] shrink-0 items-center rounded-r-lg border border-l-0 border-slate-200 bg-slate-100 px-2 text-xs text-slate-600 sm:px-3">
+                                      {DEPARTMENT_FACULTY_EMAIL_DOMAIN}
+                                    </span>
+                                  </span>
                                 </label>
                                 <label className="text-xs font-semibold text-slate-600">
                                   Program
@@ -1691,7 +1705,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
                     onSave={saveDepartmentLeadership}
                     onCreateAccount={isDepartmentAdmin ? undefined : createDepartmentDeanAccount}
                     readOnly={isSuperAdmin}
-                    showDeanFacultyPicker={isDepartmentAdmin}
+                    showDeanFacultyPicker={!isDepartmentAdmin}
                   />
                 )}
                 {isSuperAdmin && <section className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--bq-border)" }}>

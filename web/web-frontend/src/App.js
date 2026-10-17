@@ -213,6 +213,9 @@ const SuperAdminRoute = ({ children }) => {
 const UserRoute = ({ children }) => {
   const role = getUserRole();
   if (!role) return <Navigate to="/" replace />;
+  if (role === "faculty" && localStorage.getItem("must_change_password") === "true") {
+    return <Navigate to="/set-password?force=1" replace />;
+  }
   if (role === "super_admin") return <Navigate to="/super-admin/dashboard" replace />;
   return ["campus_admin", "admin"].includes(role)
     ? <Navigate to="/admin/dashboard" replace />

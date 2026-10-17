@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import math
 import random
 import re
 import time
@@ -930,14 +931,15 @@ table with (at minimum) these columns, in this order:
   Ch. | Wks | Topics / Reading List | Topic Outcomes | ILO | SO | Delivery Method
 
 Extract the Course Title, Course Code, and one entry per MAIN topic row from
-this table, mapping each to THREE separate pieces of information pulled from
-THREE separate columns of that SAME row:
+this table, mapping each to information pulled from that SAME row:
 
   1. "name"          <- from the "Topics / Reading List" column
   2. "ilo_label"      <- from the "ILO" column
   3. "topic_outcome"  <- from the "Topic Outcomes" column
+  4. "delivery_method" <- from the "Delivery Method" column for that topic row
+  5. "contact_hours"   <- the "Contact Hours" value for that topic row
 
-These three columns hold different things and must NOT be merged or
+These fields hold different things and must NOT be merged or
 confused with each other.
 
 STRICT EXTRACTION RULES — READ CAREFULLY:
@@ -978,10 +980,20 @@ STRICT EXTRACTION RULES — READ CAREFULLY:
    standalone lab-activity rows that don't introduce a new topic --
    those belong to the topic above them, not their own entries.
 
-7. Do not return any introductory remarks, explanations, or
+7. "delivery_method": copy the value from that topic's Delivery Method
+   cell. "contact_hours": copy the Contact Hours value for the row. When
+   Contact Hours lists separate lecture/discussion and laboratory
+   allocations (for example, "2 hours lecture and 3 hours laboratory"),
+   assign the matching allocation to the topic: lecture/discussion topics
+   get the lecture hours, and laboratory topics get the laboratory hours.
+   Do not add the two allocations together. If Contact Hours contains one
+   numeric value for the row, use that value. If the method or matching
+   hours cannot be determined, return null for "hours"; never guess.
+
+8. Do not return any introductory remarks, explanations, or
    conversational filler — JSON only.
 
-8. If the source text is cut off mid-topic (incomplete), still extract
+9. If the source text is cut off mid-topic (incomplete), still extract
    what's there rather than omitting it or inventing what would come
    next.
 
@@ -993,10 +1005,16 @@ Return ONLY a valid JSON object matching this exact schema:
     {{
       "name": "Title copied verbatim from the Topics/Reading List column, title line only",
       "ilo_label": "Copied verbatim from the ILO column, e.g. ILO1 or ILO1, ILO2",
-      "topic_outcome": "The outcome description copied verbatim from the Topic Outcomes column of the same row"
+      "topic_outcome": "The outcome description copied verbatim from the Topic Outcomes column of the same row",
+      "delivery_method": "Delivery Method value for this topic row",
+      "contact_hours": "Contact Hours value for this topic row",
+      "hours": 2.0
     }}
   ]
 }}
+Use a JSON number for "hours", or null if hours cannot be determined from the
+topic's delivery method and Contact Hours. Do not use Delivery Method as an
+hours value.
 
 RAW SYLLABUS TEXT SEGMENT:
 {text_segment}
@@ -1076,6 +1094,49 @@ def _normalize_ai_value(value, default=""):
     return str(value).strip() or default
 
 
+def _normalize_ai_hours(value, delivery_method=""):
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        hours = float(value)
+        return hours if math.isfinite(hours) and 0 < hours <= 999 else None
+    if not isinstance(value, str):
+        return None
+
+    value = value.strip()
+    direct_value = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(?:hours?|hrs?\.?)?", value, re.IGNORECASE)
+    if direct_value:
+        hours = float(direct_value.group(1))
+        return hours if math.isfinite(hours) and 0 < hours <= 999 else None
+
+    lecture_hours = []
+    laboratory_hours = []
+    hour_pattern = re.compile(
+        r"(?:(?P<before>\d+(?:\.\d+)?)\s*(?:hours?|hrs?\.?)?\s*(?P<kind_before>lecture(?:\s*/\s*discussion)?|discussion|laboratory|lab)"
+        r"|(?P<kind_after>lecture(?:\s*/\s*discussion)?|discussion|laboratory|lab)\s*[:=-]?\s*(?P<after>\d+(?:\.\d+)?)\s*(?:hours?|hrs?\.?)?)",
+        re.IGNORECASE,
+    )
+    for match in hour_pattern.finditer(value):
+        kind = (match.group("kind_before") or match.group("kind_after")).lower()
+        parsed_hours = float(match.group("before") or match.group("after"))
+        if "lab" in kind:
+            laboratory_hours.append(parsed_hours)
+        else:
+            lecture_hours.append(parsed_hours)
+
+    method = str(delivery_method or "").lower()
+    has_lecture_method = bool(re.search(r"\b(?:lecture|discussion)\b", method))
+    has_laboratory_method = bool(re.search(r"\b(?:laboratory|lab)\b", method))
+    if has_lecture_method == has_laboratory_method:
+        return None
+
+    matching_hours = laboratory_hours if has_laboratory_method else lecture_hours
+    if not matching_hours or any(hours != matching_hours[0] for hours in matching_hours):
+        return None
+    hours = matching_hours[0]
+    return hours if math.isfinite(hours) and 0 < hours <= 999 else None
+
+
 def parse_syllabus_text_with_ai(
     full_text: str,
     usage_tracker: GeminiUsageTracker | None = None,
@@ -1109,6 +1170,11 @@ def parse_syllabus_text_with_ai(
             # context (see generate_questions_from_tos below), not shown
             # verbatim in the UI anymore.
             "ilo_description": _clean_topic_outcome(_normalize_ai_value(t.get("topic_outcome", ""))),
+            "delivery_method": _normalize_ai_value(t.get("delivery_method")),
+            "hours": _normalize_ai_hours(
+                t.get("contact_hours", t.get("hours")),
+                _normalize_ai_value(t.get("delivery_method")),
+            ),
         })
 
     return (

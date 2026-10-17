@@ -479,7 +479,7 @@ def test_direct_generation_api_enforces_maximum_and_daily_limit(monkeypatch):
     questions_router.FILE_CACHE[f"{upload_id}_metadata"] = {
         "user_id": current_user.id,
         "subject": {"name": "Biology", "code": "BIO"},
-        "topics": [{"name": "Cell Structure", "ilo": "Describe cell components."}],
+        "topics": [{"name": "Cell Structure", "ilo": "Describe cell components.", "hours": 1}],
         "module_text": "Cell structure includes membranes that control transport.",
     }
 
@@ -788,8 +788,8 @@ def test_generation_rejects_selected_topics_missing_from_module(monkeypatch):
     questions_router.FILE_CACHE[f"{upload_id}_metadata"] = {
         "subject": {"name": "Biology", "code": "BIO"},
         "topics": [
-            {"topic_name": "Cell Structure"},
-            {"topic_name": "Database Normalization"},
+            {"topic_name": "Cell Structure", "hours": 1},
+            {"topic_name": "Database Normalization", "hours": 1},
         ],
         "module_text": "## Cell Structure\nCell membranes control transport.",
     }
@@ -847,11 +847,25 @@ def test_tos_generation_never_calls_ai_for_unsupported_topic(monkeypatch):
         )
 
 
-def test_tos_pdf_builder_returns_pdf_document():
-    from pypdf import PdfReader
+def test_tos_pdf_builder_converts_the_tos_workbook(monkeypatch):
+    import openpyxl
 
-    pdf_data = questions_router._build_tos_pdf(
-        tos_data=[{
+    def convert_workbook(xlsx_path, pdf_path):
+        workbook = openpyxl.load_workbook(xlsx_path)
+        try:
+            assert workbook.sheetnames == ["TOS"]
+            worksheet = workbook.active
+            assert worksheet["B23"].value == "Cell Structure"
+            assert worksheet.page_setup.orientation == "landscape"
+            assert worksheet.page_setup.paperSize == 14
+        finally:
+            workbook.close()
+        with open(pdf_path, "wb") as pdf_file:
+            pdf_file.write(b"%PDF-1.4 test")
+
+    monkeypatch.setattr(questions_router, "convert_xlsx_to_pdf", convert_workbook)
+    workbook = generate_tos_from_excel_template(
+        selected_topics_data=[{
             "topic_name": "Cell Structure",
             "ilo": "Describe cell components",
             "hours_a": 2,
@@ -868,18 +882,41 @@ def test_tos_pdf_builder_returns_pdf_document():
         }],
         course_code="BIO101",
         course_title="Biology",
-        total_items=1,
+        whole_total_items=1,
         exam_type="Quiz",
         semester="First Semester",
         academic_year="2026-2027",
         instructor_name="Instructor",
         department="Science",
     )
+    workbook_stream = io.BytesIO()
+    workbook.save(workbook_stream)
+    pdf_data = questions_router._build_tos_pdf(workbook_stream.getvalue())
 
     assert pdf_data.startswith(b"%PDF-")
-    pdf_text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf_data)).pages)
-    assert "TABLE OF SPECIFICATIONS" in pdf_text
-    assert "Cell Structure" in pdf_text
+
+
+def test_generated_tos_workbook_has_folio_print_setup():
+    workbook = generate_tos_from_excel_template(
+        selected_topics_data=[{
+            "topic_name": "Cell Structure",
+            "ilo": "Describe cell components",
+            "hours_a": 2,
+            "minutes_b": 1,
+            "weight": 100,
+            "items": 1,
+            "bloom_counts": {"Remember": 1},
+        }],
+        course_code="BIO101",
+        course_title="Biology",
+        whole_total_items=1,
+    )
+    assert workbook.sheetnames == ["TOS"]
+    assert workbook.active.title == "TOS"
+    assert workbook.active.page_setup.orientation == "landscape"
+    assert workbook.active.page_setup.paperSize == 14
+    assert workbook.active.page_setup.fitToWidth == 1
+    assert workbook.active.page_setup.fitToHeight == 0
 
 
 def test_over_count_gemini_response_is_retried_until_exact_count(monkeypatch):
@@ -932,6 +969,143 @@ def test_syllabus_gemini_failure_keeps_existing_fallback(monkeypatch):
     assert topics == []
     assert tracker.failure_count == 1
     assert tracker.last_error_type == "TimeoutError"
+
+
+def test_syllabus_ai_parser_returns_hours_from_cis(monkeypatch):
+    monkeypatch.setattr(
+        ai_service,
+        "_call_syllabus_ai",
+        lambda *_args, **_kwargs: {
+            "course_title": "Biology",
+            "course_code": "BIO101",
+            "topics": [{
+                "name": "Cell Structure",
+                "ilo_label": "ILO 1",
+                "topic_outcome": "Describe cell components.",
+                "delivery_method": "Lecture/Discussion",
+                "contact_hours": "2 hours lecture and 3 hours laboratory",
+            }],
+        },
+    )
+
+    _, _, topics = ai_service.parse_syllabus_text_with_ai("CIS contents")
+
+    assert topics[0]["hours"] == 2
+    assert topics[0]["delivery_method"] == "Lecture/Discussion"
+
+
+def test_syllabus_excel_parser_extracts_explicit_hours_column():
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.append(["Ch.", "Topics / Reading List", "Topic Outcomes", "ILO", "Contact Hours", "Delivery Method"])
+    worksheet.append([1, "Cell Structure", "Describe cell components.", "ILO 1", "2 hours lecture and 3 hours laboratory", "Lecture/Discussion"])
+    worksheet.append([2, "Lab Work", "Apply the method.", "ILO 2", "2 hours lecture and 3 hours laboratory", "Laboratory"])
+    contents = io.BytesIO()
+    workbook.save(contents)
+
+    _, _, topics = questions_router.parse_syllabus_excel(contents.getvalue())
+
+    assert [topic["hours"] for topic in topics] == [2, 3]
+
+
+def test_syllabus_ai_prompt_sources_hours_from_contact_hours_not_delivery_method():
+    prompt = " ".join(ai_service._build_syllabus_prompt("CIS contents").split())
+
+    assert '"Contact Hours" value for that topic row' in prompt
+    assert "lecture/discussion topics get the lecture hours" in prompt
+    assert "laboratory topics get the laboratory hours" in prompt
+    assert "Do not add the two allocations together" in prompt
+
+
+@pytest.mark.parametrize(
+    ("contact_hours", "delivery_method", "expected_hours"),
+    [
+        ("2 hours lecture and 3 hours laboratory", "Lecture/Discussion", 2),
+        ("2 hours lecture and 3 hours laboratory", "Laboratory", 3),
+        ("3 hours laboratory; 2 hours lecture/discussion", "Lab", 3),
+        ("4.5", "Lecture/Discussion", 4.5),
+        ("2 hours lecture and 3 hours laboratory", "Lecture and Laboratory", None),
+    ],
+)
+def test_contact_hours_are_selected_by_topic_delivery_method(
+    contact_hours, delivery_method, expected_hours
+):
+    assert ai_service._normalize_ai_hours(contact_hours, delivery_method) == expected_hours
+
+
+def test_generate_preview_uses_hours_extracted_from_cis(monkeypatch):
+    upload_id = "cis-hours-source"
+    questions_router.FILE_CACHE[f"{upload_id}_metadata"] = {
+        "subject": {"name": "Biology", "code": "BIO"},
+        "topics": [{"name": "Cell Structure", "hours": 2.5}],
+        "module_text": "Cell structure and membranes.",
+    }
+    captured_hours = {}
+    monkeypatch.setattr(questions_router, "_assert_upload_access", lambda *_args: None)
+
+    def capture_tos(**kwargs):
+        captured_hours.update(kwargs["hours_dict"])
+        return [{"topic_name": "Cell Structure", "items": 1}]
+
+    monkeypatch.setattr(questions_router, "compute_tos", capture_tos)
+    monkeypatch.setattr(questions_router, "find_topics_without_module_content", lambda *_args: ["Cell Structure"])
+    payload = TOSGenerationPayload(
+        upload_id=upload_id,
+        total_items=1,
+        whole_total_points=1,
+        selected_topic_indices=[0],
+        subcolumn_a_hours={"0": "99"},
+    )
+
+    try:
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(questions_router.generate_preview(
+                payload,
+                db=object(),
+                current_user=SimpleNamespace(id=7),
+            ))
+
+        assert error.value.detail["code"] == "TOPICS_NOT_IN_MODULE"
+        assert captured_hours == {"0": "2.5"}
+    finally:
+        questions_router.FILE_CACHE.pop(f"{upload_id}_metadata", None)
+
+
+def test_generate_preview_rejects_selected_cis_topics_without_hours(monkeypatch):
+    upload_id = "cis-hours-missing"
+    questions_router.FILE_CACHE[f"{upload_id}_metadata"] = {
+        "subject": {"name": "Biology", "code": "BIO"},
+        "topics": [{"name": "Cell Structure", "hours": None}],
+        "module_text": "Cell structure and membranes.",
+    }
+    monkeypatch.setattr(questions_router, "_assert_upload_access", lambda *_args: None)
+    monkeypatch.setattr(
+        questions_router,
+        "compute_tos",
+        lambda **_kwargs: pytest.fail("CIS hours must be validated before TOS computation."),
+    )
+    payload = TOSGenerationPayload(
+        upload_id=upload_id,
+        total_items=1,
+        whole_total_points=1,
+        selected_topic_indices=[0],
+    )
+
+    try:
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(questions_router.generate_preview(
+                payload,
+                db=object(),
+                current_user=SimpleNamespace(id=7),
+            ))
+
+        assert error.value.status_code == 422
+        assert error.value.detail["code"] == "CIS_TOPIC_HOURS_MISSING"
+        assert error.value.detail["topics"] == ["Cell Structure"]
+    finally:
+        questions_router.FILE_CACHE.pop(f"{upload_id}_metadata", None)
 
 
 def test_generate_tos_uses_department_leadership_names():
@@ -1117,11 +1291,15 @@ def test_assessment_docx_includes_matching_type_table_for_options_payloads():
     content = _build_assessment_docx([question], "Course Title", "CS 101")
     document = Document(io.BytesIO(content))
     assert len(document.tables) >= 1
+    assert document.sections[0].orientation == 0
+    assert document.sections[0].page_width == 8.5 * 914400
+    assert document.sections[0].page_height == 13 * 914400
 
-    table_rows = [
-        [cell.text for cell in row.cells]
-        for row in document.tables[0].rows
-    ]
+    matching_table = next(
+        table for table in document.tables
+        if table.rows and [cell.text for cell in table.rows[0].cells] == ["Column A", "Column B"]
+    )
+    table_rows = [[cell.text for cell in row.cells] for row in matching_table.rows]
 
     assert ["Column A", "Column B"] in table_rows
     assert any("Concept A" in cell for row in table_rows for cell in row)
@@ -1136,7 +1314,7 @@ def test_assessment_answer_key_matches_grouped_exam_question_numbers():
 
     questions = [
         SimpleNamespace(question="Select the first answer.", question_type="MCQ", options=["Alpha", "Bravo"], correct_answer="Alpha"),
-        SimpleNamespace(question="Select the second answer.", question_type="MCQ", options=["Alpha", "Bravo"], correct_answer="Bravo"),
+        SimpleNamespace(question="Select the second answer.", question_type="MCQ", options='["Alpha", "Bravo"]', correct_answer='["Bravo"]'),
         SimpleNamespace(question="The statement is accurate.", question_type="True or False", options=["True", "False"], correct_answer='["False"]'),
         SimpleNamespace(question="The statement is accurate.", question_type="True or False", options=["True", "False"], correct_answer='["True"]'),
     ]
@@ -1152,15 +1330,104 @@ def test_assessment_answer_key_matches_grouped_exam_question_numbers():
     paragraphs = [paragraph.text for paragraph in document.paragraphs]
     answer_key_index = paragraphs.index("Answer Key")
     answer_key = paragraphs[answer_key_index + 1:]
+    assert paragraphs.count("GENERAL DIRECTIONS") == 2
+    assert paragraphs.count("Final Examination") == 2
+    assert answer_key.count("I. Multiple Choice") == 1
+    assert answer_key.count("II. True or False") == 1
+    assert answer_key.count("1. Select the first answer.") == 1
+    assert answer_key.count("2. Select the second answer.") == 1
+    assert answer_key.count("3. The statement is accurate.") == 1
+    assert answer_key.count("4. The statement is accurate.") == 1
+    assert "   Answer: False" in answer_key
+    assert "   Answer: True" in answer_key
 
-    assert answer_key == [
-        "I. Multiple Choice",
-        "1. A",
-        "2. B",
-        "II. True or False",
-        "3. False",
-        "4. True",
+    correct_mcq_option = next(
+        paragraph for paragraph in document.paragraphs[answer_key_index + 1:]
+        if paragraph.text == "   A. Alpha"
+    )
+    incorrect_mcq_option = next(
+        paragraph for paragraph in document.paragraphs[answer_key_index + 1:]
+        if paragraph.text == "   B. Bravo"
+    )
+    assert all(run.bold for run in correct_mcq_option.runs)
+    assert not any(run.bold for run in incorrect_mcq_option.runs)
+    assert any(
+        paragraph.text == "   B. Bravo" and all(run.bold for run in paragraph.runs)
+        for paragraph in document.paragraphs[answer_key_index + 1:]
+    )
+
+    fields_table = document.tables[0]
+    assert fields_table.rows[0].cells[1].paragraphs[0].alignment == 2
+    values_box = next(
+        table for table in document.tables
+        if table.cell(0, 0).paragraphs and table.cell(0, 0).paragraphs[0].text == "VISION"
+    )
+    values_paragraphs = values_box.cell(0, 0).paragraphs
+    assert [paragraph.text for paragraph in values_paragraphs] == [
+        "VISION",
+        "A premier national university that develops leaders in the global knowledge economy.",
+        "MISSION",
+        "A University is committed to producing leaders by providing a 21st century learning environment through innovation in education, multidisciplinary research, and community and industry partnership in order to nurture the spirit of nationhood, propel the national economy and engage the world for sustainable development.",
+        "CORE VALUES",
+        "Patriotism     Integrity     Service     Resilience     Excellence     Faith",
     ]
+    assert values_paragraphs[0].alignment == 1
+    assert values_paragraphs[1].alignment == 1
+    assert values_paragraphs[2].alignment == 1
+    assert values_paragraphs[3].alignment == 0
+    assert values_paragraphs[3].paragraph_format.first_line_indent == pytest.approx(0.12 * 914400, abs=150)
+    assert values_paragraphs[3].paragraph_format.left_indent is None
+    assert values_paragraphs[4].alignment == 1
+    assert values_paragraphs[5].alignment == 1
+    border_tags = {
+        border.tag.rsplit("}", 1)[-1]: border.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val")
+        for border in values_box.cell(0, 0)._tc.get_or_add_tcPr().find("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tcBorders")
+    }
+    assert all(border_tags.get(edge) == "single" for edge in ("top", "left", "bottom", "right"))
+
+
+def test_assessment_answer_key_uses_dedicated_answer_spaces_and_matching_letters():
+    from docx import Document
+    from routers.questions import _build_assessment_docx
+
+    questions = [
+        {
+            "question": "Identify the process.",
+            "question_type": "Identification",
+            "correct_answer": "Photosynthesis",
+        },
+        {
+            "question": "Match each item.",
+            "question_type": "Matching Type",
+            "options": {
+                "left_items": ["Plant", "Animal"],
+                "right_items": ["Consumer", "Producer"],
+            },
+            "correct_answer": {"Plant": "Producer", "Animal": "Consumer"},
+        },
+        {
+            "question": "Explain your reasoning.",
+            "question_type": "Essay",
+            "correct_answer": "Answers should explain the evidence.",
+        },
+        {
+            "question": "What would you do in this situation?",
+            "question_type": "Situational",
+            "correct_answer": "Apply the safety procedure.",
+        },
+    ]
+    document = Document(io.BytesIO(_build_assessment_docx(questions, "Course Title", "CS 101")))
+    answer_key_index = next(index for index, paragraph in enumerate(document.paragraphs) if paragraph.text == "Answer Key")
+    key_paragraphs = [paragraph.text for paragraph in document.paragraphs[answer_key_index + 1:]]
+
+    assert "1. Identify the process." in key_paragraphs
+    assert "   Answer: Photosynthesis" in key_paragraphs
+    assert "2. Match each item." in key_paragraphs
+    assert "   Answers: 1. B; 2. A" in key_paragraphs
+    assert "3. Explain your reasoning." in key_paragraphs
+    assert "   Answer: Answers should explain the evidence." in key_paragraphs
+    assert "4. What would you do in this situation?" in key_paragraphs
+    assert "   Answer: Apply the safety procedure." in key_paragraphs
 
 
 def test_saved_assessment_export_restores_exam_type_and_academic_year():

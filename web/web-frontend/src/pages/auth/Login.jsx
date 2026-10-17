@@ -105,16 +105,23 @@ const Login = () => {
       localStorage.setItem("department_id", data.department_id ? String(data.department_id) : "");
       localStorage.setItem("name", data.name || "");
       localStorage.setItem("department", data.department || "");
+      const role = data.role?.toLowerCase();
+      if (role === "faculty" && data.must_change_password) {
+        localStorage.setItem("must_change_password", "true");
+      } else {
+        localStorage.removeItem("must_change_password");
+      }
       window.dispatchEvent(new Event("profile-updated"));
 
-      const role = data.role?.toLowerCase();
       const destination = role === "super_admin"
         ? "/super-admin/dashboard"
         : role === "department_admin"
           ? "/admin/academic"
           : ["admin", "campus_admin"].includes(role)
             ? "/admin"
-            : "/dashboard";
+            : role === "faculty" && data.must_change_password
+              ? "/set-password?force=1"
+              : "/dashboard";
       navigate(destination);
     } catch (err) {
       setError("Unable to connect to the server. Make sure your backend is running on port 8000.");
