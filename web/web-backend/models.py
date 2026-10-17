@@ -19,6 +19,8 @@ class User(Base):
     program_id = Column(Integer, ForeignKey("programs.id"), nullable=True)
     password_setup_token_hash = Column(String(64), nullable=True)
     password_setup_token_expires_at = Column(DateTime, nullable=True)
+    invitation_email_sent_at = Column(DateTime, nullable=True)
+    first_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
 class Department(Base):

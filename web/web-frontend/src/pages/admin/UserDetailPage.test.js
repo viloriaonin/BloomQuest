@@ -67,6 +67,108 @@ test("Campus Admin cannot reset or reassign a faculty account", async () => {
   );
 });
 
+test("Campus Admin can edit and resend an unopened faculty invitation", async () => {
+  global.fetch.mockImplementation(async (url, options = {}) => {
+    if (String(url).endsWith("/admin/users/8/overview")) {
+      return {
+        ok: true,
+        json: async () => ({
+          user: {
+            id: 8,
+            name: "New Faculty",
+            email: "typo@example.edu",
+            role: "faculty",
+            department: "Computing",
+            archived: false,
+            can_edit_email: true,
+            can_resend_invitation: true,
+            invitation_resend_available_at: null,
+          },
+          subjects: [],
+          activities: [],
+          question_count: 0,
+        }),
+      };
+    }
+    if (String(url).endsWith("/campus-admin/users/8/email")) {
+      return { ok: true, json: async () => ({ message: "Faculty email updated successfully." }) };
+    }
+    if (String(url).endsWith("/campus-admin/users/8/resend-invitation")) {
+      return { ok: true, json: async () => ({ message: "Invitation email sent." }) };
+    }
+    return { ok: true, json: async () => [] };
+  });
+
+  render(
+    <MemoryRouter initialEntries={["/admin/users/8"]}>
+      <PopupProvider>
+        <Routes>
+          <Route path="/admin/users/:userId" element={<UserDetailPage />} />
+        </Routes>
+      </PopupProvider>
+    </MemoryRouter>,
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: "Edit email" }));
+  fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "correct@example.edu" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save email" }));
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
+    expect.stringContaining("/campus-admin/users/8/email"),
+    expect.objectContaining({
+      method: "PATCH",
+      body: JSON.stringify({ email: "correct@example.edu" }),
+    }),
+  ));
+
+  fireEvent.click(await screen.findByRole("button", { name: "Resend invitation" }));
+  await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
+    expect.stringContaining("/campus-admin/users/8/resend-invitation"),
+    expect.objectContaining({ method: "POST" }),
+  ));
+});
+
+test("Campus Admin cannot edit email or resend after first faculty access", async () => {
+  global.fetch.mockImplementation(async (url) => {
+    if (String(url).endsWith("/admin/users/8/overview")) {
+      return {
+        ok: true,
+        json: async () => ({
+          user: {
+            id: 8,
+            name: "Opened Faculty",
+            email: "faculty@example.edu",
+            role: "faculty",
+            department: "Computing",
+            archived: false,
+            first_login_at: "2026-10-17T12:00:00",
+            can_edit_email: false,
+            can_resend_invitation: false,
+          },
+          subjects: [],
+          activities: [],
+          question_count: 0,
+        }),
+      };
+    }
+    return { ok: true, json: async () => [] };
+  });
+
+  render(
+    <MemoryRouter initialEntries={["/admin/users/8"]}>
+      <PopupProvider>
+        <Routes>
+          <Route path="/admin/users/:userId" element={<UserDetailPage />} />
+        </Routes>
+      </PopupProvider>
+    </MemoryRouter>,
+  );
+
+  await screen.findByText("Opened Faculty");
+  expect(screen.queryByRole("button", { name: "Edit email" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Resend invitation" })).not.toBeInTheDocument();
+  expect(screen.getByText(/disabled because this account has been opened/)).toBeInTheDocument();
+});
+
 test("Campus Admin cannot reset or reassign a department dean account", async () => {
   const defaultFetch = global.fetch.getMockImplementation();
   global.fetch.mockImplementation(async (url, options) => {

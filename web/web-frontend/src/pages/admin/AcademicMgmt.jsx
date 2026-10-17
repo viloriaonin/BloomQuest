@@ -1122,6 +1122,7 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
     const demoAccounts = [];
     const missingDemoCredentials = [];
     const emailFailures = [];
+    const missingEmails = [];
     const creationFailures = [];
 
     for (const [index, facultyForm] of facultyForms.entries()) {
@@ -1155,6 +1156,8 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
           } else {
             missingDemoCredentials.push(result.email || facultyForm.email);
           }
+        } else if (result.email_status === "recipient_not_found") {
+          missingEmails.push(result.email || facultyForm.email);
         } else {
           emailFailures.push(result.email || facultyForm.email);
         }
@@ -1187,6 +1190,9 @@ export const AcademicMgmtContent = ({ basePath = "/admin/academic", activeSectio
     }
     if (emailFailures.length) {
       failureSummaries.push(`Account created, but email could not be sent to: ${emailFailures.join(", ")}. Contact your system administrator to resend the invitation.`);
+    }
+    if (missingEmails.length) {
+      failureSummaries.push(`The email address does not exist, so the email was not sent to: ${missingEmails.join(", ")}.`);
     }
     if (creationFailures.length) {
       failureSummaries.push(`Could not create ${creationFailures.length === 1 ? "one account" : `${creationFailures.length} accounts`}. Correct the highlighted rows and try again.`);

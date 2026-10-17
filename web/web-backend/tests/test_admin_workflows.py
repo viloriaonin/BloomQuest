@@ -179,8 +179,8 @@ def test_approval_email_uses_shared_helper_when_resend_is_configured(monkeypatch
     monkeypatch.setattr(main, "SENDER_PASSWORD", "")
     monkeypatch.setattr(
         main,
-        "send_email",
-        lambda recipient, subject, html: sent_emails.append((recipient, subject, html)) or True,
+        "send_email_result",
+        lambda recipient, subject, html: sent_emails.append((recipient, subject, html)) or "sent",
     )
 
     main.send_approval_email(

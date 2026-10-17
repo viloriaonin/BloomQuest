@@ -1027,6 +1027,7 @@ def test_department_admin_manually_creates_faculty_account_and_emails_credential
             assert verify_password("PermanentPassword2!", created.password)
             assert not created.password_setup_token_hash
             assert not created.password_setup_token_expires_at
+            assert created.first_login_at is not None
 
             reused_link = client.post("/api/set-initial-password", json=setup_payload)
             assert reused_link.status_code == 400
@@ -1045,6 +1046,19 @@ def test_department_admin_manually_creates_faculty_account_and_emails_credential
             assert db_session.query(models.User).filter_by(
                 email="email-failure@example.edu"
             ).one()
+
+            email_succeeds[0] = "recipient_not_found"
+            missing_email = client.post(
+                "/api/department-admin/faculty-accounts",
+                json={
+                    "full_name": "Missing Mailbox Faculty",
+                    "email": "missing-mailbox@example.edu",
+                    "program_id": program.id,
+                },
+            )
+            assert missing_email.status_code == 201
+            assert missing_email.json()["email_status"] == "recipient_not_found"
+            assert missing_email.json()["email_message"] == "This email address does not exist. The email was not sent."
 
             duplicate = client.post(
                 "/api/department-admin/faculty-accounts",
@@ -1283,6 +1297,151 @@ def test_campus_admin_can_create_dean_in_demo_mode_without_email_delivery(db_ses
             f"/api/campus-admin/users/{dean.id}/demo-password"
         )
         assert unavailable.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous)
+
+
+def test_faculty_invitation_email_uses_account_setup_copy_and_recognizes_missing_recipients(monkeypatch):
+    captured_email = {}
+    monkeypatch.setattr(main, "RESEND_API_KEY", "test-api-key")
+    monkeypatch.setattr(main, "EMAIL_FROM", "BloomQuest <no-reply@example.edu>")
+    monkeypatch.setattr(
+        main,
+        "send_email_result",
+        lambda recipient, subject, html: captured_email.update(
+            recipient=recipient,
+            subject=subject,
+            html=html,
+        ) or "sent",
+    )
+
+    sent = main.send_approval_email(
+        "faculty@example.edu",
+        "TemporaryPassword1!",
+        "New Faculty",
+        "Computing",
+        "https://example.edu/set-password?token=setup-token",
+    )
+    assert sent == "sent"
+    assert "Open secure account setup" in captured_email["html"]
+    assert "Set your permanent password" not in captured_email["html"]
+
+    monkeypatch.setattr(main, "send_email_result", lambda *args: "recipient_not_found")
+    not_sent = main.send_approval_email(
+        "missing@example.edu",
+        "TemporaryPassword1!",
+        "New Faculty",
+        "Computing",
+        "https://example.edu/set-password?token=setup-token",
+    )
+    assert not_sent == "recipient_not_found"
+    assert main.recipient_address_not_found("550 5.1.1 user unknown")
+
+
+def test_department_admin_can_correct_email_and_resend_invitation_until_first_login(db_session, monkeypatch):
+    campus = models.Campus(name="Invitation Campus", code="INVITE")
+    db_session.add(campus)
+    db_session.flush()
+    department = models.Department(name="Invitation Department", campus_id=campus.id)
+    db_session.add(department)
+    db_session.flush()
+    program = models.Program(name="Invitation Program", department_id=department.id)
+    admin = models.User(
+        email="invitation-admin@example.edu",
+        password=hash_password("InvitationAdmin1!"),
+        role="department_admin",
+        campus_id=campus.id,
+        admin_department_id=department.id,
+        archived=False,
+    )
+    faculty = models.User(
+        email="typo@example.edu",
+        password=hash_password("PreviousPassword1!"),
+        role="faculty",
+        campus_id=campus.id,
+        department=department.name,
+        name="Invitation Faculty",
+        program_id=1,
+        password_setup_token_hash="pending-token-hash",
+        password_setup_token_expires_at=main.utc_now() + main.timedelta(hours=24),
+        invitation_email_sent_at=main.utc_now() - main.timedelta(minutes=6),
+        archived=False,
+    )
+    duplicate = models.User(
+        email="already-used@example.edu",
+        password=hash_password("DuplicatePassword1!"),
+        role="faculty",
+        campus_id=campus.id,
+        department=department.name,
+        archived=False,
+    )
+    db_session.add_all([program, admin])
+    db_session.flush()
+    faculty.program_id = program.id
+    db_session.add_all([faculty, duplicate])
+    db_session.commit()
+
+    sent_credentials = []
+    monkeypatch.setattr(main, "require_email_delivery_configured", lambda: None)
+    monkeypatch.setattr(
+        main,
+        "send_department_faculty_access_email",
+        lambda *args: sent_credentials.append(args) or True,
+    )
+    monkeypatch.setattr(main, "log_activity", lambda *args, **kwargs: None)
+    previous = with_test_dependencies(db_session, admin)
+    try:
+        with TestClient(app) as client:
+            detail = client.get(f"/api/department-admin/users/{faculty.id}")
+            assert detail.status_code == 200
+            assert detail.json()["can_edit_email"] is True
+            assert detail.json()["can_resend_invitation"] is True
+            assert detail.json()["invitation_resend_available_at"].endswith("Z")
+
+            duplicate_email = client.patch(
+                f"/api/department-admin/users/{faculty.id}/email",
+                json={"email": duplicate.email},
+            )
+            corrected_email = client.patch(
+                f"/api/department-admin/users/{faculty.id}/email",
+                json={"email": "corrected@example.edu"},
+            )
+            resent = client.post(
+                f"/api/department-admin/users/{faculty.id}/resend-invitation",
+            )
+            cooldown = client.post(
+                f"/api/department-admin/users/{faculty.id}/resend-invitation",
+            )
+
+            assert duplicate_email.status_code == 409
+            assert corrected_email.status_code == 200
+            assert corrected_email.json()["email"] == "corrected@example.edu"
+            assert resent.status_code == 200, resent.text
+            assert sent_credentials[-1][0] == "corrected@example.edu"
+            assert cooldown.status_code == 429
+
+            login = client.post(
+                "/api/login",
+                json={
+                    "email": "corrected@example.edu",
+                    "password": sent_credentials[-1][1],
+                },
+            )
+            assert login.status_code == 200, login.text
+            db_session.refresh(faculty)
+            assert faculty.first_login_at is not None
+            locked_email = client.patch(
+                f"/api/department-admin/users/{faculty.id}/email",
+                json={"email": "locked@example.edu"},
+            )
+            locked_resend = client.post(
+                f"/api/department-admin/users/{faculty.id}/resend-invitation",
+            )
+
+        assert locked_email.status_code == 409
+        assert locked_resend.status_code == 409
+        assert faculty.email == "corrected@example.edu"
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(previous)

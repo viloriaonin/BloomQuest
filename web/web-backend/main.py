@@ -88,6 +88,8 @@ with engine.begin() as connection:
     add_column_if_missing(connection, "subjects", "user_id", "INTEGER")
     add_column_if_missing(connection, "users", "password_setup_token_hash", "VARCHAR(64)")
     add_column_if_missing(connection, "users", "password_setup_token_expires_at", "TIMESTAMP")
+    add_column_if_missing(connection, "users", "invitation_email_sent_at", "TIMESTAMP")
+    add_column_if_missing(connection, "users", "first_login_at", "TIMESTAMP")
     add_column_if_missing(connection, "departments", "dean_name", "VARCHAR(255)")
     add_column_if_missing(connection, "departments", "chair_name", "VARCHAR(255)")
     add_column_if_missing(connection, "programs", "chair_name", "VARCHAR(255)")
@@ -987,6 +989,18 @@ class DepartmentFacultyCredentialEmailPayload(BaseModel):
     action: str = Field(..., pattern="^reset_password$")
 
 
+class FacultyEmailUpdatePayload(BaseModel):
+    email: str = Field(..., min_length=5, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        normalized = normalize_email(value)
+        if not EMAIL_REGEX.fullmatch(normalized):
+            raise ValueError("Please provide a valid email address.")
+        return normalized
+
+
 class CampusDeanCreateRequest(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=100)
     email: str = Field(..., min_length=5, max_length=255)
@@ -1303,7 +1317,24 @@ def require_email_delivery_configured() -> None:
     )
 
 
-def send_email(recipient_email: str, subject: str, html_body: str) -> bool:
+def recipient_address_not_found(error: str) -> bool:
+    normalized_error = error.lower()
+    return any(
+        phrase in normalized_error
+        for phrase in (
+            "recipient not found",
+            "address does not exist",
+            "email does not exist",
+            "mailbox does not exist",
+            "unknown recipient",
+            "user unknown",
+            "no such user",
+            "550 5.1.1",
+        )
+    )
+
+
+def send_email_result(recipient_email: str, subject: str, html_body: str) -> str:
     if RESEND_API_KEY:
         request_body = json.dumps({
             "from": EMAIL_FROM,
@@ -1329,25 +1360,26 @@ def send_email(recipient_email: str, subject: str, html_body: str) -> bool:
                         recipient_email,
                         response.status,
                     )
-                    return False
+                    return "failed"
             logger.info("[Email] Message accepted by Resend for %s", recipient_email)
-            return True
+            return "sent"
         except urllib.error.HTTPError as exc:
             provider_error = exc.read(500).decode("utf-8", errors="replace")
+            not_found = recipient_address_not_found(provider_error)
             logger.error(
                 "[Email] Resend rejected message to %s with HTTP status %s: %s",
                 recipient_email,
                 exc.code,
                 provider_error,
             )
-            return False
+            return "recipient_not_found" if not_found else "failed"
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             logger.error("[Email] Resend request failed for %s: %s", recipient_email, exc)
-            return False
+            return "failed"
 
     if not SENDER_EMAIL or not SENDER_PASSWORD:
         logger.error("[Email] Neither Resend nor SMTP email delivery is configured")
-        return False
+        return "failed"
 
     message = MIMEMultipart()
     message["From"] = SENDER_EMAIL
@@ -1362,12 +1394,23 @@ def send_email(recipient_email: str, subject: str, html_body: str) -> bool:
             refused = server.send_message(message)
         if refused:
             logger.error("[Email] SMTP server refused delivery to %s: %s", recipient_email, refused)
-            return False
+            refusal = str(refused)
+            if recipient_address_not_found(refusal):
+                logger.error("[Email] Recipient address does not exist; message was not sent to %s", recipient_email)
+                return "recipient_not_found"
+            return "failed"
         logger.info("[Email] Message accepted by SMTP server for %s", recipient_email)
-        return True
+        return "sent"
     except Exception as exc:
         logger.error("[Email] SMTP delivery failed for %s: %s", recipient_email, exc, exc_info=True)
-        return False
+        if recipient_address_not_found(str(exc)):
+            logger.error("[Email] Recipient address does not exist; message was not sent to %s", recipient_email)
+            return "recipient_not_found"
+        return "failed"
+
+
+def send_email(recipient_email: str, subject: str, html_body: str) -> bool:
+    return send_email_result(recipient_email, subject, html_body) == "sent"
 
 
 def normalize_email(value: str) -> str:
@@ -1588,7 +1631,7 @@ def send_approval_email(
     full_name: str = None,
     department: str = None,
     password_setup_url: str = None,
-):
+) -> str | bool:
     """Render and deliver the account-creation email.
 
     Falls back to a minimal inline message if the template cannot be read.
@@ -1611,8 +1654,8 @@ def send_approval_email(
             template = None
 
         setup_section = (
-            f'<p><a href="{escape_html(password_setup_url)}" style="display:inline-block;background:#7B1113;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;">Set your permanent password</a></p>'
-            "<p>This secure link expires in 24 hours and can be used once. Enter the temporary password above to choose a new password.</p>"
+            f'<p><a href="{escape_html(password_setup_url)}" style="display:inline-block;background:#7B1113;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;">Open secure account setup</a></p>'
+            "<p>This secure link expires in 24 hours and can be used once. Enter the temporary password above to finish securing your account.</p>"
             if password_setup_url
             else ""
         )
@@ -1647,14 +1690,17 @@ def send_approval_email(
             </html>
             """
 
-        if not send_email(recipient_email, "BloomQuest Account Approved & Created", rendered):
+        email_result = send_email_result(recipient_email, "BloomQuest Account Approved & Created", rendered)
+        if email_result != "sent":
             logger.error("Failed to deliver account creation email to %s", recipient_email)
-            return False
+            if email_result == "recipient_not_found":
+                logger.error("[Email] Recipient address does not exist; account email was not sent to %s", recipient_email)
+            return email_result
         logger.info("[Email] Approval email sent successfully to %s", recipient_email)
-        return True
+        return "sent"
     except Exception as exc:
         logger.error("Failed to deliver account creation email: %s", exc, exc_info=True)
-        return False
+        return "failed"
 
 
 def send_department_faculty_access_email(
@@ -1664,7 +1710,7 @@ def send_department_faculty_access_email(
     department: str,
     password_setup_url: str,
     action: str,
-) -> bool:
+) -> str | bool:
     action_label = "password reset" if action == "reset_password" else "faculty account access"
     html_body = f"""
     <html>
@@ -1674,8 +1720,8 @@ def send_department_faculty_access_email(
         <p>Your Department Admin has issued updated sign-in details for your BloomQuest faculty account in {escape_html(department)}.</p>
         <p><strong>Email:</strong> {escape_html(recipient_email)}<br />
         <strong>Temporary password:</strong> <code>{escape_html(temporary_password)}</code></p>
-        <p><a href="{escape_html(password_setup_url)}">Set your permanent password</a></p>
-        <p>This secure link expires in 24 hours and can be used once. Enter the temporary password above to choose a new password.</p>
+        <p><a href="{escape_html(password_setup_url)}">Open secure account setup</a></p>
+        <p>This secure link expires in 24 hours and can be used once. Enter the temporary password above to finish securing your account.</p>
         <p>If you did not expect this email, contact your department administrator.</p>
         <p>BloomQuest Administration</p>
       </body>
@@ -1683,13 +1729,15 @@ def send_department_faculty_access_email(
     """
     subject = "Reset your BloomQuest password" if action == "reset_password" else "Updated BloomQuest faculty account access"
     try:
-        sent = send_email(recipient_email, subject, html_body)
-        if not sent:
+        email_result = send_email_result(recipient_email, subject, html_body)
+        if email_result != "sent":
             logger.error("[Email] Faculty access email could not be delivered to %s", recipient_email)
-        return sent
+            if email_result == "recipient_not_found":
+                logger.error("[Email] Recipient address does not exist; faculty access email was not sent to %s", recipient_email)
+        return email_result
     except Exception:
         logger.exception("[Email] Faculty access email delivery raised an exception for %s", recipient_email)
-        return False
+        return "failed"
 
 
 def send_request_submission_email(recipient_email: str, full_name: str = None, department: str = None):
@@ -2157,10 +2205,13 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid email or password.")
 
     now = utc_now()
+    if str(user.role).lower() == "faculty" and not user.first_login_at:
+        user.first_login_at = now
     db.query(models.UserSession).filter(models.UserSession.user_id == user.id, models.UserSession.revoked_at.is_(None)).update({"revoked_at": now})
     raw_token = secrets.token_urlsafe(48)
     session = models.UserSession(user_id=user.id, token_hash=hashlib.sha256(raw_token.encode()).hexdigest(), expires_at=now + timedelta(hours=12))
     db.add(session)
+    db.commit()
     log_activity(db, "System Login", f"Logged in as {user.email}.", "login", user_id=user.id)
 
     # Return response (replace with JWT later)
@@ -2559,6 +2610,21 @@ def get_admin_user_overview(user_id: int, db: Session = Depends(get_db), _admin:
             "program_id": user.program_id,
             "joined": user.created_at.isoformat() if user.created_at else None,
             "archived": user.archived,
+            "first_login_at": user.first_login_at.isoformat() if user.first_login_at else None,
+            "can_edit_email": str(user.role).lower() == "faculty" and not bool(user.first_login_at),
+            "can_resend_invitation": bool(
+                str(user.role).lower() == "faculty"
+                and not user.archived
+                and not user.first_login_at
+                and user.password_setup_token_hash
+            ),
+            "invitation_resend_available_at": (
+                user.invitation_email_sent_at + FACULTY_INVITATION_RESEND_INTERVAL
+            ).isoformat() + "Z"
+            if str(user.role).lower() == "faculty"
+            and user.invitation_email_sent_at
+            and not user.first_login_at
+            else None,
         },
         "subjects": [{
             "id": subject.id,
@@ -3039,18 +3105,24 @@ def send_faculty_credentials(
         f"{os.getenv('FRONTEND_URL', 'http://localhost:3000').rstrip('/')}"
         f"/set-password?token={setup_token}"
     )
-    if not send_department_faculty_access_email(
+    email_result = send_department_faculty_access_email(
         user.email,
         temporary_password,
         user.name or user.email.split("@", 1)[0],
         department_name,
         password_setup_url,
         action,
-    ):
+    )
+    if email_result is not True and email_result != "sent":
         db.rollback()
+        detail = (
+            "This email address does not exist. The email was not sent and the faculty account credentials were not changed."
+            if email_result == "recipient_not_found"
+            else "The email could not be sent. The faculty account credentials were not changed."
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="The email could not be sent. The faculty account credentials were not changed.",
+            detail=detail,
         )
 
     db.query(models.UserSession).filter(
@@ -3061,6 +3133,8 @@ def send_faculty_credentials(
         synchronize_session=False,
     )
     forget_demo_dean_password(user.id)
+    if not user.first_login_at:
+        user.invitation_email_sent_at = utc_now()
     account_label = "dean" if str(user.role).lower() in {"department_admin", "department_dean"} else "faculty"
     action_label = "password reset email" if action == "reset_password" else f"{account_label} access email"
     db.commit()
@@ -3076,7 +3150,91 @@ def send_faculty_credentials(
     return {
         "message": f"The {action_label} was sent to {user.email}.",
         "email_status": "sent",
+        "invitation_email_sent_at": user.invitation_email_sent_at.isoformat() if user.invitation_email_sent_at else None,
     }
+
+
+FACULTY_INVITATION_RESEND_INTERVAL = timedelta(minutes=5)
+
+
+def resend_faculty_invitation(
+    db: Session,
+    admin: models.User,
+    user: models.User,
+    department_name: str,
+) -> dict:
+    user = db.query(models.User).filter(
+        models.User.id == user.id
+    ).with_for_update().populate_existing().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Faculty account not found.")
+    if user.archived or user.first_login_at or not user.password_setup_token_hash:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This faculty account has already been opened or has no pending invitation.",
+        )
+    if user.invitation_email_sent_at:
+        available_at = user.invitation_email_sent_at + FACULTY_INVITATION_RESEND_INTERVAL
+        remaining_seconds = (available_at - utc_now()).total_seconds()
+        if remaining_seconds > 0:
+            remaining = max(1, int(remaining_seconds) + 1)
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Please wait {remaining} seconds before resending the invitation email.",
+                headers={"Retry-After": str(remaining)},
+            )
+    return send_faculty_credentials(db, admin, user, department_name, "resend_invitation")
+
+
+def update_faculty_email(
+    db: Session,
+    admin: models.User,
+    user: models.User,
+    requested_email: str,
+) -> dict:
+    if user.first_login_at:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The faculty account has already been opened. Its email address can no longer be changed.",
+        )
+
+    normalized_email = normalize_email(requested_email)
+    existing_user = db.query(models.User.id).filter(
+        func.lower(models.User.email) == normalized_email,
+        models.User.id != user.id,
+    ).first()
+    if existing_user:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account with this email already exists.")
+
+    previous_email = user.email
+    try:
+        updated = db.query(models.User).filter(
+            models.User.id == user.id,
+            models.User.first_login_at.is_(None),
+        ).update(
+            {models.User.email: normalized_email},
+            synchronize_session=False,
+        )
+        if not updated:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The faculty account has already been opened. Its email address can no longer be changed.",
+            )
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account with this email already exists.") from exc
+    db.refresh(user)
+    log_activity(
+        db,
+        "Faculty Email Updated",
+        f"{str(admin.role).replace('_', ' ').title()} {admin.id} changed faculty email from {previous_email} to {normalized_email}.",
+        "security",
+        actor_id=admin.id,
+        target_user_id=user.id,
+    )
+    return {"email": user.email, "message": "Faculty email updated successfully."}
 
 
 @app.post("/api/department-admin/users/{user_id}/credential-email")
@@ -3089,6 +3247,29 @@ def reissue_department_faculty_credentials(
     department = get_department_admin_scope(db, admin)
     user = get_department_faculty_user(db, department, user_id)
     return send_faculty_credentials(db, admin, user, department.name, payload.action)
+
+
+@app.post("/api/department-admin/users/{user_id}/resend-invitation")
+def resend_department_faculty_invitation(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_academic_admin),
+):
+    department = get_department_admin_scope(db, admin)
+    user = get_department_faculty_user(db, department, user_id)
+    return resend_faculty_invitation(db, admin, user, department.name)
+
+
+@app.patch("/api/department-admin/users/{user_id}/email")
+def update_department_faculty_email(
+    user_id: int,
+    payload: FacultyEmailUpdatePayload,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_academic_admin),
+):
+    department = get_department_admin_scope(db, admin)
+    user = get_department_faculty_user(db, department, user_id)
+    return update_faculty_email(db, admin, user, payload.email)
 
 
 @app.post("/api/campus-admin/users/{user_id}/credential-email")
@@ -3122,6 +3303,39 @@ def reissue_campus_admin_faculty_credentials(
     return send_faculty_credentials(db, admin, user, department_name, payload.action)
 
 
+@app.post("/api/campus-admin/users/{user_id}/resend-invitation")
+def resend_campus_admin_faculty_invitation(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_campus_admin),
+):
+    user = db.query(models.User).filter(
+        models.User.id == user_id,
+        models.User.role.ilike("faculty"),
+    ).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Faculty account not found.")
+    assert_admin_can_access_user(db, admin, user)
+    return resend_faculty_invitation(db, admin, user, user.department or "your department")
+
+
+@app.patch("/api/campus-admin/users/{user_id}/email")
+def update_campus_admin_faculty_email(
+    user_id: int,
+    payload: FacultyEmailUpdatePayload,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_campus_admin),
+):
+    user = db.query(models.User).filter(
+        models.User.id == user_id,
+        models.User.role.ilike("faculty"),
+    ).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Faculty account not found.")
+    assert_admin_can_access_user(db, admin, user)
+    return update_faculty_email(db, admin, user, payload.email)
+
+
 @app.get("/api/department-admin/users")
 def list_department_admin_users(
     db: Session = Depends(get_db),
@@ -3151,6 +3365,7 @@ def list_department_admin_users(
                 "status": "Archived" if user.archived else "Active",
                 "archived": bool(user.archived),
                 "created_at": user.created_at.isoformat() if user.created_at else None,
+                "first_login_at": user.first_login_at.isoformat() if user.first_login_at else None,
             }
             for user in users
         ],
@@ -3205,6 +3420,18 @@ def get_department_admin_user_detail(
         "archived": bool(user.archived),
         "status": "Archived" if user.archived else "Active",
         "created_at": user.created_at.isoformat() if user.created_at else None,
+        "first_login_at": user.first_login_at.isoformat() if user.first_login_at else None,
+        "can_edit_email": not bool(user.first_login_at),
+        "can_resend_invitation": bool(
+            not user.archived
+            and not user.first_login_at
+            and user.password_setup_token_hash
+        ),
+        "invitation_resend_available_at": (
+            user.invitation_email_sent_at + FACULTY_INVITATION_RESEND_INTERVAL
+        ).isoformat() + "Z"
+        if user.invitation_email_sent_at and not user.first_login_at
+        else None,
         "question_count": question_count,
         "activity_count": activity_count,
         "subjects": [
@@ -3405,13 +3632,19 @@ def create_faculty_account_for_program(
         f"{os.getenv('FRONTEND_URL', 'http://localhost:3000').rstrip('/')}"
         f"/set-password?token={setup_token}"
     )
-    email_sent = False if DEMO_EMAIL_VERIFICATION else send_approval_email(
+    email_result = "demo" if DEMO_EMAIL_VERIFICATION else send_approval_email(
         normalized_email,
         temporary_password,
         user.name,
         department.name,
         password_setup_url,
     )
+    email_sent = email_result is True or email_result == "sent"
+    if email_sent:
+        user.invitation_email_sent_at = utc_now()
+        db.commit()
+    if email_result == "recipient_not_found":
+        logger.error("[Email] Faculty account %s was created but the recipient email does not exist; no email was sent.", user.id)
     result = {
         "id": user.id,
         "full_name": user.name,
@@ -3421,8 +3654,17 @@ def create_faculty_account_for_program(
         "role": user.role,
         "program_id": program.id,
         "department": department.name,
-        "email_status": "demo" if DEMO_EMAIL_VERIFICATION else "sent" if email_sent else "failed",
+        "email_status": (
+            "demo" if DEMO_EMAIL_VERIFICATION
+            else "sent" if email_sent
+            else email_result if isinstance(email_result, str)
+            else "failed"
+        ),
     }
+    if email_result == "recipient_not_found":
+        result["email_message"] = "This email address does not exist. The email was not sent."
+    elif not email_sent and email_result != "demo":
+        result["email_message"] = "The email could not be sent. Please verify the email address and try again."
     if DEMO_EMAIL_VERIFICATION:
         result["demo_temporary_password"] = temporary_password
         result["demo_setup_url"] = password_setup_url
@@ -3574,6 +3816,8 @@ def set_initial_password(data: InitialPasswordSetupRequest, db: Session = Depend
     user.password = hash_password(data.new_password)
     user.password_setup_token_hash = None
     user.password_setup_token_expires_at = None
+    if str(user.role).lower() == "faculty" and not user.first_login_at:
+        user.first_login_at = utc_now()
     forget_demo_dean_password(user.id)
     db.commit()
     log_activity(

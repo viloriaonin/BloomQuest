@@ -73,6 +73,8 @@ Department Admin accounts are created and assigned to one department by a Super 
 
 The Faculty Management view shows only Active and Archived faculty accounts, and allows Department Admins to archive or restore accounts within their department. The program chair account flow is limited to creating a faculty account directly assigned as an unfilled program chair. Department Admins can also submit academic change requests involving another department. Campus Admins can review requests within their campus, while Super Admins can review all requests. Academic change requests record a status and reviewer response and do not apply cross-department changes automatically.
 
+For faculty accounts that have not been opened yet, admins can correct the email address and resend the invitation. Invitation resends are limited to one every five minutes. Email editing and invitation resend are disabled after the faculty member completes initial setup or signs in for the first time. Delivery failures are logged; when the mail provider confirms that a recipient does not exist, account creation still completes and the admin is told that no email was sent.
+
 ## Flutter Desktop App
 
 The Flutter app is in `mobile/mob_frontend` and includes Windows and Linux desktop targets.

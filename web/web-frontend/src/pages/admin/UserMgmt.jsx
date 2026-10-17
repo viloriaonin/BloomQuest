@@ -176,6 +176,7 @@ export const UserMgmtContent = () => {
     setErrorUsers("");
     const created = [];
     const emailFailures = [];
+    const missingEmails = [];
     const demoAccounts = [];
     const creationFailures = [];
 
@@ -209,6 +210,8 @@ export const UserMgmtContent = () => {
             temporaryPassword: result.demo_temporary_password,
             setupUrl: result.demo_setup_url,
           });
+        } else if (result.email_status === "recipient_not_found") {
+          missingEmails.push(result.email || facultyForm.email);
         } else {
           emailFailures.push(result.email || facultyForm.email);
         }
@@ -227,7 +230,7 @@ export const UserMgmtContent = () => {
       : [{ full_name: "", email: "", faculty_number: "", department_id: "", program_id: "", error: "" }]);
     setCreatingFaculty(false);
 
-    if (created.length || emailFailures.length || demoAccounts.length) {
+    if (created.length || emailFailures.length || missingEmails.length || demoAccounts.length) {
       await fetchUsers();
       const messages = [];
       if (created.length) {
@@ -236,6 +239,9 @@ export const UserMgmtContent = () => {
       if (emailFailures.length) {
         messages.push(`Account created, but email could not be sent to: ${emailFailures.join(", ")}. Contact your system administrator to resend the invitation.`);
       }
+      if (missingEmails.length) {
+        messages.push(`This email address does not exist. The email was not sent to: ${missingEmails.join(", ")}.`);
+      }
       if (demoAccounts.length) {
         messages.push(
           `Demo mode: email was not sent. Share these one-time setup details securely:\n\n${demoAccounts.map((account) => `${account.email}\nTemporary password: ${account.temporaryPassword}\nSetup link: ${account.setupUrl}`).join("\n\n")}\n\nThe setup link expires in 24 hours. Turn off demo mode before using real accounts.`,
@@ -243,7 +249,7 @@ export const UserMgmtContent = () => {
       }
       await showAlert(
         messages.join("\n\n"),
-        emailFailures.length ? "Account created with email issue" : demoAccounts.length ? "Demo faculty accounts created" : "Faculty account created",
+        emailFailures.length || missingEmails.length ? "Account created with email issue" : demoAccounts.length ? "Demo faculty accounts created" : "Faculty account created",
       );
     }
 

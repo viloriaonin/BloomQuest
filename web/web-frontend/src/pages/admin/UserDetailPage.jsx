@@ -7,6 +7,7 @@ import {
   EyeOff,
   KeyRound,
   LoaderCircle,
+  Mail,
   ShieldCheck,
   Send,
   UserRound,
@@ -49,6 +50,13 @@ const UserDetailPage = () => {
   const [resetEmailBusy, setResetEmailBusy] = useState(false);
   const [resetEmailError, setResetEmailError] = useState("");
   const [resetEmailNotice, setResetEmailNotice] = useState("");
+  const [emailEditOpen, setEmailEditOpen] = useState(false);
+  const [emailDraft, setEmailDraft] = useState("");
+  const [emailEditBusy, setEmailEditBusy] = useState(false);
+  const [emailEditError, setEmailEditError] = useState("");
+  const [emailEditNotice, setEmailEditNotice] = useState("");
+  const [invitationBusy, setInvitationBusy] = useState(false);
+  const [invitationCountdown, setInvitationCountdown] = useState(0);
   const [demoDeanPassword, setDemoDeanPassword] = useState("");
   const [demoDeanSetupUrl, setDemoDeanSetupUrl] = useState("");
   const [demoDeanPasswordNotice, setDemoDeanPasswordNotice] = useState("");
@@ -77,6 +85,21 @@ const UserDetailPage = () => {
   useEffect(() => {
     loadDetail();
   }, [loadDetail]);
+
+  useEffect(() => {
+    const availableAt = detail?.user?.invitation_resend_available_at;
+    if (!availableAt) {
+      setInvitationCountdown(0);
+      return undefined;
+    }
+    const updateCountdown = () => setInvitationCountdown(Math.max(
+      0,
+      Math.ceil((new Date(availableAt).getTime() - Date.now()) / 1000),
+    ));
+    updateCountdown();
+    const timer = window.setInterval(updateCountdown, 1000);
+    return () => window.clearInterval(timer);
+  }, [detail?.user?.invitation_resend_available_at]);
 
   useEffect(() => {
     apiFetch("/departments")
@@ -254,6 +277,47 @@ const UserDetailPage = () => {
     }
   };
 
+  const resendFacultyInvitation = async () => {
+    setInvitationBusy(true);
+    setEmailEditError("");
+    setEmailEditNotice("");
+    try {
+      const response = await apiFetch(`/campus-admin/users/${userId}/resend-invitation`, {
+        method: "POST",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Could not resend the invitation email.");
+      setEmailEditNotice(data.message || `Invitation email sent to ${detail.user.email}.`);
+      await loadDetail();
+    } catch (err) {
+      setEmailEditError(err.message || "Could not resend the invitation email.");
+    } finally {
+      setInvitationBusy(false);
+    }
+  };
+
+  const saveFacultyEmail = async () => {
+    setEmailEditBusy(true);
+    setEmailEditError("");
+    setEmailEditNotice("");
+    try {
+      const response = await apiFetch(`/campus-admin/users/${userId}/email`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailDraft }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Could not update the faculty email.");
+      setEmailEditOpen(false);
+      setEmailEditNotice(data.message || "Faculty email updated successfully.");
+      await loadDetail();
+    } catch (err) {
+      setEmailEditError(err.message || "Could not update the faculty email.");
+    } finally {
+      setEmailEditBusy(false);
+    }
+  };
+
   const toggleDemoDeanPassword = async () => {
     if (showDemoDeanPassword) {
       setShowDemoDeanPassword(false);
@@ -314,6 +378,8 @@ const UserDetailPage = () => {
     && user.demo_password_available === true
     && !user.archived;
   const passwordResetAccountType = userRole === "faculty" ? "faculty" : "dean";
+  const canEditFacultyEmail = userRole === "faculty" && user.can_edit_email === true;
+  const canResendFacultyInvitation = userRole === "faculty" && user.can_resend_invitation === true;
 
   return (
     <div className="space-y-5 page-transition">
@@ -412,7 +478,29 @@ const UserDetailPage = () => {
           <h2 className="font-bold text-gray-900">Account controls</h2>
         </div>
         {resetEmailNotice && <p role="status" className="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{resetEmailNotice}</p>}
+        {emailEditNotice && <p role="status" className="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{emailEditNotice}</p>}
+        {emailEditError && <p role="alert" className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{emailEditError}</p>}
         <div className="flex flex-wrap gap-2">
+          {canResendFacultyInvitation && (
+            <button
+              type="button"
+              disabled={invitationBusy || invitationCountdown > 0}
+              onClick={resendFacultyInvitation}
+              className="bq-secondary-button disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {invitationBusy ? <LoaderCircle size={15} className="mr-2 inline animate-spin" /> : <Send size={15} className="mr-2 inline" />}
+              {invitationBusy ? "Sending invitation…" : invitationCountdown > 0 ? `Resend in ${Math.floor(invitationCountdown / 60)}:${String(invitationCountdown % 60).padStart(2, "0")}` : "Resend invitation"}
+            </button>
+          )}
+          {canEditFacultyEmail && (
+            <button
+              type="button"
+              onClick={() => { setEmailDraft(user.email); setEmailEditOpen((open) => !open); setEmailEditError(""); }}
+              className="bq-secondary-button"
+            >
+              <Mail size={15} className="mr-2 inline" />{emailEditOpen ? "Cancel email edit" : "Edit email"}
+            </button>
+          )}
           {canViewDemoDeanPassword && (
             <button
               type="button"
@@ -507,6 +595,21 @@ const UserDetailPage = () => {
             {demoDeanPasswordNotice && <p role="status" className="mt-2 text-xs font-medium text-amber-900">{demoDeanPasswordNotice}</p>}
             {demoDeanSetupUrl && <p className="mt-2 text-xs"><a className="break-all text-red-700 underline" href={demoDeanSetupUrl}>{demoDeanSetupUrl}</a></p>}
           </div>
+        )}
+        {canEditFacultyEmail && emailEditOpen && (
+          <div className="mt-4 max-w-xl rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm text-slate-600">You can update this address until the faculty member opens their account for the first time.</p>
+            <label htmlFor="faculty-email" className="mt-3 block text-sm font-semibold text-slate-700">Email address</label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <input id="faculty-email" type="email" required maxLength={255} value={emailDraft} onChange={(event) => setEmailDraft(event.target.value)} className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <button type="button" disabled={emailEditBusy || !emailDraft.trim()} onClick={saveFacultyEmail} className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-800 disabled:opacity-50">
+                {emailEditBusy ? "Saving…" : "Save email"}
+              </button>
+            </div>
+          </div>
+        )}
+        {userRole === "faculty" && user.first_login_at && (
+          <p className="mt-3 text-sm text-slate-500">Email editing and invitation resend are disabled because this account has been opened.</p>
         )}
         {demoDeanPasswordError && <p role="alert" className="mt-3 text-sm text-red-700">{demoDeanPasswordError}</p>}
         {departmentManageOpen && (
