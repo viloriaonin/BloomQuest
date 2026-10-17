@@ -4,7 +4,7 @@ The backend runs on Windows and Linux. It requires a reachable PostgreSQL databa
 
 ## Railway Deployment
 
-Configure the Railway backend service root directory as `web/web-backend`. Railway uses the `railway.json` in that directory to build with Nixpacks, start Uvicorn on Railway's assigned `$PORT`, and health-check the existing `/` route. Set `DATABASE_URL` in the service variables to a reachable PostgreSQL database before deployment.
+Configure the Railway backend service root directory as `web/web-backend`. Railway uses the `railway.json` and `nixpacks.toml` in that directory to build with Nixpacks (including LibreOffice for Office-file PDF previews), start Uvicorn on Railway's assigned `$PORT`, and health-check the existing `/` route. Set `DATABASE_URL` in the service variables to a reachable PostgreSQL database before deployment.
 
 The frontend is a separate service/build from `web/web-frontend`; set `REACT_APP_API_BASE_URL` to the deployed backend URL when building it. Set the backend's `FRONTEND_URL` to the deployed frontend origin so password-setup links point to the live application rather than `localhost`.
 

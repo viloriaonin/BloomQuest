@@ -62,6 +62,18 @@ def test_convert_docx_to_pdf_uses_libreoffice_on_linux(tmp_path, monkeypatch):
     assert pdf_path.read_bytes() == b"%PDF-test"
 
 
+def test_convert_docx_to_pdf_reports_missing_libreoffice_as_unavailable(tmp_path, monkeypatch):
+    docx_path = tmp_path / "assessment.docx"
+    pdf_path = tmp_path / "assessment.pdf"
+    monkeypatch.setattr(assessment_router.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(assessment_router.shutil, "which", lambda _name: None)
+
+    with pytest.raises(HTTPException) as exc_info:
+        assessment_router.convert_docx_to_pdf(str(docx_path), str(pdf_path))
+
+    assert exc_info.value.status_code == 503
+
+
 def test_read_upload_bytes_rejects_image_content_even_with_allowed_extension():
     png_bytes = b"\x89PNG\r\n\x1a\n" + b"fake-image-data"
     file = UploadFile(filename="report.pdf", file=io.BytesIO(png_bytes))

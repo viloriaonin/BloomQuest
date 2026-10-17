@@ -541,7 +541,10 @@ def convert_docx_to_pdf(docx_path: str, pdf_path: str):
 
     libreoffice = shutil.which("libreoffice") or shutil.which("soffice")
     if not libreoffice:
-        raise RuntimeError("PDF export on Linux requires LibreOffice. Install libreoffice and retry.")
+        raise HTTPException(
+            status_code=503,
+            detail="PDF export on Linux requires LibreOffice. Install libreoffice and retry.",
+        )
 
     output_dir = os.path.dirname(os.path.abspath(pdf_path))
     result = subprocess.run(
