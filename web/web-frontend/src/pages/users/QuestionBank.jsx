@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckSquare, ChevronRight, Download, Eye, FileText, Filter, FlaskConical, Heart, Info, Search, Shield, Sigma, Trash2, Sparkles, AlertCircle } from 'lucide-react';
+import { CheckSquare, ChevronRight, Download, FileText, Filter, FlaskConical, Heart, Info, Search, Shield, Sigma, Trash2, Sparkles, AlertCircle } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { usePopup } from '../../components/PopupProvider';
 import DownloadPreviewModal from '../../components/DownloadPreviewModal';
@@ -730,7 +730,7 @@ const QuestionBank = () => {
     setTestModalOpen(true);
   };
 
-  const handleTestExport = async (previewOnly = false) => {
+  const handleTestExport = async () => {
     const format = testExportFormat;
     setExporting(true);
     setError('');
@@ -756,18 +756,15 @@ const QuestionBank = () => {
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
       const filename = `${fileSubjectCode}-${fileExamType}-Test.${format}`;
-      if (previewOnly) {
-        setFilePreview({ blob, filename });
-      } else {
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
-      }
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+      setFilePreview({ blob, filename });
       setTestModalOpen(false);
     } catch (err) {
       setError(err.message || 'Download failed.');
@@ -776,7 +773,7 @@ const QuestionBank = () => {
     }
   };
 
-  const handleTosGeneration = async (previewOnly = false) => {
+  const handleTosGeneration = async () => {
     if (!selectedSubject || selectedQuestions.length === 0) {
       setError('Please select questions before generating TOS.');
       return;
@@ -834,18 +831,15 @@ const QuestionBank = () => {
       const blob = await res.blob();
       setTosSavingProgress(95); // Almost done
       const filename = `${fileSubjectCode}-${fileExamType}-TOS.xlsx`;
-      if (previewOnly) {
-        setFilePreview({ blob, filename });
-      } else {
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
-      }
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+      setFilePreview({ blob, filename });
       setTosSavingProgress(100); // Complete
 
       // Reset modal
@@ -1447,14 +1441,13 @@ const QuestionBank = () => {
               <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">{selectedQuestions.length} selected question{selectedQuestions.length === 1 ? '' : 's'} will be included with the answer key.</p>
             </div>
 
-            <div className="mt-6 flex justify-end gap-2 border-t border-slate-100 pt-5">
-              <button type="button" onClick={() => setTestModalOpen(false)} disabled={exporting} className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50">Cancel</button>
-              <button type="button" onClick={() => handleTestExport(true)} disabled={exporting} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50">
-                <Eye className="h-4 w-4" /> Preview &amp; Print
-              </button>
-              <button type="button" onClick={handleTestExport} disabled={exporting} className="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-slate-300" style={{ backgroundColor: PRIMARY }}>
+            <div className="mt-6 border-t border-slate-100 pt-5">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button type="button" onClick={() => setTestModalOpen(false)} disabled={exporting} className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50">Cancel</button>
+                <button type="button" onClick={handleTestExport} disabled={exporting} className="flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-slate-300" style={{ backgroundColor: PRIMARY }}>
                 {exporting ? <GeneratingProgress label="Preparing…" /> : <><Download className="h-4 w-4" />Download Test</>}
-              </button>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1552,30 +1545,21 @@ const QuestionBank = () => {
               </div>
             </div>
 
-            <div className="mt-6 flex justify-end gap-2 border-t border-slate-100 pt-5">
-              <button
-                type="button"
-                onClick={() => setTosModalOpen(false)}
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <div>
+            <div className="mt-6 border-t border-slate-100 pt-5">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button
                   type="button"
-                  onClick={() => handleTosGeneration(true)}
-                  disabled={generatingTos || selectedTopics.length === 0}
-                  className="mb-2 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => setTosModalOpen(false)}
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
                 >
-                  <Eye className="h-4 w-4" />
-                  Preview &amp; Print
+                  Cancel
                 </button>
                 <button
                   type="button"
                   onClick={handleTosGeneration}
                   disabled={generatingTos || selectedTopics.length === 0}
-                  className="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-slate-300"
-                  style={{ backgroundColor: PRIMARY, minWidth: generatingTos ? 280 : undefined }}
+                  className="flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  style={{ backgroundColor: PRIMARY }}
                 >
                   {generatingTos ? (
                     <GeneratingProgress label="Generating…" />
@@ -1586,20 +1570,20 @@ const QuestionBank = () => {
                     </>
                   )}
                 </button>
-                {generatingTos && (
-                  <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
-                    <div
-                      className="h-full transition-all duration-500 ease-out"
-                      style={{
-                        width: `${tosSavingProgress}%`,
-                        background: 'linear-gradient(90deg, #8F1424 0%, #D64545 50%, #B4454A 100%)',
-                      }}
-                    />
-                  </div>
-                )}
+              </div>
+              {generatingTos && (
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-gray-200">
+                  <div
+                    className="h-full transition-all duration-500 ease-out"
+                    style={{
+                      width: `${tosSavingProgress}%`,
+                      background: 'linear-gradient(90deg, #8F1424 0%, #D64545 50%, #B4454A 100%)',
+                    }}
+                  />
+                </div>
+              )}
               </div>
             </div>
-          </div>
         </div>
       ), document.body)}
       {filePreview && <DownloadPreviewModal file={filePreview} onClose={() => setFilePreview(null)} />}
